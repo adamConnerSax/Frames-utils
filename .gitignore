@@ -8,7 +8,4 @@
 cabal.project.local
 *.json
 *.png
-/visualizations/output
-.Rproj.user
-.RData
-.Rhistory
+TAGS

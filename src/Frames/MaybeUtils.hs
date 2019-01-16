@@ -33,6 +33,10 @@ import           Data.Maybe (fromMaybe, fromJust)
 import           Data.Discrimination (Grouping)
 import           GHC.TypeLits (KnownSymbol)
 
+
+type MaybeCols c = F.Rec (Maybe F.:. F.ElField) c
+type MaybeRow r = MaybeCols (F.RecordColumns r)
+
 -- TBD: This should be an argument to produceCSV_Maybe and writeCSV_Maybe.
 instance F.ShowCSV a => F.ShowCSV (Maybe a) where
   showCSV = fromMaybe "NA" . fmap F.showCSV
