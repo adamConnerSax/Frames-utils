@@ -1,0 +1,14 @@
+.stack-work/*
+*~
+*#
+/dist
+\#*#
+.#*
+/dist-newstyle
+cabal.project.local
+*.json
+*.png
+/visualizations/output
+.Rproj.user
+.RData
+.Rhistory
