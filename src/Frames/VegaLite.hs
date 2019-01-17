@@ -13,6 +13,13 @@ module Frames.VegaLite
   , recordToVLDataRow
   , recordsToVLData
   , colName
+  , pName
+  , mName
+  , fName
+  , tName
+  , hName
+  , oName
+  , dName
   ) where
 
 import           Data.Fixed             (div', divMod')
@@ -42,6 +49,27 @@ recordsToVLData transform xs = GV.dataFromRows [] $ List.concat $ fmap (recordTo
 
 colName :: forall x. (F.ColumnHeaders '[x]) => Text
 colName = T.pack $ List.head $ F.columnHeaders (Proxy :: Proxy (F.Record '[x]))
+
+pName :: forall x. (F.ColumnHeaders '[x]) => GV.PositionChannel
+pName = GV.PName (colName @x)
+
+mName :: forall x. (F.ColumnHeaders '[x]) => GV.MarkChannel
+mName = GV.MName (colName @x)
+
+fName :: forall x. (F.ColumnHeaders '[x]) => GV.FacetChannel
+fName = GV.FName (colName @x)
+
+tName :: forall x. (F.ColumnHeaders '[x]) => GV.TextChannel
+tName = GV.TName (colName @x)
+
+hName :: forall x. (F.ColumnHeaders '[x]) => GV.HyperlinkChannel
+hName = GV.HName (colName @x)
+
+oName :: forall x. (F.ColumnHeaders '[x]) => GV.OrderChannel
+oName = GV.OName (colName @x)
+
+dName :: forall x. (F.ColumnHeaders '[x]) => GV.DetailChannel
+dName = GV.DName (colName @x)
 
 class ToVLDataValue x where
   toVLDataValue :: x -> (Text, GV.DataValue)
