@@ -19,6 +19,7 @@ library
                  , Frames.ScatterMerge
                  , Frames.KMeans
                  , Frames.MaybeUtils
+                 , Frames.VegaLite
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.11.1.0
@@ -34,6 +35,7 @@ library
                      , random-fu
                      , random-source
                      , text
+                     , time
                      , vector
                      , vinyl >= 0.10.0.1
                      , hvega

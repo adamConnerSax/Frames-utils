@@ -254,9 +254,6 @@ weightedScaleAndUnscale :: (Real a, Real w) => RescaleType a -> RescaleType a ->
 weightedScaleAndUnscale computeScale outScale toA = fmap (scaleAndUnscaleHelper toA) shifts where
   shifts = (,) <$> weightedRescale computeScale <*> weightedRescale outScale
 
-
-
-
 type FType x = V.Snd x
 
 type DblX = "double_x" F.:-> Double
