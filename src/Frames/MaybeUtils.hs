@@ -10,6 +10,7 @@
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 module Frames.MaybeUtils where
 
 import           Frames                  ((:.), (&:))
@@ -18,6 +19,7 @@ import qualified Frames.CSV              as F
 import qualified Frames.ShowCSV          as F
 import qualified Frames.Melt as F
 import           Control.Monad (join)
+import           Control.Lens ((%~))
 import qualified Pipes                   as P
 import qualified Data.Vinyl              as V
 import qualified Data.Vinyl.Derived      as V
@@ -31,7 +33,7 @@ import qualified Data.Vinyl.Functor      as V
 import           Data.Proxy              (Proxy (..))
 import           Data.Maybe (fromMaybe, fromJust)
 import           Data.Discrimination (Grouping)
-import           GHC.TypeLits (KnownSymbol)
+import           GHC.TypeLits (Symbol, KnownSymbol)
 
 
 type MaybeCols c = F.Rec (Maybe F.:. F.ElField) c
@@ -42,6 +44,21 @@ instance F.ShowCSV a => F.ShowCSV (Maybe a) where
   showCSV = fromMaybe "NA" . fmap F.showCSV
 
 type AddMaybe rs = V.MapTyCon Maybe rs
+
+mapMonoAlt :: F.AllAre a ts
+  => (f a -> f b)
+  -> F.Rec f ts
+  -> F.Rec f (F.ReplaceAll b ts)
+mapMonoAlt _ V.RNil = V.RNil
+mapMonoAlt f (x V.:& xs) = f x V.:& mapMonoAlt f xs
+
+fromMaybeMono ::(F.AllAre a (V.Unlabeled ms), F.ReplaceAll a (V.Unlabeled ms) ~ V.Unlabeled ms, V.StripFieldNames ms)
+  => a -> F.Rec (Maybe F.:. F.ElField) ms -> F.Rec (Maybe F.:. F.ElField) ms
+fromMaybeMono def = V.withNames' . mapMonoAlt (Just . fromMaybe def) . V.stripNames'  
+
+--nothingsToDefault :: forall rs ms a. (ms F.⊆ rs, F.AllAre a (V.Unlabeled ms), F.ReplaceAll a (V.Unlabeled ms) ~ V.Unlabeled ms, V.StripFieldNames ms)
+--  => a -> F.Rec (Maybe F.:. F.ElField) rs -> F.Rec (Maybe F.:. F.ElField) rs
+--nothingsToDefault def xs  = (V.rsubset @ms %~ fromMaybeMono def) xs
 
 unMaybeKeys :: forall ks rs as.(ks F.⊆ rs, as ~ F.RDeleteAll ks rs, as F.⊆ rs, V.RPureConstrained V.KnownField as, V.RecApplicative as, V.RApply as, V.RMap as)
   => Proxy ks -> F.Rec (Maybe F.:. F.ElField) rs -> F.Record (ks V.++ (AddMaybe as))
