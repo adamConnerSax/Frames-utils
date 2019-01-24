@@ -28,6 +28,7 @@ module Frames.KMeans
   ) where
 
 import qualified Frames.Aggregations as FA
+import qualified Math.Rescale as MR
 
 import qualified Control.Foldl        as FL
 import           Control.Lens         ((^.))
@@ -150,8 +151,8 @@ linfdist v1 v2 = U.maximum $ U.zipWith diffabs v1 v2
 kMeans :: forall rs ks x y w m f. (FA.ThreeDTransformable rs ks x y w, F.ElemOf [FA.DblX,FA.DblY,w] w, Monad m)
        => Proxy ks
        -> Proxy '[x,y,w]
-       -> FL.Fold (F.Record [x,y,w]) (FA.ScaleAndUnscale (FA.FType x))
-       -> FL.Fold (F.Record [x,y,w]) (FA.ScaleAndUnscale (FA.FType y))
+       -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
+       -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
        -> Int
        -> (Int -> [F.Record '[FA.DblX,FA.DblY,w]] -> m [U.Vector Double])  -- initial centroids
        -> Distance
@@ -159,11 +160,11 @@ kMeans :: forall rs ks x y w m f. (FA.ThreeDTransformable rs ks x y w, F.ElemOf 
 kMeans proxy_ks proxy_xyw sunXF sunYF numClusters makeInitial distance =
   let toRecord (x', y', w) = x' &: y' &: w &: V.RNil
       computeOne = kMeansOne sunXF sunYF numClusters makeInitial weighted2DRecord distance
-  in FA.transformEachM proxy_ks proxy_xyw (fmap (fmap toRecord) . computeOne)
+  in FA.aggregateAndAnalyzeEachM proxy_ks proxy_xyw (fmap (fmap toRecord) . computeOne)
 
 kMeansOne :: forall x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Monad m)
-          => FL.Fold (F.Record [x,y,w]) (FA.ScaleAndUnscale (FA.FType x))
-          -> FL.Fold (F.Record [x,y,w]) (FA.ScaleAndUnscale (FA.FType y))
+          => FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
+          -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
           -> Int 
           -> (Int -> f (F.Record '[FA.DblX,FA.DblY,w]) -> m [U.Vector Double])  -- initial centroids, monadic because may need randomness
           -> Weighted (F.Record '[FA.DblX,FA.DblY,w]) (FA.FType w) 
@@ -172,12 +173,12 @@ kMeansOne :: forall x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Mo
           -> m [(FA.FType x, FA.FType y, FA.FType w)]
 kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = do
   let (sunX, sunY) = FL.fold ((,) <$> sunXF <*> sunYF) dataRows
-      scaledRows = fmap (V.runcurryX (\x y w -> (FA.from sunX) x &: (FA.from sunY) y &: w &: V.RNil)) dataRows  
+      scaledRows = fmap (V.runcurryX (\x y w -> (MR.from sunX) x &: (MR.from sunY) y &: w &: V.RNil)) dataRows  
   initial <- makeInitial numClusters scaledRows 
   let initialCentroids = Centroids $ V.fromList $ initial
       (Clusters clusters) = weightedKMeans initialCentroids weighted distance scaledRows
       fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
-      fix (v, wgt) = ((FA.backTo sunX) (v U.! 0), (FA.backTo sunY) (v U.! 1), wgt)
+      fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
   return $ V.toList $ fmap (fix . centroid weighted . members) clusters
         
 weightedKMeans :: forall a w f. (Foldable f, Real w, Eq a)

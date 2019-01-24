@@ -16,10 +16,12 @@ Build-type: Simple
                      
 library
   exposed-modules: Frames.Aggregations
+                 , Frames.Transform
                  , Frames.ScatterMerge
                  , Frames.KMeans
                  , Frames.MaybeUtils
                  , Frames.VegaLite
+                 , Math.Rescale
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.11.1.0

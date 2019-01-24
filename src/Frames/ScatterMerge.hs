@@ -29,6 +29,7 @@ module Frames.ScatterMerge
   ) where
 
 import qualified Frames.Aggregations as FA
+import qualified Math.Rescale as MR
 
 import qualified Control.Foldl        as FL
 import           Control.Lens         ((^.))
@@ -76,14 +77,14 @@ type Binnable x w =  (V.KnownField x, Real (FA.FType x),
 -- NB: Bins are unscaled; scaling function to be applied after binning  
 data BinsWithRescale a = BinsWithRescale { bins :: [a],  shift :: a, scale :: Double} -- left in a form where a need not be a type that supports division 
                      
-binField :: forall x w. Binnable x w => Int -> FA.RescaleType (FA.FType x) -> FL.Fold (F.Record '[x,w]) (BinsWithRescale (FA.FType x))
+binField :: forall x w. Binnable x w => Int -> MR.RescaleType (FA.FType x) -> FL.Fold (F.Record '[x,w]) (BinsWithRescale (FA.FType x))
 binField numBins rt =
   let process :: [(FA.FType x, FA.FType w)] -> F.Record '[x,w] -> [(FA.FType x, FA.FType w)]  
       process l r  = V.runcurryX (\x w -> (x, w) : l) r
-      extract :: FA.RescaleType (FA.FType x) -> [(FA.FType x, FA.FType w)] -> BinsWithRescale (FA.FType x)
+      extract :: MR.RescaleType (FA.FType x) -> [(FA.FType x, FA.FType w)] -> BinsWithRescale (FA.FType x)
       extract rt l =
         let compFst (x,_) (x',_) = compare x x'
-            scaleInfo = FL.fold (FA.rescale rt) (fst <$> l)
+            scaleInfo = FL.fold (MR.rescale rt) (fst <$> l)
             (totalWeight, listWithSummedWeights) = List.mapAccumL (\sw (x,w) -> (sw+w, (x,w,sw+w))) 0 $ List.sortBy compFst l
             weightPerBin :: Double = (realToFrac totalWeight)/(fromIntegral numBins)
             lowerBounds :: [(b, FA.FType w, FA.FType w)] -> [b] -> [b]
@@ -101,7 +102,7 @@ binField numBins rt =
 type BinnableKeyedRecord rs ks x w = (FA.TwoColData x w, FA.KeyedRecord ks rs, '[x,w] F.⊆ rs)
   
 binFields :: forall rs ks x w. BinnableKeyedRecord rs ks x w
-           => Int -> Proxy ks -> Proxy '[x,w] -> FA.RescaleType (FA.FType x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (FA.FType x)))
+           => Int -> Proxy ks -> Proxy '[x,w] -> MR.RescaleType (FA.FType x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (FA.FType x)))
 binFields n _ _ rt =
   let unpack = V.Identity
       combine :: [F.Record '[x,w]] -> F.Record rs -> [F.Record '[x,w]]
@@ -140,35 +141,17 @@ scatterMerge :: forall rs ks x y w. FA.ThreeDTransformable rs ks x y w
               -> (Double -> FA.FType y)
               -> Int
               -> Int
-              -> FA.RescaleType (FA.FType x)
-              -> FA.RescaleType (FA.FType y)
+              -> MR.RescaleType (FA.FType x)
+              -> MR.RescaleType (FA.FType y)
               -> FL.Fold (F.Record rs) (F.FrameRec (ks V.++ [x, y, w]))
 scatterMerge proxy_ks proxy_xyw toX toY numBinsX numBinsY rtX rtY =
   let doOne = scatterMergeOne numBinsX numBinsY rtX rtY
       toRecord (x', y', w') = toX x' &: toY y' &: w' &: V.RNil
-  in FA.transformEach proxy_ks proxy_xyw (fmap toRecord . doOne)
-
-{-
-scatterMerge :: forall rs ks x y w. TwoDTransformable rs ks x y w
-              => Proxy ks
-              -> Proxy '[x,y,w]
-              -> (Double -> FType x) -- when we put the averaged data back in the record with original types we need to convert back
-              -> (Double -> FType y)
-              -> Int
-              -> Int
-              -> RescaleType (FType x)
-              -> RescaleType (FType y)
-              -> FL.Fold (F.Record rs) (F.FrameRec (UseCols ks x y w))
-scatterMerge proxy_ks _ toX toY numBinsX numBinsY rtX rtY =
-  let combine l r = F.rcast @[x,y,w] r : l
-      toRecord :: (Double, Double, FType w) -> F.Record '[x,y,w]
-      toRecord (x', y', w) = toX x' &: toY y' &: w &: V.RNil 
-  in aggregateFs proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] (fmap toRecord . scatterMergeOne numBinsX numBinsY rtX rtY)
--}
+  in FA.aggregateAndAnalyzeEach proxy_ks proxy_xyw (fmap toRecord . doOne)
 
   
 scatterMergeOne :: forall x y w f. (FA.ThreeColData x y w, Foldable f)
-                => Int -> Int -> FA.RescaleType (FA.FType x) -> FA.RescaleType (FA.FType y) -> f (F.Record '[x,y,w]) -> [(Double, Double, FA.FType w)]
+                => Int -> Int -> MR.RescaleType (FA.FType x) -> MR.RescaleType (FA.FType y) -> f (F.Record '[x,y,w]) -> [(Double, Double, FA.FType w)]
 scatterMergeOne numBinsX numBinsY rtX rtY dataRows =
   let xBinF = PF.lmap (F.rcast @[x,w]) $ binField numBinsX rtX
       yBinF = PF.lmap (F.rcast @[y,w]) $ binField numBinsY rtY
@@ -254,8 +237,8 @@ buildScatterMerge :: forall rs ks x y w. (BinnableKeyedRecord rs ks x w, Binnabl
                   -> Proxy '[x,y,w]
                   -> Int
                   -> Int
-                  -> FA.RescaleType (FA.FType x)
-                  -> FA.RescaleType (FA.FType y)
+                  -> MR.RescaleType (FA.FType x)
+                  -> MR.RescaleType (FA.FType y)
                   -> (Double -> FA.FType x)
                   -> (Double -> FA.FType y)
                   -> (FL.Fold (F.Record rs) (BinMap ks x, BinMap ks y),
