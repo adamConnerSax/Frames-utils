@@ -6,6 +6,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Transform
   (
@@ -38,6 +39,19 @@ mutate f xs = xs `F.rappend` f xs
 
 recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
 recordSingleton a = a F.&: V.RNil
+
+--
+--newtype RecFunction as bs = RecFunction { recFunction :: F.Record as -> F.Record bs }
+
+
+
+
+--deriving via ((->) as) instance Functor (RecFunction as) where
+--  fmap f (RecFunction f)  
+
+
+
+-- for aggregations
 
 newtype BinaryFunction a = BinaryFunction { appBinaryFunction :: a -> a -> a } 
 

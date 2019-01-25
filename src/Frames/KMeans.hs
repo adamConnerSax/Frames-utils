@@ -22,12 +22,14 @@ module Frames.KMeans
     kMeans
   , forgyCentroids
   , partitionCentroids
+  , partitionCentroids'
   , euclidSq
   , l1dist
   , linfdist
   ) where
 
 import qualified Frames.Aggregations as FA
+import qualified Frames.Transform as FT
 import qualified Math.Rescale as MR
 
 import qualified Control.Foldl        as FL
@@ -106,15 +108,21 @@ partitionCentroids :: forall x y w f. (F.AllConstrained (FA.DataFieldOf [x,y,w])
                    => Int
                    -> f (F.Record '[x,y,w])
                    -> Identity [U.Vector Double]
-partitionCentroids k dataRows = Identity $ fmap (fst . centroid weighted2DRecord) $ go vs
+partitionCentroids k dataRows = Identity $ fmap (fst . centroid (weighted2DRecord (Proxy @[x,y,w]))) $ go vs
   where go l = case List.splitAt n l of
           (vs', []) -> [vs']
           (vs', vss) -> vs' : go vss
         n = (List.length vs + k - 1) `div` k
         vs = FL.fold FL.list dataRows
         
-weighted2DRecord :: forall x y w. (FA.DataField x, FA.DataField y, FA.DataField w, F.ElemOf [x,y,w] w) => Weighted (F.Record '[x,y,w]) (FA.FType w)
-weighted2DRecord = Weighted 2 (V.runcurryX (\x y _ -> U.fromList [realToFrac x, realToFrac y])) (F.rgetField @w)
+weighted2DRecord :: forall x y w rs. ( FA.DataField x, FA.DataField y, FA.DataField w
+                                     , F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w)
+                 => Proxy '[x,y,w] -> Weighted (F.Record rs) (FA.FType w)
+weighted2DRecord _ =
+  let getX = realToFrac . F.rgetField @x
+      getY = realToFrac . F.rgetField @y
+      makeV r = U.fromList [getX r, getY r]
+  in Weighted 2 makeV (F.rgetField @w)
 
 -- compute the centroid of the data.  Useful for the kMeans algo and computing the centroid of the final clusters
 centroid :: forall g w a. (Foldable g, Real w) => Weighted a w -> g a -> (U.Vector Double, w)
@@ -146,21 +154,34 @@ linfdist v1 v2 = U.maximum $ U.zipWith diffabs v1 v2
   where diffabs a b = abs (a - b)
 {-# INLINE linfdist #-}
 
+type WithScaledCols rs = rs V.++ [FA.DblX, FA.DblY]
+type WithScaled rs = F.Record (WithScaledCols rs)
+
 -- TODOS:
 -- Fix scaling.
-kMeans :: forall rs ks x y w m f. (FA.ThreeDTransformable rs ks x y w, F.ElemOf [FA.DblX,FA.DblY,w] w, Monad m)
+kMeans :: forall rs ks x y w m f. ( FA.ThreeDTransformable rs ks x y w
+                                  , F.ElemOf [FA.DblX,FA.DblY,w] w
+                                  , F.ElemOf rs x
+                                  , F.ElemOf rs y
+                                  , F.ElemOf rs w
+                                  , F.ElemOf (WithScaledCols rs) w
+                                  , F.ElemOf (WithScaledCols rs) FA.DblX
+                                  , F.ElemOf (WithScaledCols rs) FA.DblY
+                                  , Monad m
+                                  , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
        => Proxy ks
        -> Proxy '[x,y,w]
        -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
        -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
        -> Int
-       -> (Int -> [F.Record '[FA.DblX,FA.DblY,w]] -> m [U.Vector Double])  -- initial centroids
+       -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> m [U.Vector Double])  -- initial centroids
        -> Distance
        -> FL.FoldM m (F.Record rs) (F.FrameRec (ks V.++ [x,y,w]))
-kMeans proxy_ks proxy_xyw sunXF sunYF numClusters makeInitial distance =
-  let toRecord (x', y', w) = x' &: y' &: w &: V.RNil
-      computeOne = kMeansOne sunXF sunYF numClusters makeInitial weighted2DRecord distance
-  in FA.aggregateAndAnalyzeEachM proxy_ks proxy_xyw (fmap (fmap toRecord) . computeOne)
+kMeans proxy_ks _ sunXF sunYF numClusters makeInitial distance =
+  let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
+      toRecord (x, y, w) = x &: y &: w &: V.RNil 
+      computeOne = kMeansOne' sunXF sunYF numClusters makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance
+  in FA.aggregateAndAnalyzeEachM' proxy_ks (fmap (fmap toRecord) . computeOne)
 
 kMeansOne :: forall x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Monad m)
           => FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
@@ -180,7 +201,33 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = do
       fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
   return $ V.toList $ fmap (fix . centroid weighted . members) clusters
-        
+
+
+kMeansOne' :: forall rs x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Monad m, F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w
+                                   , [FA.DblX, FA.DblY,w] F.⊆ WithScaledCols rs
+                                   , Eq (WithScaled rs))
+          => FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
+          -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
+          -> Int 
+          -> (Int -> f (F.Record '[FA.DblX, FA.DblY, w]) -> m [U.Vector Double])  -- initial centroids, monadic because may need randomness
+          -> Weighted (WithScaled rs) (FA.FType w) 
+          -> Distance
+          -> f (F.Record rs)
+          -> m [(FA.FType x, FA.FType y, FA.FType w)]
+kMeansOne' sunXF sunYF numClusters makeInitial weighted distance dataRows = do
+  let (sunX, sunY) = FL.fold ((,) <$> sunXF <*> sunYF) (fmap (F.rcast @[x,y,w]) dataRows)
+      addX = FT.recordSingleton @FA.DblX . MR.from sunX . F.rgetField @x
+      addY = FT.recordSingleton @FA.DblY . MR.from sunY . F.rgetField @y
+      addXY r = addX r F.<+> addY r
+      plusScaled = fmap (FT.mutate addXY) dataRows
+  initial <- makeInitial numClusters $ fmap F.rcast plusScaled -- here we can throw away the other cols
+  let initialCentroids = Centroids $ V.fromList $ initial
+      (Clusters clusters) = weightedKMeans initialCentroids weighted distance plusScaled -- here we can't 
+      fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
+      fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
+  return $ V.toList $ fmap (fix . centroid weighted . members) clusters
+
+    
 weightedKMeans :: forall a w f. (Foldable f, Real w, Eq a)
                => Centroids -- initial guesses at centers 
                -> Weighted a w -- location/weight from data

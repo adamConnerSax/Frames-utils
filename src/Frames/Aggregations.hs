@@ -33,6 +33,7 @@ module Frames.Aggregations
   , aggregateFsM
   , aggregateFs
   , aggregateAndAnalyzeEachM
+  , aggregateAndAnalyzeEachM'
   , aggregateAndAnalyzeEach
   , DataField
   , DataFieldOf
@@ -77,7 +78,7 @@ import           Control.Arrow (second)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
-import           GHC.TypeLits (KnownSymbol)
+import           GHC.TypeLits (Symbol,KnownSymbol)
 import           Data.Random.Source.PureMT as R
 import           Data.Random as R
 import           Data.Function (on)
@@ -219,4 +220,12 @@ aggregateAndAnalyzeEach proxy_ks proxy_xyw doOne = FL.simplify $ aggregateAndAna
 --  let combine l r = F.rcast @[x,y,w] r : l
 --  in aggregateFs proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
+type UnKeyed rs ks = F.Record (F.RDeleteAll ks rs)
+aggregateAndAnalyzeEachM' :: forall rs ks as m. (KeyedRecord ks rs, FI.RecVec (ks V.++ as), Applicative m)
+               => Proxy ks
+               -> ([F.Record rs] -> m [F.Record as])
+               -> FL.FoldM m (F.Record rs) (F.FrameRec (ks V.++ as))
+aggregateAndAnalyzeEachM' proxy_ks doOne =
+  let combine l r = r : l
+  in aggregateFsM proxy_ks V.Identity combine [] doOne
 
