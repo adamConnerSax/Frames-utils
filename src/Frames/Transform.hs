@@ -3,34 +3,41 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Transform
   (
     mutate
+  , transform
+  , recordSingleton
   , BinaryFunction(..)
   , bfApply
   , bfPlus
   , bfLHS
   , bfRHS
   ) where
---import Data.Functor.Identity (Identity(..))
+
 import qualified Data.Vinyl           as V
 import qualified Data.Vinyl.Derived as V
-import Data.Vinyl.TypeLevel (type (++))
+import Data.Vinyl.TypeLevel (type (++), Snd)
 import Data.Vinyl.Functor (Lift(..), Identity(..))
 import qualified Frames               as F
---import Frames.RecF (UnColumn)
---import qualified Data.Monoid.Endo     as E
 import Frames.Melt (RDeleteAll)
 
-import GHC.TypeLits (Symbol)
+import GHC.TypeLits (KnownSymbol, Symbol)
 
 --  mutation functions
-mutate :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
+transform :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
              => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs ++ bs)
-mutate f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
+transform f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
+
+mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs ++ bs)
+mutate f xs = xs `F.rappend` f xs 
+
+recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
+recordSingleton a = a F.&: V.RNil
 
 newtype BinaryFunction a = BinaryFunction { appBinaryFunction :: a -> a -> a } 
 
