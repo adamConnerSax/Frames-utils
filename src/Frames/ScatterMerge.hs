@@ -193,7 +193,7 @@ type UseColsC ks x y w = (ks F.⊆ UseCols ks x y w, x ∈ UseCols ks x y w, y �
 type ScatterMergeable' rs ks x y w = (ks F.⊆ rs,
                                       Ord (F.Record ks),
                                       FI.RecVec (BinnedResultCols ks x y w),
-                                      F.AllConstrained (FA.DataFieldOf rs) '[x, y, w],
+                                      F.AllConstrained (FA.RealFieldOf rs) '[x, y, w],
                                       BinnedDblColsC ks w,
                                       UseCols ks x y w F.⊆ rs, UseColsC ks x y w,
                                       OutKeyCols ks F.⊆ BinnedDblCols ks w,

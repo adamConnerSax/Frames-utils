@@ -35,8 +35,8 @@ module Frames.Aggregations
   , aggregateAndAnalyzeEachM
   , aggregateAndAnalyzeEachM'
   , aggregateAndAnalyzeEach
-  , DataField
-  , DataFieldOf
+  , RealField
+  , RealFieldOf
   , TwoColData
   , ThreeColData
   , ThreeDTransformable
@@ -186,14 +186,14 @@ type DblX = "double_x" F.:-> Double
 type DblY = "double_y" F.:-> Double
 
 type UseCols ks x y w = ks V.++ '[x,y,w]
-type DataField x = (V.KnownField x, Real (FType x))
+type RealField x = (V.KnownField x, Real (FType x))
 
 -- This thing is...unfortunate. Is there something built into Frames or Vinyl that would do this?
-class (DataField x, x ∈ rs) => DataFieldOf rs x
-instance (DataField x, x ∈ rs) => DataFieldOf rs x
+class (RealField x, x ∈ rs) => RealFieldOf rs x
+instance (RealField x, x ∈ rs) => RealFieldOf rs x
 
-type TwoColData x y = F.AllConstrained (DataFieldOf [x,y]) '[x, y]
-type ThreeColData x y z = ([x,z] F.⊆ [x,y,z], [y,z] F.⊆ [x,y,z], [x,y] F.⊆ [x,y,z], F.AllConstrained (DataFieldOf [x,y,z]) '[x, y, z])
+type TwoColData x y = F.AllConstrained (RealFieldOf [x,y]) '[x, y]
+type ThreeColData x y z = ([x,z] F.⊆ [x,y,z], [y,z] F.⊆ [x,y,z], [x,y] F.⊆ [x,y,z], F.AllConstrained (RealFieldOf [x,y,z]) '[x, y, z])
 
 type KeyedRecord ks rs = (ks F.⊆ rs, Ord (F.Record ks))
 
