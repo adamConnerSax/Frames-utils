@@ -28,6 +28,7 @@ library
                      , containers
                      , discrimination
                      , foldl
+                     , foldl-statistics
                      , groups
                      , Frames
                      , lens

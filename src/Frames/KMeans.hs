@@ -94,17 +94,17 @@ forgyCentroids :: forall x y w f m. (F.AllConstrained (FA.RealFieldOf [x,y,w]) '
                -> f (F.Record '[x,y,w])
                -> m [U.Vector Double]
 forgyCentroids n dataRows = do
-  let h = fromMaybe (0 :: Double) . fmap realToFrac   
-      (xMin, xMax, yMin, yMax) = FL.fold ((,,,)
-                                           <$> PF.dimap (F.rgetField @x) h FL.minimum
-                                           <*> PF.dimap (F.rgetField @x) h FL.maximum
-                                           <*> PF.dimap (F.rgetField @y) h FL.minimum
-                                           <*> PF.dimap (F.rgetField @y) h FL.maximum) dataRows
-      uniformPair = do
-        ux <- R.uniform xMin xMax -- TODO: this is not a good way to deal with the Maybe here
-        uy <- R.uniform yMin yMax
+  let h = id -- realToFrac --fromMaybe (0 :: Double) . fmap realToFrac   
+      (xMean, xStd, yMean, yStd) = FL.fold ((,,,)
+                                           <$> PF.dimap (realToFrac . F.rgetField @x) h FL.mean
+                                           <*> PF.dimap (realToFrac . F.rgetField @x) h FL.std
+                                           <*> PF.dimap (realToFrac . F.rgetField @y) h FL.mean
+                                           <*> PF.dimap (realToFrac . F.rgetField @y) h FL.std) dataRows
+      normalPair = do
+        ux <- R.normal xMean xStd -- TODO: this is not a good way to deal with the Maybe here
+        uy <- R.normal yMean yStd
         return $ U.fromList [ux,uy]
-  R.sample $ mapM (const uniformPair) $ replicate n ()
+  R.sample $ mapM (const normalPair) $ replicate n ()
 
 partitionCentroids :: forall x y w f. (F.AllConstrained (FA.RealFieldOf [x,y,w]) '[x, y, w], Foldable f)
                    => Int
@@ -250,8 +250,10 @@ kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance data
       (Clusters clusters) = weightedKMeans initialCentroids weighted distance plusScaled -- here we can't 
       fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
-      clusterOut (Cluster m) = (fix . centroid weighted $ m, fmap (F.rcast @rs) m) 
-  return $ V.toList $ fmap clusterOut clusters
+      clusterOut (Cluster m) = case List.length m of
+        0 -> Nothing
+        _ -> Just (fix . centroid weighted $ m, fmap (F.rcast @rs) m) 
+  return $ catMaybes $ V.toList $ fmap clusterOut clusters
 
 type IsCentroid = "is_centroid" F.:-> Bool
 type ClusterId = "cluster_id" F.:-> Int

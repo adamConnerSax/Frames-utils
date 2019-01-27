@@ -15,11 +15,12 @@ module Math.Rescale
   , weightedScaleAndUnscale
   ) where
 
-import qualified Control.Foldl   as FL
-import qualified Data.Foldable   as Foldable
-import           Data.Function   (on)
-import qualified Data.List       as List
-import qualified Data.Profunctor as PF
+import qualified Control.Foldl            as FL
+import qualified Control.Foldl.Statistics as FS
+import qualified Data.Foldable            as Foldable
+import           Data.Function            (on)
+import qualified Data.List                as List
+import qualified Data.Profunctor          as PF
 
 -- We use a GADT here so that each constructor can carry the proofs of numerical type.  E.g., We don't want RescaleNone to require RealFloat.
 data RescaleType a where
@@ -49,19 +50,33 @@ rescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . listToMedian) FL.li
 wgt :: (Real a, Real w) => (a , w) -> Double
 wgt  (x,y) = realToFrac x * realToFrac y
 
+toDoubles (x,y) = (realToFrac x, realToFrac y)
+
+data WestMeanVar = WestMeanVar { wSum :: !Double, wSum2 :: !Double, m :: !Double, s :: !Double }
+
 weightedRescale :: forall a w. (Real a, Real w)  => RescaleType a -> FL.Fold (a,w) (a, Double)
 weightedRescale RescaleNone = pure (0,1)
 weightedRescale (RescaleGiven x) = pure x
 weightedRescale (RescaleMean s) =
-  let folds = (,) <$> PF.lmap wgt FL.mean <*> PF.lmap snd FL.sum
-      f (wm, tw) = (0, wm/(s * realToFrac tw))
-  in f <$> folds
+  let wmF = FL.premap toDoubles FS.meanWeighted
+      f wm = (0, wm/s)
+  in f <$> wmF
 weightedRescale (RescaleNormalize s) =
-  let folds = (,,,) <$> PF.lmap wgt FL.mean <*> PF.lmap wgt FL.std <*> PF.lmap snd FL.sum <*> FL.length
+  let westMeanVarF = FL.Fold step (WestMeanVar 0 0 0 0) done
+      step (WestMeanVar ws ws2 m s) (x, w) = WestMeanVar ws' ws2' m' s' where
+        ws' = ws + w
+        ws2' = ws2 + (w*w)
+        m' = m + ((w/ws') * (x - m))
+        s' = s + (w * (x - m) * (x - m'))
+      done (WestMeanVar ws ws2 m s) = (m, sqrt (s/ws))
+  in (\(m,sd) -> (realToFrac m, s/sd)) <$> FL.premap toDoubles westMeanVarF
+{-
+  let folds = (,,,) <$> PF.lmap toDoubles FS.meanWeighted <*> PF.lmap toDoubles FS.std <*> PF.lmap snd FL.sum <*> FL.length
       weightedMean x n tw =realToFrac n * realToFrac x/realToFrac tw
       weightedSD sd n tw = if n == 1 then 1 else sqrt (realToFrac n) * sd/realToFrac tw
       f (wm, ws, tw, n) = (weightedMean wm n tw, (weightedSD ws n tw)/s)
   in f <$> folds
+-}
 weightedRescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . realToFrac . listToMedian) FL.list) where
   listToMedian :: [(a,w)] -> a
   listToMedian unsorted =
