@@ -171,8 +171,8 @@ kMeans :: forall rs ks x y w m f. ( FA.ThreeDTransformable rs ks x y w
                                   , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
        => Proxy ks
        -> Proxy '[x,y,w]
-       -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
-       -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
+       -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
+       -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
        -> Int
        -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> m [U.Vector Double])  -- initial centroids
        -> Distance
@@ -184,8 +184,8 @@ kMeans proxy_ks _ sunXF sunYF numClusters makeInitial distance =
   in FA.aggregateAndAnalyzeEachM' proxy_ks (fmap (fmap toRecord) . computeOne)
 
 kMeansOne :: forall x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Monad m)
-          => FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
-          -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
+          => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
+          -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
           -> Int 
           -> (Int -> f (F.Record '[FA.DblX,FA.DblY,w]) -> m [U.Vector Double])  -- initial centroids, monadic because may need randomness
           -> Weighted (F.Record '[FA.DblX,FA.DblY,w]) (FA.FType w) 
@@ -193,7 +193,7 @@ kMeansOne :: forall x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Mo
           -> f (F.Record '[x,y,w])
           -> m [(FA.FType x, FA.FType y, FA.FType w)]
 kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = do
-  let (sunX, sunY) = FL.fold ((,) <$> sunXF <*> sunYF) dataRows
+  let (sunX, sunY) = FL.fold ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF) dataRows
       scaledRows = fmap (V.runcurryX (\x y w -> (MR.from sunX) x &: (MR.from sunY) y &: w &: V.RNil)) dataRows  
   initial <- makeInitial numClusters scaledRows 
   let initialCentroids = Centroids $ V.fromList $ initial
@@ -215,8 +215,8 @@ kMeansWithClusters :: forall rs ks x y w m f. ( FA.ThreeDTransformable rs ks x y
                                               , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
                    => Proxy ks
                    -> Proxy '[x,y,w]
-                   -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
-                   -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
+                   -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
+                   -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                    -> Int
                    -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> m [U.Vector Double])  -- initial centroids
                    -> Distance
@@ -231,8 +231,8 @@ kMeansOneWithClusters :: forall rs x y w f m. (FA.ThreeColData x y w, Foldable f
                                               , [FA.DblX, FA.DblY,w] F.⊆ WithScaledCols rs
                                               , rs F.⊆ WithScaledCols rs
                                               , Eq (WithScaled rs))
-                      => FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType x))
-                      -> FL.Fold (F.Record [x,y,w]) (MR.ScaleAndUnscale (FA.FType y))
+                      => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
+                      -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                       -> Int 
                       -> (Int -> f (F.Record '[FA.DblX, FA.DblY, w]) -> m [U.Vector Double])  -- initial centroids, monadic because may need randomness
                       -> Weighted (WithScaled rs) (FA.FType w) 
@@ -240,7 +240,7 @@ kMeansOneWithClusters :: forall rs x y w f m. (FA.ThreeColData x y w, Foldable f
                       -> f (F.Record rs)
                       -> m [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])]
 kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance dataRows = do
-  let (sunX, sunY) = FL.fold ((,) <$> sunXF <*> sunYF) (fmap (F.rcast @[x,y,w]) dataRows)
+  let (sunX, sunY) = FL.fold ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF) (fmap (F.rcast @[x,y,w]) dataRows)
       addX = FT.recordSingleton @FA.DblX . MR.from sunX . F.rgetField @x
       addY = FT.recordSingleton @FA.DblY . MR.from sunY . F.rgetField @y
       addXY r = addX r F.<+> addY r
