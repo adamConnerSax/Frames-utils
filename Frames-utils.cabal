@@ -21,7 +21,9 @@ library
                  , Frames.KMeans
                  , Frames.MaybeUtils
                  , Frames.VegaLite
+                 , Frames.VegaLiteTemplates
                  , Math.Rescale
+                 , System.PipesLogger
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.11.1.0

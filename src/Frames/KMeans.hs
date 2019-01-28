@@ -33,6 +33,7 @@ module Frames.KMeans
 import qualified Frames.Aggregations as FA
 import qualified Frames.Transform as FT
 import qualified Math.Rescale as MR
+import qualified System.PipesLogger as SL
 
 import qualified Control.Foldl        as FL
 import           Control.Lens         ((^.))
@@ -109,8 +110,8 @@ forgyCentroids n dataRows = do
 partitionCentroids :: forall x y w f. (F.AllConstrained (FA.RealFieldOf [x,y,w]) '[x, y, w], Foldable f)
                    => Int
                    -> f (F.Record '[x,y,w])
-                   -> Identity [U.Vector Double]
-partitionCentroids k dataRows = Identity $ fmap (fst . centroid (weighted2DRecord (Proxy @[x,y,w]))) $ go vs
+                   -> [U.Vector Double]
+partitionCentroids k dataRows = fmap (fst . centroid (weighted2DRecord (Proxy @[x,y,w]))) $ go vs
   where go l = case List.splitAt n l of
           (vs', []) -> [vs']
           (vs', vss) -> vs' : go vss
@@ -220,7 +221,7 @@ kMeansWithClusters :: forall rs ks x y w m f. ( FA.ThreeDTransformable rs ks x y
                    -> Int
                    -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> m [U.Vector Double])  -- initial centroids
                    -> Distance
-                   -> FL.FoldM m (F.Record rs) (M.Map (F.Record ks) [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])])
+                   -> FL.FoldM (SL.Logger m) (F.Record rs) (M.Map (F.Record ks) [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])])
 kMeansWithClusters proxy_ks _ sunXF sunYF numClusters makeInitial distance =
   let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
       toRecord (x, y, w) = x &: y &: w &: V.RNil 
@@ -230,7 +231,8 @@ kMeansWithClusters proxy_ks _ sunXF sunYF numClusters makeInitial distance =
 kMeansOneWithClusters :: forall rs x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Monad m, F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w
                                               , [FA.DblX, FA.DblY,w] F.⊆ WithScaledCols rs
                                               , rs F.⊆ WithScaledCols rs
-                                              , Eq (WithScaled rs))
+                                              , Eq (WithScaled rs)
+                                              , Monad m)
                       => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
                       -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                       -> Int 
@@ -238,22 +240,28 @@ kMeansOneWithClusters :: forall rs x y w f m. (FA.ThreeColData x y w, Foldable f
                       -> Weighted (WithScaled rs) (FA.FType w) 
                       -> Distance
                       -> f (F.Record rs)
-                      -> m [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])]
+                      -> SL.Logger m [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])]
 kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance dataRows = do
   let (sunX, sunY) = FL.fold ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF) (fmap (F.rcast @[x,y,w]) dataRows)
       addX = FT.recordSingleton @FA.DblX . MR.from sunX . F.rgetField @x
       addY = FT.recordSingleton @FA.DblY . MR.from sunY . F.rgetField @y
       addXY r = addX r F.<+> addY r
       plusScaled = fmap (FT.mutate addXY) dataRows
-  initial <- makeInitial numClusters $ fmap F.rcast plusScaled -- here we can throw away the other cols
+  initial <- P.lift $ makeInitial numClusters $ fmap F.rcast plusScaled -- here we can throw away the other cols
   let initialCentroids = Centroids $ V.fromList $ initial
       (Clusters clusters) = weightedKMeans initialCentroids weighted distance plusScaled -- here we can't 
       fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
       clusterOut (Cluster m) = case List.length m of
         0 -> Nothing
-        _ -> Just (fix . centroid weighted $ m, fmap (F.rcast @rs) m) 
-  return $ catMaybes $ V.toList $ fmap clusterOut clusters
+        _ -> Just (fix . centroid weighted $ m, fmap (F.rcast @rs) m)
+      allClusters = V.toList $ fmap clusterOut clusters 
+      result = catMaybes allClusters
+      nullClusters = List.length allClusters - List.length result
+  if (nullClusters > 0)
+    then SL.log SL.Warning $ (T.pack $ show nullClusters) <> " null clusters dropped."
+    else SL.log SL.Info "All clusters have at least one member."
+  return result
 
 type IsCentroid = "is_centroid" F.:-> Bool
 type ClusterId = "cluster_id" F.:-> Int
