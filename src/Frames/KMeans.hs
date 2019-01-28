@@ -241,13 +241,13 @@ kMeansOneWithClusters :: forall rs x y w f m. (FA.ThreeColData x y w, Foldable f
                       -> Distance
                       -> f (F.Record rs)
                       -> SL.Logger m [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])]
-kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance dataRows = do
+kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance dataRows = SL.wrapPrefix "kMeansOneWithClusters" $ do  
   let (sunX, sunY) = FL.fold ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF) (fmap (F.rcast @[x,y,w]) dataRows)
       addX = FT.recordSingleton @FA.DblX . MR.from sunX . F.rgetField @x
       addY = FT.recordSingleton @FA.DblY . MR.from sunY . F.rgetField @y
       addXY r = addX r F.<+> addY r
       plusScaled = fmap (FT.mutate addXY) dataRows
-  initial <- P.lift $ makeInitial numClusters $ fmap F.rcast plusScaled -- here we can throw away the other cols
+  initial <- SL.liftLog $ makeInitial numClusters $ fmap F.rcast plusScaled -- here we can throw away the other cols
   let initialCentroids = Centroids $ V.fromList $ initial
       (Clusters clusters) = weightedKMeans initialCentroids weighted distance plusScaled -- here we can't 
       fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
