@@ -16,7 +16,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
---{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE TupleSections #-}
 module Frames.KMeans
   (
@@ -127,6 +126,7 @@ partitionCentroids k dataRows = catMaybes $ fmap (fmap fst . centroid (weighted2
 -- compute the minimum distance of every point to any of the current centroids
 -- choose a new one by using those minimum distances as probabilities
 -- NB: no already chosen center can be chosen since it has distance 0 from an existing one
+-- should this factor in weights?  E.g., make pts with higher weights more likely?
 kMeansPPCentroids :: forall x y w f m. (R.MonadRandom m, F.AllConstrained (FA.RealFieldOf [x,y,w]) '[x, y, w], Foldable f, Show (FA.FType w))
                    => Distance
                    -> Int
@@ -176,6 +176,16 @@ centroid weighted as =
   in FL.fold (FL.Fold addOne (U.replicate (dimension weighted) 0, 0) finishOne) as
 
 
+kMeansCostWeighted :: (Real w, Show w) => Distance -> Weighted a w -> Clusters a -> Double
+kMeansCostWeighted distF weighted (Clusters cs) =
+  let clusterCost (Cluster m) =
+        let cm = centroid weighted m
+            f c x = (realToFrac $ weight weighted x) * distF c (location weighted x)
+        in case cm of
+          Nothing -> 0
+          Just c -> FL.fold (FL.premap (f (fst c)) FL.sum) m
+  in FL.fold (FL.premap clusterCost FL.sum) cs
+                                      
 -- | The euclidean distance without taking the final square root
 --   This would waste cycles without changing the behavior of the algorithm
 euclidSq :: Distance
@@ -262,13 +272,14 @@ kMeansWithClusters :: forall rs ks x y w m f. ( FA.ThreeDTransformable rs ks x y
                    -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
                    -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                    -> Int
+                   -> Int
                    -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> m [U.Vector Double])  -- initial centroids
                    -> Distance
                    -> FL.FoldM (SL.Logger m) (F.Record rs) (M.Map (F.Record ks) [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])])
-kMeansWithClusters proxy_ks _ sunXF sunYF numClusters makeInitial distance =
+kMeansWithClusters proxy_ks _ sunXF sunYF numClusters numTries makeInitial distance =
   let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
       toRecord (x, y, w) = x &: y &: w &: V.RNil 
-      computeOne = kMeansOneWithClusters sunXF sunYF numClusters makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance 
+      computeOne = kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance 
   in FL.FoldM (\m -> return . FA.aggregateGeneral V.Identity (F.rcast @ks) (flip (:)) [] m) (return M.empty) (sequence . fmap computeOne)
 
 kMeansOneWithClusters :: forall rs x y w f m. ( FA.ThreeColData x y w, Foldable f, Functor f, Monad m, F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w
@@ -282,22 +293,26 @@ kMeansOneWithClusters :: forall rs x y w f m. ( FA.ThreeColData x y w, Foldable 
                                               , Monad m)
                       => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
                       -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
-                      -> Int 
+                      -> Int
+                      -> Int
                       -> (Int -> f (F.Record '[FA.DblX, FA.DblY, w]) -> m [U.Vector Double])  -- initial centroids, monadic because may need randomness
                       -> Weighted (WithScaled rs) (FA.FType w) 
                       -> Distance
                       -> f (F.Record rs)
                       -> SL.Logger m [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])]
-kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance dataRows = SL.wrapPrefix "kMeansOneWithClusters" $ do  
+kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted distance dataRows = SL.wrapPrefix "kMeansOneWithClusters" $ do  
   let (sunX, sunY) = FL.fold ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF) (fmap (F.rcast @[x,y,w]) dataRows)
       addX = FT.recordSingleton @FA.DblX . MR.from sunX . F.rgetField @x
       addY = FT.recordSingleton @FA.DblY . MR.from sunY . F.rgetField @y
       addXY r = addX r F.<+> addY r
       plusScaled = fmap (FT.mutate addXY) dataRows
-  initial <- SL.liftLog $ makeInitial numClusters $ fmap F.rcast plusScaled -- here we can throw away the other cols
-  let initialCentroids = Centroids $ V.fromList $ initial
-  (Clusters clusters, iters) <- weightedKMeans initialCentroids weighted distance plusScaled -- here we can't 
-  let fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
+  initials <- mapM (const $ fmap (Centroids . V.fromList) $ SL.liftLog $ makeInitial numClusters $ fmap F.rcast plusScaled) (V.replicate numTries ()) -- here we can throw away the other cols
+--  let initialCentroids = Centroids $ V.fromList $ initial
+  tries <- mapM (\cs -> weightedKMeans cs weighted distance plusScaled) initials -- here we can't
+  let costs = fmap (kMeansCostWeighted distance weighted . fst) tries
+  SL.log SL.Diagnostic $ "Costs: " <> (T.pack $ show costs)
+  let (Clusters clusters, iters) = tries V.! (V.minIndex costs)
+      fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
       clusterOut (Cluster m) = case List.length m of
                                  0 -> Nothing
@@ -305,10 +320,10 @@ kMeansOneWithClusters sunXF sunYF numClusters makeInitial weighted distance data
       allClusters = V.toList $ fmap clusterOut clusters 
   let result = catMaybes allClusters
       nullClusters = List.length allClusters - List.length result
-  SL.log SL.Info $ "Required " <> (T.pack $ show iters) <> " iterations to converge."
+  SL.log SL.Diagnostic $ "Required " <> (T.pack $ show iters) <> " iterations to converge."
   if (nullClusters > 0)
     then SL.log SL.Warning $ (T.pack $ show nullClusters) <> " null clusters dropped."
-    else SL.log SL.Info "All clusters have at least one member."
+    else SL.log SL.Diagnostic "All clusters have at least one member."
   return result
 
 type IsCentroid = "is_centroid" F.:-> Bool
@@ -367,11 +382,11 @@ weightedKMeans initial weighted distF as = SL.wrapPrefix "weightedKMeans" $ do
       newCentroids (Clusters cs) = Centroids $ (V.mapMaybe (fmap fst . centroid weighted . members) cs)
       go n oldClusters newClusters = do
 --        let centroids' = newCentroids newClusters
---        SL.log SL.Info $ T.pack $ "centroids=" ++ show centroids'
+--        SL.log SL.Diagnositc $ T.pack $ "centroids=" ++ show centroids'
         case (oldClusters == newClusters) of
           True -> return $ (newClusters, n)
           False -> go (n+1) newClusters $ updateClusters (newCentroids newClusters)  newClusters
---  SL.log SL.Info $ T.pack $ "centroids0=" ++ show initial        
+--  SL.log SL.Diagnostic $ T.pack $ "centroids0=" ++ show initial        
   go 0 clusters0 (updateClusters initial clusters0)
 
   

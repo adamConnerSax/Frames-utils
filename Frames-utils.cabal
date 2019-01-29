@@ -19,6 +19,7 @@ library
                  , Frames.Transform
                  , Frames.ScatterMerge
                  , Frames.KMeans
+                 , Frames.Regression
                  , Frames.MaybeUtils
                  , Frames.VegaLite
                  , Frames.VegaLiteTemplates
@@ -34,9 +35,9 @@ library
                      , groups
                      , hmatrix
                      , hmatrix-gsl
---                     , hmatrix-special
                      , Frames
                      , lens
+                     , mltool
                      , mtl
                      , pipes
                      , profunctors
