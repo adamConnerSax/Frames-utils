@@ -15,8 +15,6 @@ import qualified Pipes                  as P
 data LogSeverity = Info | Warning | Error deriving (Show, Eq, Ord)
 data LogEntry = LogEntry { severity :: LogSeverity, message :: T.Text }
 
---data LogInstruction = AddToPrefix T.Text | RemoveLastPrefix | Entry LogEntry
-
 logEntryPretty :: LogEntry -> T.Text
 logEntryPretty (LogEntry Info t)    = "(Info): " <> t
 logEntryPretty (LogEntry Warning w) = "(Warning): " <> w
@@ -24,6 +22,13 @@ logEntryPretty (LogEntry Error  e)  = "(Error): " <> e
 
 filterLogEntry :: [LogSeverity] -> LogEntry -> Maybe LogEntry
 filterLogEntry ls (LogEntry s m) = if (s `elem` ls) then Just (LogEntry s m) else Nothing
+
+-- NB: This will cause a problem if the underlying monad has State in it.  So this works for this project but not in general.  And I had
+-- to fiddle with the random source (put it in an IORef rather than State) to get it to work.  Would likely be better re-designed via
+-- a lensed state so that all we need is state with the LoggerPrefix present.
+
+-- Also, just Haskell confusing me:  how does this log in real time before things are finished now that it needs the state?  Pipes are confusing magic.
+
 
 type LoggerPrefix = [T.Text]
 type Logger m = P.Producer LogEntry (StateT LoggerPrefix m)
@@ -60,7 +65,3 @@ liftLog = lift . lift
 
 
 
-{-
-runLoggerIO :: MonadIO m => Logger m () -> m ()
-runLoggerIO logged = P.runEffect $ P.for logged (liftIO . putStrLn . T.unpack . logEntryPretty)
--}
