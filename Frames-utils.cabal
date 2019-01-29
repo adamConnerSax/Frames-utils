@@ -32,6 +32,9 @@ library
                      , foldl
                      , foldl-statistics
                      , groups
+                     , hmatrix
+                     , hmatrix-gsl
+--                     , hmatrix-special
                      , Frames
                      , lens
                      , mtl

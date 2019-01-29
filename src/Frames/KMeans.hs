@@ -26,6 +26,7 @@ module Frames.KMeans
   , IsCentroid, ClusterId, MarkLabel
   , forgyCentroids
   , partitionCentroids
+  , kMeansPPCentroids
   , euclidSq
   , l1dist
   , linfdist
@@ -73,6 +74,7 @@ import qualified Data.Vector.Unboxed as U
 import           GHC.TypeLits (KnownSymbol)
 import           Data.Random.Source.PureMT as R
 import           Data.Random as R
+import qualified Data.Random.Distribution.Categorical as R
 import           Data.Function (on)
 
 
@@ -118,6 +120,39 @@ partitionCentroids k dataRows = catMaybes $ fmap (fmap fst . centroid (weighted2
           (vs', vss) -> vs' : go vss
         n = (List.length vs + k - 1) `div` k
         vs = FL.fold FL.list dataRows
+
+
+-- Choose first from input at random
+-- Now, until you have enough
+-- compute the minimum distance of every point to any of the current centroids
+-- choose a new one by using those minimum distances as probabilities
+-- NB: no already chosen center can be chosen since it has distance 0 from an existing one
+kMeansPPCentroids :: forall x y w f m. (R.MonadRandom m, F.AllConstrained (FA.RealFieldOf [x,y,w]) '[x, y, w], Foldable f, Show (FA.FType w))
+                   => Distance
+                   -> Int
+                   -> f (F.Record '[x,y,w])
+                   -> m [U.Vector Double]
+kMeansPPCentroids distF k dataRows = R.sample $ do
+  let pts = FL.fold (FL.Fold (\l r -> U.fromList [realToFrac $ F.rgetField @x r, realToFrac $ F.rgetField @y r] : l) [] id) dataRows
+      shortestToAny :: [U.Vector Double] -> U.Vector Double -> Double
+      shortestToAny cs c = minimum $ fmap (distF c) cs
+      minDists :: [U.Vector Double] -> [Double]
+      minDists cs = fmap (shortestToAny cs) pts -- shortest distance to any of the cs
+      probs :: [U.Vector Double] -> [Double]
+      probs cs =
+        let dists = minDists cs 
+            s = FL.fold FL.sum dists -- can this be 0?  If m inputs overlap and we want >= k-m centers
+        in fmap (/s) dists
+      distributionNew :: [U.Vector Double] -> R.RVar (U.Vector Double) 
+      distributionNew cs = R.categorical $ List.zip (probs cs) pts
+      go :: [U.Vector Double] -> R.RVar [U.Vector Double]
+      go cs = if List.length cs == k 
+        then return cs
+        else do
+          newC <- distributionNew cs
+          go (newC : cs)          
+  firstIndex <- R.uniform 0 (List.length pts - 1)
+  go [pts List.!! firstIndex]        
         
 weighted2DRecord :: forall x y w rs. ( FA.RealField x, FA.RealField y, FA.RealField w
                                      , F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w)

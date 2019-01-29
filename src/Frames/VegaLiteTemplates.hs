@@ -86,7 +86,7 @@ clustersWithClickIntoVL xAxisTitle yAxisTitle title pointEncoding calcFields ext
                    ]
       configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
-        . GV.configuration (GV.Scale [GV.SCMinSize 10])
+--        . GV.configuration (GV.Scale [GV.SCMinSize 100])
       vl = GV.toVegaLite $
         [ GV.description "Vega-lite"
         , GV.background "white"
