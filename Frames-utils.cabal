@@ -24,6 +24,7 @@ library
                  , Frames.VegaLite
                  , Frames.VegaLiteTemplates
                  , Math.Rescale
+                 , Math.Regression.LeastSquares
                  , System.PipesLogger
   -- other-modules:
   -- other-extensions:
