@@ -1,14 +1,16 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Math.Regression.LeastSquares
-  (
-  ) where
+
+module Math.Regression.LeastSquares where
+
 
 import qualified Control.Foldl              as FL
 import qualified Control.Foldl.Statistics   as FS
@@ -16,10 +18,14 @@ import qualified Data.Foldable              as Foldable
 import           Data.Function              (on)
 import qualified Data.List                  as List
 import qualified Data.Profunctor            as PF
+import qualified Data.Text                  as T
 
+import qualified System.PipesLogger         as SL
+
+import           Numeric.LinearAlgebra      (( #> ), (<#), (<.>))
+import qualified Numeric.LinearAlgebra      as LA
 import           Numeric.LinearAlgebra.Data (Matrix, R, Vector)
-import qualified Numeric.LinearAlgebra.Data as HM
-
+import qualified Numeric.LinearAlgebra.Data as LA
 
 -- matrix dimensions given in (row x column) form
 -- if A is (m x n), its transpose, A' is (n x m)
@@ -38,3 +44,18 @@ import qualified Numeric.LinearAlgebra.Data as HM
 -- 1. Write OLS in matrix form
 -- 2. Write simple TLS (via SVD)
 -- 3. Write a weighted TLL
+
+data RegressionResult a = RegressionResult { parameters :: Vector a, residuals :: Vector a } deriving (Show)
+
+ordinaryLS :: Monad m => Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
+ordinaryLS mA vB = do
+  -- check dimensions
+  let textSize = T.pack . show . LA.size
+  SL.log SL.Diagnostic $ "ordinaryLS called with dim(mA) =" <> textSize mA <> " and dim(mB)=" <> textSize vB
+  if (fst (LA.size mA) /= LA.size vB)
+    then SL.log SL.Error $ "A is " <> textSize mA <> " but b is length " <> textSize vB
+    else return ()
+  let mA' = LA.tr mA
+      vX = ((LA.inv (mA' LA.<> mA)) LA.<> mA') #> vB
+      vR = vB - (mA #> vX)
+  return $ RegressionResult vX vR

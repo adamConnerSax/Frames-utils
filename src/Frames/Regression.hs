@@ -18,14 +18,12 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
-module Frames.Regression
-  (
-    leastSquaresRegression
-  ) where
+module Frames.Regression where
 
 import qualified Frames.Aggregations as FA
 import qualified Frames.Transform as FT
 import qualified Math.Rescale as MR
+import qualified Math.Regression.LeastSquares as MR
 import qualified System.PipesLogger as SL
 
 import qualified Control.Foldl        as FL
@@ -64,7 +62,8 @@ import           Data.Random as R
 
 import qualified MachineLearning            as ML
 import qualified MachineLearning.Regression as ML
-import qualified Numeric.LinearAlgebra.Data as HM
+import qualified Numeric.LinearAlgebra      as LA
+import qualified Numeric.LinearAlgebra.Data as LA
 import           Numeric.LinearAlgebra.Data (R)
 
 -- make X, y from the data 
@@ -77,7 +76,7 @@ prepRegression :: forall y as f rs. ( Foldable f
                                     , V.RecordToList as
                                     , V.ReifyConstraint Real F.ElField as
                                     , V.NatToInt (V.RLength as))
-               => f (F.Record rs) -> (HM.Matrix R, HM.Vector R)
+               => f (F.Record rs) -> (LA.Matrix R, LA.Vector R)
 prepRegression dat =
   let nCols = V.natToInt @(V.RLength as)
       yListF = PF.dimap (realToFrac . F.rgetField @y) List.reverse FL.list
@@ -85,11 +84,29 @@ prepRegression dat =
       toListOfDoubles xs = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ realToFrac x) $ V.reifyConstraint @Real xs 
       mListF = PF.dimap (toListOfDoubles . F.rcast) (List.concat . List.reverse) FL.list
       (yList, mList) = FL.fold ((,) <$> yListF <*> mListF) dat
-  in (HM.matrix nCols mList, HM.vector yList) 
+  in (LA.matrix nCols mList, LA.vector yList) 
 
 
 -- explain y in terms of as
-leastSquaresRegression :: forall y as rs f. (Foldable f
+leastSquaresByMinimization :: forall y as rs f. (Foldable f
+                                                , as F.⊆ rs
+                                                , F.ElemOf rs y
+                                                , FA.RealField y
+                                                , V.AllConstrained (FA.RealFieldOf rs) as
+                                                , V.RMap as
+                                                , V.RecordToList as
+                                                , V.ReifyConstraint Real F.ElField as
+                                                , V.NatToInt (V.RLength as))
+                           => Bool -> [R] -> f (F.Record rs) -> [R]
+leastSquaresByMinimization withConstant guess dat =
+  let (mX,y) = prepRegression @y @as dat
+      mX1 = if withConstant then ML.addBiasDimension mX else mX
+      (solution, _) = ML.minimize (ML.ConjugateGradientFR 0.1 0.1) ML.LeastSquares (0.001) 20 ML.RegNone mX1 y (LA.fromList guess)
+  in LA.toList solution
+
+
+ordinaryLeastSquares :: forall y as rs f m .( Monad m
+                                            , Foldable f
                                             , as F.⊆ rs
                                             , F.ElemOf rs y
                                             , FA.RealField y
@@ -98,13 +115,12 @@ leastSquaresRegression :: forall y as rs f. (Foldable f
                                             , V.RecordToList as
                                             , V.ReifyConstraint Real F.ElField as
                                             , V.NatToInt (V.RLength as))
-                       => [R] -> f (F.Record rs) -> [R]
-leastSquaresRegression guess dat =
-  let (mX,y) = prepRegression @y @as dat
-      mX1 = ML.addBiasDimension mX
-      (solution, _) = ML.minimize (ML.ConjugateGradientFR 0.1 0.1) ML.LeastSquares (0.001) 20 ML.RegNone mX1 y (HM.fromList guess)
-  in HM.toList solution
-
+                     =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
+ordinaryLeastSquares withConstant dat = do
+  let (mA, vB) = prepRegression @y @as dat
+      mA1 = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add bias dimension, that is, a constant, as in the b = y = mx + b
+  MR.ordinaryLS mA1 vB
+  
 {-
 -- this is sort of ugly but I think it will work.  And it has a pretty narrow purpose
 -- But what will we do when we want logistic regression or whatever?

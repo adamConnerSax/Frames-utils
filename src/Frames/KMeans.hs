@@ -280,7 +280,7 @@ kMeansWithClusters proxy_ks _ sunXF sunYF numClusters numTries makeInitial dista
   let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
       toRecord (x, y, w) = x &: y &: w &: V.RNil 
       computeOne = kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance 
-  in FL.FoldM (\m -> return . FA.aggregateGeneral V.Identity (F.rcast @ks) (flip (:)) [] m) (return M.empty) (sequence . fmap computeOne)
+  in FL.FoldM (\m -> return . FA.aggregateGeneral V.Identity (F.rcast @ks) (flip (:)) [] m) (return M.empty) (traverse computeOne)
 
 kMeansOneWithClusters :: forall rs x y w f m. ( FA.ThreeColData x y w, Foldable f, Functor f, Monad m, F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w
                                               , [FA.DblX, FA.DblY,w] F.⊆ WithScaledCols rs
