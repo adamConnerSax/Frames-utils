@@ -87,6 +87,30 @@ prepRegression dat =
   in (LA.matrix nCols mList, LA.vector yList) 
 
 
+-- make X, y, w from the data 
+prepWeightedRegression :: forall y as w f rs. ( Foldable f
+                                              , as F.⊆ rs
+                                              , F.ElemOf rs y
+                                              , FA.RealField y
+                                              , F.ElemOf rs w
+                                              , FA.RealField w
+                                              , V.AllConstrained (FA.RealFieldOf rs) as
+                                              , V.RMap as
+                                              , V.RecordToList as
+                                              , V.ReifyConstraint Real F.ElField as
+                                              , V.NatToInt (V.RLength as))
+               => f (F.Record rs) -> (LA.Matrix R, LA.Vector R, LA.Vector R)
+prepWeightedRegression dat =
+  let nCols = V.natToInt @(V.RLength as)
+      yListF = PF.dimap (realToFrac . F.rgetField @y) List.reverse FL.list
+      wListF = PF.dimap (realToFrac . F.rgetField @w) List.reverse FL.list
+      toListOfDoubles :: F.Record as -> [Double]
+      toListOfDoubles xs = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ realToFrac x) $ V.reifyConstraint @Real xs 
+      mListF = PF.dimap (toListOfDoubles . F.rcast) (List.concat . List.reverse) FL.list
+      (yList, mList, wList) = FL.fold ((,,) <$> yListF <*> mListF <*> wListF) dat
+  in (LA.matrix nCols mList, LA.vector yList, LA.vector wList) 
+
+
 -- explain y in terms of as
 leastSquaresByMinimization :: forall y as rs f. (Foldable f
                                                 , as F.⊆ rs
@@ -118,8 +142,51 @@ ordinaryLeastSquares :: forall y as rs f m .( Monad m
                      =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
 ordinaryLeastSquares withConstant dat = do
   let (mA, vB) = prepRegression @y @as dat
-      mA1 = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add bias dimension, that is, a constant, as in the b = y = mx + b
-  MR.ordinaryLS mA1 vB
+--      mA1 = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+  MR.ordinaryLS withConstant mA vB
+
+weightedLeastSquares :: forall y as w rs f m .( Monad m
+                                              , Foldable f
+                                              , as F.⊆ rs
+                                              , F.ElemOf rs y
+                                              , FA.RealField y
+                                              , F.ElemOf rs w
+                                              , FA.RealField w
+                                              , V.AllConstrained (FA.RealFieldOf rs) as
+                                              , V.RMap as
+                                              , V.RecordToList as
+                                              , V.ReifyConstraint Real F.ElField as
+                                              , V.NatToInt (V.RLength as))
+                     =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
+weightedLeastSquares withConstant dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+--      mA1 = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+  MR.weightedLS withConstant mA vB vW  
+
+-- special case when weights come from observations being population averages of different populations
+popWeightedLeastSquares :: forall y as w rs f m .( Monad m
+                                                 , Foldable f
+                                                 , as F.⊆ rs
+                                                 , F.ElemOf rs y
+                                                 , FA.RealField y
+                                                 , F.ElemOf rs w
+                                                 , FA.RealField w
+                                                 , V.AllConstrained (FA.RealFieldOf rs) as
+                                                 , V.RMap as
+                                                 , V.RecordToList as
+                                                 , V.ReifyConstraint Real F.ElField as
+                                                 , V.NatToInt (V.RLength as))
+                        =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
+popWeightedLeastSquares withConstant dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+  SL.log SL.Info $ "A:" <> (T.pack $ show mA)
+  SL.log SL.Info $ "b:" <> (T.pack $ show vB)
+  SL.log SL.Info $ "w:" <> (T.pack $ show vW)
+--  let mA1 = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+  let vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
+  MR.weightedLS withConstant mA vB vWpop  
+
+
   
 {-
 -- this is sort of ugly but I think it will work.  And it has a pretty narrow purpose

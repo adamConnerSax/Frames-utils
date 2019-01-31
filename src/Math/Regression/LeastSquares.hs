@@ -19,10 +19,10 @@ import           Data.Function              (on)
 import qualified Data.List                  as List
 import qualified Data.Profunctor            as PF
 import qualified Data.Text                  as T
-
+import qualified Data.Vector.Storable       as V
 import qualified System.PipesLogger         as SL
 
-import           Numeric.LinearAlgebra      (( #> ), (<#), (<.>))
+import           Numeric.LinearAlgebra      (( #> ), (<#), (<.>), (<\>))
 import qualified Numeric.LinearAlgebra      as LA
 import           Numeric.LinearAlgebra.Data (Matrix, R, Vector)
 import qualified Numeric.LinearAlgebra.Data as LA
@@ -45,17 +45,59 @@ import qualified Numeric.LinearAlgebra.Data as LA
 -- 2. Write simple TLS (via SVD)
 -- 3. Write a weighted TLL
 
+
 data RegressionResult a = RegressionResult { parameters :: Vector a, residuals :: Vector a } deriving (Show)
 
-ordinaryLS :: Monad m => Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
-ordinaryLS mA vB = do
+-- NB: Some of these may be inefficient. We know A'A is symmetric definite (could have 0 eigenvalue, right?) so there should be faster linear solvers
+-- than inversion
+
+ordinaryLS :: Monad m => Bool -> Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
+ordinaryLS withConstant mA vB = do
   -- check dimensions
-  let textSize = T.pack . show . LA.size
-  SL.log SL.Diagnostic $ "ordinaryLS called with dim(mA) =" <> textSize mA <> " and dim(mB)=" <> textSize vB
-  if (fst (LA.size mA) /= LA.size vB)
-    then SL.log SL.Error $ "A is " <> textSize mA <> " but b is length " <> textSize vB
-    else return ()
-  let mA' = LA.tr mA
-      vX = ((LA.inv (mA' LA.<> mA)) LA.<> mA') #> vB
-      vR = vB - (mA #> vX)
-  return $ RegressionResult vX vR
+  checkVectorMatrix "b" "A" vB mA  -- vB <> mA is legal, b has same length as A has rows
+  let mAwc = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+      vX = mAwc <\> vB
+      vU = vB - (mA #> vX) -- residuals
+  return $ RegressionResult vX vU
+
+weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RegressionResult R)
+weightedLS withConstant mA vB vW = do
+  checkEqualVectors "b" "w" vB vW
+  checkVectorMatrix "b" "A" vB mA
+  let mW = LA.diag vW
+      mAwc = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+      mWA = mW LA.<> mAwc
+      vX = mWA <\> (mW #> vB)
+      vU = vB - (mA #> vX)
+  return $ RegressionResult vX vU
+
+eickerHeteroscedasticityEstimator :: Monad m => Matrix R -> Vector R -> Vector R -> SL.Logger m (Matrix R)
+eickerHeteroscedasticityEstimator mA vB vB' = do
+  checkVectorMatrix "b" "A" vB mA
+  checkVectorMatrix "b'" "A" vB' mA
+  let u = vB - vB'
+      diagU = LA.diag $ V.zipWith (*) u u
+      mA' = LA.tr mA
+      mC = LA.inv (mA' LA.<> mA)
+  return $ mC LA.<> (mA' LA.<> diagU LA.<> mA) LA.<> mC
+
+textSize :: (LA.Container c e, Show (LA.IndexOf c)) => c e -> T.Text
+textSize = T.pack . show . LA.size
+
+checkEqualVectors :: Monad m => T.Text -> T.Text -> Vector R -> Vector R -> SL.Logger m ()
+checkEqualVectors nA nB vA vB =
+  if (LA.size vA == LA.size vB)
+  then return ()
+  else SL.log SL.Error $ "Unequal vector length. length(" <> nA <> ")=" <> textSize vA <> " and length(" <> nB <> ")=" <> textSize vB
+
+checkMatrixVector :: Monad m => T.Text -> T.Text -> Matrix R -> Vector R -> SL.Logger m ()
+checkMatrixVector nA nB mA vB =
+  if (snd (LA.size mA) == LA.size vB)
+  then return ()
+  else SL.log SL.Error $ "Bad matrix * vector lengths. dim(" <> nA <> ")=" <> textSize mA <> " and length(" <> nB <> ")=" <> textSize vB
+
+checkVectorMatrix :: Monad m => T.Text -> T.Text -> Vector R -> Matrix R -> SL.Logger m ()
+checkVectorMatrix nA nB vA mB =
+  if (LA.size vA == fst (LA.size mB))
+  then return ()
+  else SL.log SL.Error $ "Bad vector * matrix lengths. length(" <> nA <> ")=" <> textSize vA <> " and dim(" <> nB <> ")=" <> textSize mB
