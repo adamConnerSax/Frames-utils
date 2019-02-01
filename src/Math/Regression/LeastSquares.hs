@@ -50,6 +50,8 @@ data RegressionResult a = RegressionResult
                           {
                             parameters       :: Vector a
                           , meanSquaredError :: a
+                          , rSquared         :: Double
+                          , adjRSquared      :: Double
                           , covariances      :: Matrix a
 --                          , residuals :: Vector a
                           } deriving (Show)
@@ -57,29 +59,46 @@ data RegressionResult a = RegressionResult
 -- NB: Some of these may be inefficient. We know A'A is symmetric definite (could have 0 eigenvalue, right?) so there should be faster linear solvers
 -- than inversion
 
+goodnessOfFit :: Int -> Vector R -> Vector R -> (R, R)
+goodnessOfFit p vB vU =
+  let n = LA.size vB
+      meanB = LA.sumElements vB / (realToFrac $ LA.size vB)
+      ssTot = let x = LA.cmap (\y -> y - meanB) vB in x <.> x
+      ssRes = vU <.> vU
+      rSq = 1 - (ssRes/ssTot)
+      arSq = 1 - (1 - rSq)*(realToFrac $ (n - 1))/(realToFrac $ (n - p - 1))
+
+  in (rSq, arSq)
+
 ordinaryLS :: Monad m => Bool -> Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
 ordinaryLS withConstant mA vB = do
   -- check dimensions
   checkVectorMatrix "b" "A" vB mA  -- vB <> mA is legal, b has same length as A has rows
-  let mAwc = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+  let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
       vX = mAwc <\> vB
       vU = vB - (mA #> vX) -- residuals
-      mse = (vU <.> vU)/ (realToFrac $ LA.size vU)
+      mse = (vU <.> vU) / (realToFrac $ LA.size vU)
+      (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vB vU
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RegressionResult vX mse cov
+  return $ RegressionResult vX mse rSq aRSq cov
 
 weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RegressionResult R)
 weightedLS withConstant mA vB vW = do
   checkEqualVectors "b" "w" vB vW
   checkVectorMatrix "b" "A" vB mA
+  return $ RegressionResult vB 0 0 0 mA
   let mW = LA.diag vW
-      mAwc = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
+      vWB = mW #> vB
+      mAwc = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
       mWA = mW LA.<> mAwc
-      vX = mWA <\> (mW #> vB)
+      vX = mWA <\> vWB
       vU = vB - (mAwc #> vX)
-      mse = (vU <.> vU)/ (realToFrac $ LA.size vU)
+      vWU = mW #> vU
+      (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vWB vWU
+      mse = (vWU <.> vWU) / LA.sumElements vW
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RegressionResult vX mse cov
+  return $ RegressionResult vX mse rSq aRSq cov
+
 
 eickerHeteroscedasticityEstimator :: Monad m => Matrix R -> Vector R -> Vector R -> SL.Logger m (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
@@ -90,6 +109,14 @@ eickerHeteroscedasticityEstimator mA vB vB' = do
       mA' = LA.tr mA
       mC = LA.inv (mA' LA.<> mA)
   return $ mC LA.<> (mA' LA.<> diagU LA.<> mA) LA.<> mC
+
+
+addBiasCol :: Int -> Matrix R -> Matrix R
+addBiasCol rows mA =
+  let colList = (List.replicate rows 1)
+  in if LA.size mA == (0,0)
+     then LA.matrix 1 colList
+     else LA.col colList LA.||| mA
 
 textSize :: (LA.Container c e, Show (LA.IndexOf c)) => c e -> T.Text
 textSize = T.pack . show . LA.size
