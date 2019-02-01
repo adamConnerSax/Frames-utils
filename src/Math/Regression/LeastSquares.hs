@@ -46,7 +46,13 @@ import qualified Numeric.LinearAlgebra.Data as LA
 -- 3. Write a weighted TLL
 
 
-data RegressionResult a = RegressionResult { parameters :: Vector a, residuals :: Vector a } deriving (Show)
+data RegressionResult a = RegressionResult
+                          {
+                            parameters       :: Vector a
+                          , meanSquaredError :: a
+                          , covariances      :: Matrix a
+--                          , residuals :: Vector a
+                          } deriving (Show)
 
 -- NB: Some of these may be inefficient. We know A'A is symmetric definite (could have 0 eigenvalue, right?) so there should be faster linear solvers
 -- than inversion
@@ -58,7 +64,9 @@ ordinaryLS withConstant mA vB = do
   let mAwc = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
       vX = mAwc <\> vB
       vU = vB - (mA #> vX) -- residuals
-  return $ RegressionResult vX vU
+      mse = (vU <.> vU)/ (realToFrac $ LA.size vU)
+      cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
+  return $ RegressionResult vX mse cov
 
 weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RegressionResult R)
 weightedLS withConstant mA vB vW = do
@@ -68,8 +76,10 @@ weightedLS withConstant mA vB vW = do
       mAwc = if withConstant then (LA.col $ List.replicate (LA.size vB) 1.0) LA.||| mA else mA -- add a constant, e.g., the b in y = mx + b
       mWA = mW LA.<> mAwc
       vX = mWA <\> (mW #> vB)
-      vU = vB - (mA #> vX)
-  return $ RegressionResult vX vU
+      vU = vB - (mAwc #> vX)
+      mse = (vU <.> vU)/ (realToFrac $ LA.size vU)
+      cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
+  return $ RegressionResult vX mse cov
 
 eickerHeteroscedasticityEstimator :: Monad m => Matrix R -> Vector R -> Vector R -> SL.Logger m (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
