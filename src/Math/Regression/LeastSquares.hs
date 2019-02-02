@@ -72,10 +72,9 @@ goodnessOfFit p vB vU =
 
 ordinaryLS :: Monad m => Bool -> Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
 ordinaryLS withConstant mA vB = do
-  -- check dimensions
-  checkVectorMatrix "b" "A" vB mA  -- vB <> mA is legal, b has same length as A has rows
   let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
-      vX = mAwc <\> vB
+  checkVectorMatrix "b" "A" vB mAwc  -- vB <> mA is legal, b has same length as A has rows
+  let vX = mAwc <\> vB
       vU = vB - (mA #> vX) -- residuals
       mse = (vU <.> vU) / (realToFrac $ LA.size vU)
       (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vB vU
@@ -85,17 +84,38 @@ ordinaryLS withConstant mA vB = do
 weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RegressionResult R)
 weightedLS withConstant mA vB vW = do
   checkEqualVectors "b" "w" vB vW
-  checkVectorMatrix "b" "A" vB mA
-  return $ RegressionResult vB 0 0 0 mA
   let mW = LA.diag vW
       vWB = mW #> vB
       mAwc = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
-      mWA = mW LA.<> mAwc
+  checkVectorMatrix "b" "A" vB mAwc
+  let mWA = mW LA.<> mAwc
       vX = mWA <\> vWB
       vU = vB - (mAwc #> vX)
       vWU = mW #> vU
       (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vWB vWU
       mse = (vWU <.> vWU) / LA.sumElements vW
+      cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
+  return $ RegressionResult vX mse rSq aRSq cov
+
+totalLeastSquares :: Monad m =>  Bool -> Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
+totalLeastSquares withConstant mA vB = do
+  let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
+      p = snd $ LA.size mAwc
+  checkVectorMatrix "b" "Awc" vB mAwc
+  let mAB = (mAwc LA.||| LA.asColumn vB)
+      (sv, mV) = LA.rightSV mAB
+--      gSV = sv V.! 0
+--      tol = gSV * LA.eps
+      sV22 = mV LA.! p LA.! p
+      vV12 = List.head $ LA.toColumns $ mV LA.?? (LA.DropLast 1, LA.TakeLast 1)
+      vX = LA.scale (-1/sV22) vV12 -- this is the TLS solution.  But in a shifted basis.??
+      mV2 = mV LA.?? (LA.All, LA.TakeLast 1)
+      mABt = mAB LA.<> mV2 LA.<> (LA.tr mV2)
+      mAt = mABt LA.?? (LA.All, LA.DropLast 1)
+      vBfit = (mA + mAt) #> vX
+      vU = vB - vBfit
+      (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vB vU
+      mse = (vU <.> vU) / (realToFrac $ LA.size vU)
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   return $ RegressionResult vX mse rSq aRSq cov
 
