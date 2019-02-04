@@ -1,11 +1,11 @@
-cabal-version:       >=1.10
+cabal-version:       2.2.0
 
 name:                Frames-utils
 version:             0.1.0.0
 synopsis:            Useful frames functions
 -- description:
 -- bug-reports:
-license:             BSD3
+license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Adam Conner-Sax
 maintainer:          adam_conner_sax@yahoo.com
@@ -14,7 +14,19 @@ category:            Data
 extra-source-files:  CHANGELOG.md    
 Build-type: Simple
                      
+common deps
+  build-depends: base >= 4.11.1.0
+               , Frames
+               , foldl
+               , hmatrix
+               , random-fu
+               , random-source
+               , text
+               , vector
+               , vinyl >= 0.10.0.1
+
 library
+  import: deps      
   exposed-modules: Frames.Aggregations
                  , Frames.Transform
                  , Frames.ScatterMerge
@@ -28,27 +40,27 @@ library
                  , System.PipesLogger
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.11.1.0
-                     , containers
-                     , discrimination
-                     , foldl
-                     , foldl-statistics
-                     , groups
-                     , hmatrix
-                     , hmatrix-gsl
-                     , Frames
-                     , lens
-                     , mltool
-                     , mtl
-                     , pipes
-                     , profunctors
-                     , random-fu
-                     , random-source
-                     , text
-                     , time
-                     , vector
-                     , vinyl >= 0.10.0.1
-                     , hvega
+  build-depends:      containers
+                    , discrimination
+                    , foldl-statistics
+                    , groups
+                    , hmatrix-gsl
+                    , lens
+                    , mltool
+                    , mtl
+                    , pipes
+                    , profunctors
+                    , time
+                    , text
+                    , hvega
 
   hs-source-dirs:      src
   default-language:    Haskell2010
+
+test-suite test-frames-utils
+    import: deps       
+    type: exitcode-stdio-1.0
+    main-is: UnitTests.hs
+    hs-source-dirs: test
+    build-depends: Frames-utils
+                 , easytest

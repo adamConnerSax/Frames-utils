@@ -115,7 +115,7 @@ totalLeastSquares withConstant mA vB = do
       mAt = mABt LA.?? (LA.All, LA.DropLast 1)
       vBfit = (mA - mAt) #> vX
       vU = vB - vBfit
-      (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vB vU
+      (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vB vU --(vB - mA #> vX)
       mse = (vU <.> vU) / (realToFrac $ LA.size vU)
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   return $ RegressionResult vX mse rSq aRSq cov
