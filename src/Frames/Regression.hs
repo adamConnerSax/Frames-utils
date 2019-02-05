@@ -177,7 +177,7 @@ popWeightedLeastSquares :: forall y as w rs f m .( Monad m
                         =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
 popWeightedLeastSquares withConstant dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-  let vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
+      vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
   MR.weightedLS withConstant mA vB vWpop  
 
 
@@ -197,23 +197,80 @@ varWeightedLeastSquares :: forall y as w rs f m .( Monad m
                         =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
 varWeightedLeastSquares withConstant dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-  let vWpop = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
-  MR.weightedLS withConstant mA vB vWpop  
+      vWvar = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
+  MR.weightedLS withConstant mA vB vWvar  
 
 totalLeastSquares :: forall y as rs f m .( Monad m
-                                            , Foldable f
-                                            , as F.⊆ rs
-                                            , F.ElemOf rs y
-                                            , FA.RealField y
-                                            , V.AllConstrained (FA.RealFieldOf rs) as
-                                            , V.RMap as
-                                            , V.RecordToList as
-                                            , V.ReifyConstraint Real F.ElField as
-                                            , V.NatToInt (V.RLength as))
+                                           , Foldable f
+                                           , as F.⊆ rs
+                                           , F.ElemOf rs y
+                                           , FA.RealField y
+                                           , V.AllConstrained (FA.RealFieldOf rs) as
+                                           , V.RMap as
+                                           , V.RecordToList as
+                                           , V.ReifyConstraint Real F.ElField as
+                                           , V.NatToInt (V.RLength as))
                      =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
 totalLeastSquares withConstant dat = do
   let (mA, vB) = prepRegression @y @as dat
-  MR.totalLeastSquares withConstant mA vB
+  MR.totalLS withConstant mA vB
+
+
+weightedTLS :: forall y as w rs f m .( Monad m
+                                     , Foldable f
+                                     , as F.⊆ rs
+                                     , F.ElemOf rs y
+                                     , FA.RealField y
+                                     , F.ElemOf rs w
+                                     , FA.RealField w
+                                     , V.AllConstrained (FA.RealFieldOf rs) as
+                                     , V.RMap as
+                                     , V.RecordToList as
+                                     , V.ReifyConstraint Real F.ElField as
+                                     , V.NatToInt (V.RLength as))
+            =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
+weightedTLS withConstant dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+  MR.weightedTLS withConstant mA vB vW
+
+popWeightedTLS :: forall y as w rs f m .( Monad m
+                                        , Foldable f
+                                        , as F.⊆ rs
+                                        , F.ElemOf rs y
+                                        , FA.RealField y
+                                        , F.ElemOf rs w
+                                        , FA.RealField w
+                                        , V.AllConstrained (FA.RealFieldOf rs) as
+                                        , V.RMap as
+                                        , V.RecordToList as
+                                        , V.ReifyConstraint Real F.ElField as
+                                        , V.NatToInt (V.RLength as))
+               =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
+popWeightedTLS withConstant dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+      vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
+  MR.weightedTLS withConstant mA vB vWpop
+
+varWeightedTLS :: forall y as w rs f m .( Monad m
+                                        , Foldable f
+                                        , as F.⊆ rs
+                                        , F.ElemOf rs y
+                                        , FA.RealField y
+                                        , F.ElemOf rs w
+                                        , FA.RealField w                                        
+                                        , V.AllConstrained (FA.RealFieldOf rs) as
+                                        , V.RMap as
+                                        , V.RecordToList as
+                                        , V.ReifyConstraint Real F.ElField as
+                                        , V.NatToInt (V.RLength as))
+            =>  Bool -> f (F.Record rs) -> SL.Logger m (MR.RegressionResult Double)
+varWeightedTLS withConstant dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+      vWvar = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
+  MR.weightedTLS withConstant mA vB vWvar
+
+
+  
 
 
   

@@ -3,7 +3,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
+import qualified Control.Foldl                as FL
 import qualified Data.List                    as List
+import           Data.Maybe                   (fromMaybe)
 import qualified Data.Text                    as T
 import qualified Data.Vector.Storable         as V
 import qualified Data.Vinyl                   as V
@@ -28,7 +30,9 @@ suite = tests
   [
     scope "all.Regression" $ do
       testOLS
+      testWOLS
       testTLS
+      testWTLS
   ]
 
 logged = SL.runLoggerIO SL.logAll
@@ -36,85 +40,93 @@ logged = SL.runLoggerIO SL.logAll
 
 -- build some data for testing
 -- uniformly distributed measurements, normally distributed noise.  Separate noise amplitudes for xs and ys
-buildRegressable :: Int -> Double -> LA.Vector R -> Double -> Test (LA.Vector R, LA.Matrix R)
-buildRegressable nObs noiseObs coeffs noiseMeas = do
+-- also allow building heteroscedastic data
+buildRegressable :: [Double] -> Maybe (LA.Vector R) -> Double -> LA.Vector R -> Double -> IO (LA.Vector R, LA.Matrix R)
+buildRegressable variances offsetsM noiseObs coeffs noiseMeas = do
   -- generate random measurements
   let d = LA.size coeffs
-  xs0 <- io $ LA.rand nObs d
-  xNoise <- io $ LA.randn nObs d
-  let xs = xs0 + LA.scale noiseMeas xNoise
-  let ys0 = xs LA.<> LA.asColumn coeffs
-  yNoise <- io $ LA.randn nObs 1
-  let ys = ys0 + LA.scale noiseObs yNoise
+      nObs = List.length variances
+      xsO = LA.asColumn (LA.fromList (List.replicate nObs 1)) LA.<> LA.asRow (fromMaybe (LA.fromList $ List.replicate d 0) offsetsM)
+  xs0 <- LA.rand nObs d
+  xNoise <- LA.randn nObs d
+  let xs = xs0 + xsO + LA.scale noiseMeas xNoise
+  let ys0 = (xs0 + xsO) LA.<> LA.asColumn coeffs
+  yNoise <- fmap (List.head . LA.toColumns) (LA.randn nObs 1)
+  let ys = ys0 + LA.asColumn (LA.scale noiseObs (V.zipWith (*) yNoise (LA.cmap sqrt (LA.fromList variances))))
   return (List.head (LA.toColumns ys), xs)
+
+unweighted :: Int -> [Double]
+unweighted n = List.replicate n (1.0)
+
+coneWeighted :: Int -> Double -> [Double]
+coneWeighted n increment =
+  let w0 = [1 + (realToFrac i) * increment | i <- [0..n]]
+      s = realToFrac n/FL.fold FL.sum w0
+  in fmap (*s) w0
+
+showText :: Show a => a -> T.Text
+showText = T.pack . show
+
+errR2 res = let r2 = LS.rSquared res in (r2 <= 1 && r2 > 0.0)
+coeffs :: LA.Vector R = LA.fromList [1.0, 2.2, 0.3]
+offsets :: LA.Vector R = LA.fromList [0,1,0]
+vars = coneWeighted 100 0.1
+varListToWeights = LA.cmap (\x -> 1/sqrt x) . LA.fromList
+wgts = varListToWeights vars
+
+testRegression :: Double -> Double -> Bool -> Bool -> (Matrix R -> Vector R -> Vector R -> SL.Logger Test (LS.RegressionResult R))  -> Test ()
+testRegression yNoise xNoise weighted offset f = do
+  let scopeT = "Vy=" <> showText yNoise <> "; Vx=" <> showText xNoise <> (if weighted then "; cone weights" else "") <> (if offset then "; w/offsets" else "")
+      vars = if weighted then coneWeighted 100 0.1 else unweighted 100
+      wgts = varListToWeights vars
+      offsetM = if offset then (Just offsets) else Nothing
+  logged $ do
+    (ys, xs) <- SL.liftLog $ io $ buildRegressable vars offsetM yNoise coeffs xNoise
+    result <- f xs ys wgts
+    SL.liftLog $ note $ scopeT <> "\n" <> showText result
+    SL.liftLog $ ok -- expect $ errR2 result
+
 
 testOLS :: Test ()
 testOLS =  scope "OLS" $ do
-  let errR2 res = let r2 = LS.rSquared res in (r2 <= 1 && r2 > 0.8)
-      coeffs :: LA.Vector R = LA.fromList [1.0, 2.2, 0.3]
-  scope "No noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0 coeffs 0
-    result <- LS.ordinaryLS False xs ys
-    SL.log SL.Info $ "OLS (0 noise)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.01,0) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.01 coeffs 0
-    result <- LS.ordinaryLS False xs ys
-    SL.log SL.Info $ "OLS (1% noise in ys)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.1,0) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.1 coeffs 0
-    result <- LS.ordinaryLS False xs ys
-    SL.log SL.Info $ "OLS (10% noise in ys)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.01,0.01) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.01 coeffs 0.01
-    result <- LS.ordinaryLS False xs ys
-    SL.log SL.Info $ "OLS (1% noise in ys, 1% noise in xs)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.1,0.1) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.1 coeffs 0.1
-    result <- LS.ordinaryLS False xs ys
-    SL.log SL.Info $ "OLS (10% noise in ys, 10% noise in xs)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.3,0.3) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.3 coeffs 0.3
-    result <- LS.ordinaryLS False xs ys
-    SL.log SL.Info $ "OLS (30% noise in ys, 30% noise in xs)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
+  note "Ordinary Least Squares"
+  testRegression 0 0 False False (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0.1 0 False False (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0.5 0 False False (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0.1 0 False True (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0.3 0.3 False False (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0.3 0 True False (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0.3 0.3 True False (\x y _ -> LS.ordinaryLS False x y)
+
+testWOLS :: Test ()
+testWOLS =  scope "WOLS" $ do
+  note "Weighted Ordinary Least Squares"
+  testRegression 0 0 True False (\x y w -> LS.weightedLS False x y w)
+  testRegression 0.1 0 True False (\x y w -> LS.weightedLS False x y w)
+  testRegression 0.1 0 False False (\x y w -> LS.weightedLS False x y w)
+  testRegression 0.3 0 True False (\x y w -> LS.weightedLS False x y w)
+  testRegression 0.1 0.1 True False (\x y w -> LS.weightedLS False x y w)
+  testRegression 0.1 0.1 True True (\x y w -> LS.weightedLS False x y w)
+  testRegression 0.3 0.3 True False (\x y w -> LS.weightedLS False x y w)
 
 testTLS :: Test ()
 testTLS = scope "TLS" $ do
-  let errR2 res = let r2 = LS.rSquared res in (r2 <= 1 && r2 > 0.8)
-      coeffs :: LA.Vector R = LA.fromList [1.0, 2.2, 0.3]
-  scope "No noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0 coeffs 0
-    result <- LS.totalLeastSquares False xs ys
-    SL.log SL.Info $ "TLS (0 noise)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "0.01 Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.01 coeffs 0
-    result <- LS.totalLeastSquares False xs ys
-    SL.log SL.Info $ "TLS (1% noise in ys)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "0.1 Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.1 coeffs 0
-    result <- LS.totalLeastSquares False xs ys
-    SL.log SL.Info $ "TLS (10% noise in ys)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.01,0.01) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.01 coeffs 0.01
-    result <- LS.totalLeastSquares False xs ys
-    SL.log SL.Info $ "TLS (1% noise in ys, 1% noise in xs)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.1,0.1) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.1 coeffs 0.1
-    result <- LS.totalLeastSquares False xs ys
-    SL.log SL.Info $ "TLS (10% noise in ys, 10% noise in xs)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
-  scope "(0.3,0.3) (obs,meas) Noise" $ logged $ do
-    (ys, xs) <- SL.liftLog $  buildRegressable 100 0.3 coeffs 0.3
-    result <- LS.totalLeastSquares False xs ys
-    SL.log SL.Info $ "TLS (30% noise in ys, 30% noise in xs)\n" <> (T.pack $ show result)
-    SL.liftLog $ expect $ errR2 result
+  note "Total Least Squares"
+  testRegression 0 0 False False (\x y _ -> LS.totalLS False x y)
+  testRegression 0.1 0 False False (\x y _ -> LS.totalLS False x y)
+  testRegression 0.5 0 False False (\x y _ -> LS.totalLS False x y)
+  testRegression 0.1 0 False True (\x y _ -> LS.totalLS False x y)
+  testRegression 0.3 0.3 False False (\x y _ -> LS.totalLS False x y)
+  testRegression 0.3 0 True False (\x y _ -> LS.totalLS False x y)
+  testRegression 0.3 0.3 True False (\x y _ -> LS.totalLS False x y)
 
+testWTLS :: Test ()
+testWTLS =  scope "WTLS" $ do
+  note "Weighted Total Least Squares"
+  testRegression 0 0 True False (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0.1 0 True False (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0.1 0 False False (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0.3 0 True False (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0.1 0.1 True False (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0.1 0.1 True True (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0.3 0.3 True False (\x y w -> LS.weightedTLS False x y w)

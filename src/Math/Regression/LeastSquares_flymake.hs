@@ -97,8 +97,8 @@ weightedLS withConstant mA vB vW = do
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   return $ RegressionResult vX mse rSq aRSq cov
 
-totalLS :: Monad m =>  Bool -> Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
-totalLS withConstant mA vB = do
+totalLeastSquares :: Monad m =>  Bool -> Matrix R -> Vector R -> SL.Logger m (RegressionResult R)
+totalLeastSquares withConstant mA vB = do
   let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
       p = snd $ LA.size mAwc
   checkVectorMatrix "b" "Awc" vB mAwc
@@ -107,7 +107,8 @@ totalLS withConstant mA vB = do
 --      gSV = sv V.! 0
 --      tol = gSV * LA.eps
       sV22 = mV' LA.! p LA.! p
-      vV12 = List.head $ LA.toColumns $ LA.subMatrix (0,p) (p,1) mV' --LA.?? (LA.DropLast 1, LA.TakeLast 1)
+  SL.log SL.Info $ "v22=" <> (T.pack $ show sV22)
+  let vV12 = List.head $ LA.toColumns $ LA.subMatrix (0,p) (p,1) mV' --LA.?? (LA.DropLast 1, LA.TakeLast 1)
       vX = LA.scale (-1/sV22) vV12 -- this is the TLS solution.  But in a shifted basis.??
       mV2 = mV' LA.?? (LA.All, LA.TakeLast 1)
       mABt = mAB LA.<> mV2 LA.<> (LA.tr mV2)
@@ -116,32 +117,6 @@ totalLS withConstant mA vB = do
       vU = vB - vBfit
       (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vB vU --(vB - mA #> vX)
       mse = (vU <.> vU) / (realToFrac $ LA.size vU)
-      cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RegressionResult vX mse rSq aRSq cov
-
-weightedTLS :: Monad m =>  Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RegressionResult R)
-weightedTLS withConstant mA vB vW = do
-  checkEqualVectors "b" "w" vB vW
-  let mW = LA.diag vW
-      vWB = mW #> vB
-      mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
-      p = snd $ LA.size mAwc
-  checkVectorMatrix "b" "Awc" vB mAwc
-  let mWA = mW LA.<> mAwc
-      mWAB = (mWA LA.||| LA.asColumn vWB)
-      (sv, mV') = LA.rightSV mWAB
---      gSV = sv V.! 0
---      tol = gSV * LA.eps
-      sV22 = mV' LA.! p LA.! p
-      vV12 = List.head $ LA.toColumns $ LA.subMatrix (0,p) (p,1) mV' --LA.?? (LA.DropLast 1, LA.TakeLast 1)
-      vX = LA.scale (-1/sV22) vV12 -- this is the WTLS solution.  But in a shifted basis.??
-      mV2 = mV' LA.?? (LA.All, LA.TakeLast 1)
-      mWABt = mWAB LA.<> mV2 LA.<> (LA.tr mV2)
-      mWAt = mWABt LA.?? (LA.All, LA.DropLast 1)
-      vBfit = (mWA - mWAt) #> vX
-      vWU = vWB - vBfit
-      (rSq, aRSq) = goodnessOfFit (snd $ LA.size mA) vWB vWU --(vB - mA #> vX)
-      mse = (vWU <.> vWU) / LA.sumElements vW
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   return $ RegressionResult vX mse rSq aRSq cov
 
