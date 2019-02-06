@@ -86,47 +86,52 @@ testRegression yNoise xNoise weighted offset f = do
     SL.liftLog $ note $ scopeT <> "\n" <> showText result
     SL.liftLog $ ok -- expect $ errR2 result
 
+const3 f x y z = f x y
 
 testOLS :: Test ()
 testOLS =  scope "OLS" $ do
+  let regress xs ys ws = LS.ordinaryLS False xs ys
   note "Ordinary Least Squares"
-  testRegression 0 0 False False (\x y _ -> LS.ordinaryLS False x y)
-  testRegression 0.1 0 False False (\x y _ -> LS.ordinaryLS False x y)
-  testRegression 0.5 0 False False (\x y _ -> LS.ordinaryLS False x y)
-  testRegression 0.1 0 False True (\x y _ -> LS.ordinaryLS False x y)
-  testRegression 0.3 0.3 False False (\x y _ -> LS.ordinaryLS False x y)
-  testRegression 0.3 0 True False (\x y _ -> LS.ordinaryLS False x y)
-  testRegression 0.3 0.3 True False (\x y _ -> LS.ordinaryLS False x y)
+  testRegression 0 0 False False regress
+  testRegression 0.1 0 False False regress
+  testRegression 0.5 0 False False regress
+  testRegression 0.1 0 False True regress
+  testRegression 0.3 0.3 False False regress
+  testRegression 0.3 0 True False regress
+  testRegression 0.3 0.3 True False regress
 
 testWOLS :: Test ()
 testWOLS =  scope "WOLS" $ do
+  let regress = LS.weightedLS False
   note "Weighted Ordinary Least Squares"
-  testRegression 0 0 True False (\x y w -> LS.weightedLS False x y w)
-  testRegression 0.1 0 True False (\x y w -> LS.weightedLS False x y w)
-  testRegression 0.1 0 False False (\x y w -> LS.weightedLS False x y w)
-  testRegression 0.3 0 True False (\x y w -> LS.weightedLS False x y w)
-  testRegression 0.1 0.1 True False (\x y w -> LS.weightedLS False x y w)
-  testRegression 0.1 0.1 True True (\x y w -> LS.weightedLS False x y w)
-  testRegression 0.3 0.3 True False (\x y w -> LS.weightedLS False x y w)
+  testRegression 0 0 True False regress
+  testRegression 0.1 0 True False regress
+  testRegression 0.1 0 False False regress
+  testRegression 0.3 0 True False regress
+  testRegression 0.1 0.1 True False regress
+  testRegression 0.1 0.1 True True regress
+  testRegression 0.3 0.3 True False regress
 
 testTLS :: Test ()
 testTLS = scope "TLS" $ do
+  let regress xs ys ws = LS.totalLS False xs ys
   note "Total Least Squares"
-  testRegression 0 0 False False (\x y _ -> LS.totalLS False x y)
-  testRegression 0.1 0 False False (\x y _ -> LS.totalLS False x y)
-  testRegression 0.5 0 False False (\x y _ -> LS.totalLS False x y)
-  testRegression 0.1 0 False True (\x y _ -> LS.totalLS False x y)
-  testRegression 0.3 0.3 False False (\x y _ -> LS.totalLS False x y)
-  testRegression 0.3 0 True False (\x y _ -> LS.totalLS False x y)
-  testRegression 0.3 0.3 True False (\x y _ -> LS.totalLS False x y)
+  testRegression 0 0 False False regress
+  testRegression 0.1 0 False False regress
+  testRegression 0.5 0 False False regress
+  testRegression 0.1 0 False True regress
+  testRegression 0.3 0.3 False False regress
+  testRegression 0.3 0 True False regress
+  testRegression 0.3 0.3 True False regress
 
 testWTLS :: Test ()
 testWTLS =  scope "WTLS" $ do
+  let regress = LS.weightedTLS False
   note "Weighted Total Least Squares"
-  testRegression 0 0 True False (\x y w -> LS.weightedTLS False x y w)
-  testRegression 0.1 0 True False (\x y w -> LS.weightedTLS False x y w)
-  testRegression 0.1 0 False False (\x y w -> LS.weightedTLS False x y w)
-  testRegression 0.3 0 True False (\x y w -> LS.weightedTLS False x y w)
-  testRegression 0.1 0.1 True False (\x y w -> LS.weightedTLS False x y w)
-  testRegression 0.1 0.1 True True (\x y w -> LS.weightedTLS False x y w)
-  testRegression 0.3 0.3 True False (\x y w -> LS.weightedTLS False x y w)
+  testRegression 0 0 True False regress
+  testRegression 0.1 0 True False regress
+  testRegression 0.1 0 False False regress
+  testRegression 0.3 0 True False regress
+  testRegression 0.1 0.1 True False regress
+  testRegression 0.1 0.1 True True regress
+  testRegression 0.3 0.3 True False regress

@@ -35,17 +35,20 @@ library
                  , Frames.MaybeUtils
                  , Frames.VegaLite
                  , Frames.VegaLiteTemplates
+                 , Frames.Table
                  , Math.Rescale
                  , Math.Regression.LeastSquares
                  , System.PipesLogger
   -- other-modules:
   -- other-extensions:
   build-depends:      containers
+                    , colonnade
                     , discrimination
                     , foldl-statistics
                     , groups
                     , hmatrix-gsl
                     , lens
+                    , lucid-colonnade
                     , mltool
                     , mtl
                     , pipes
