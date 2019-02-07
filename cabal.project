@@ -1,0 +1,9 @@
+packages: . 
+jobs: 4
+with-compiler: /usr/local/bin/ghc
+
+source-repository-package
+    type: git
+    location: https://github.com/adamConnerSax/hvega
+    tag: c51788f5028e2d1f63149242b76c612cd0860f36
+    subdir: hvega

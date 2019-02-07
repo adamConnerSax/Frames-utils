@@ -1,12 +1,12 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Frames.Table where
 
@@ -45,13 +45,6 @@ instance (V.KnownField r, rs F.⊆ (r : rs), Show (V.Snd r), RecordColonnade rs)
 textTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> T.Text
 textTable = T.pack . C.ascii (fmap T.unpack recColonnade)
 
-{-
-recordToColonnade :: ( V.RFoldMap rs
-                     , F.AllConstrained V.KnownField rs
-                     {-     , V.ReifyConstraint Show F.ElField rs-})
-                    => F.Record rs -> C.Colonnade C.Headed (F.Record rs) T.Text
-recordToColonnade = V.rfoldMap (const recordFieldToColonnade)
--}
 
 
 
