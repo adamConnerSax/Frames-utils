@@ -44,7 +44,7 @@ recordToVLDataRow' xs = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Co
 recordToVLDataRow :: (V.RMap rs, V.ReifyConstraint ToVLDataValue F.ElField rs, V.RecordToList rs) => F.Record rs -> [GV.DataRow]
 recordToVLDataRow r = GV.dataRow (recordToVLDataRow' r) []
 
-recordsToVLData :: (as V.⊆ rs, V.RMap as, V.ReifyConstraint ToVLDataValue F.ElField as, V.RecordToList as, Foldable f)
+recordsToVLData :: ({-as V.⊆ rs,-} V.RMap as, V.ReifyConstraint ToVLDataValue F.ElField as, V.RecordToList as, Foldable f)
                     => (F.Record rs -> F.Record as) -> f (F.Record rs) -> GV.Data
 recordsToVLData transform xs = GV.dataFromRows [] $ List.concat $ fmap (recordToVLDataRow . transform) $ FL.fold FL.list xs
 
