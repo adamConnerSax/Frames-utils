@@ -37,6 +37,8 @@ library
                  , Frames.VegaLiteTemplates
                  , Frames.Table
                  , Math.Rescale
+                 , Math.HMatrixUtils
+                 , Math.Regression.Regression
                  , Math.Regression.LeastSquares
                  , System.PipesLogger
   -- other-modules:
@@ -53,6 +55,7 @@ library
                     , mtl
                     , pipes
                     , profunctors
+                    , statistics
                     , time
                     , text
                     , hvega

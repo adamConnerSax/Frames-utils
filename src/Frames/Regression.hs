@@ -22,7 +22,9 @@ module Frames.Regression where
 
 import qualified Frames.Aggregations as FA
 import qualified Frames.Transform as FT
+import qualified Frames.VegaLite as FV
 import qualified Math.Rescale as MR
+import qualified Math.Regression.Regression as MR
 import qualified Math.Regression.LeastSquares as MR
 import qualified System.PipesLogger as SL
 
@@ -110,6 +112,14 @@ prepWeightedRegression dat =
       (yList, mList, wList) = FL.fold ((,,) <$> yListF <*> mListF <*> wListF) dat
   in (LA.matrix nCols mList, LA.vector yList, LA.vector wList) 
 
+
+prettyPrintRegressionResult :: forall y as. (F.ColumnHeaders '[y]
+                                            ,F.ColumnHeaders as)
+  => MR.RegressionResult Double -> Double -> T.Text
+prettyPrintRegressionResult res ci = 
+  let yName = FV.colName @y
+      xNames = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
+  in MR.prettyPrintRegressionResult yName xNames res ci
 
 -- explain y in terms of as
 leastSquaresByMinimization :: forall y as rs f. (Foldable f

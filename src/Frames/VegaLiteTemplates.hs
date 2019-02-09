@@ -17,7 +17,7 @@ module Frames.VegaLiteTemplates
 
 import qualified Frames.VegaLite as FV
 import qualified Frames.Transform as FT
-import           Math.Regression.LeastSquares (RegressionResult (..))
+import           Math.Regression.Regression (RegressionResult (..))
 
 import           Data.Text              (Text)
 import qualified Data.Text              as T

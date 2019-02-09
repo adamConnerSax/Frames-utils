@@ -21,6 +21,8 @@ import           Control.Monad
 import           EasyTest
 
 import qualified Math.Regression.LeastSquares as LS
+import qualified Math.Regression.Regression   as RE
+
 import qualified System.PipesLogger           as SL
 
 main = runOnly "all" suite
@@ -67,14 +69,14 @@ coneWeighted n increment =
 showText :: Show a => a -> T.Text
 showText = T.pack . show
 
-errR2 res = let r2 = LS.rSquared res in (r2 <= 1 && r2 > 0.0)
+errR2 res = let r2 = RE.rSquared res in (r2 <= 1 && r2 > 0.0)
 coeffs :: LA.Vector R = LA.fromList [1.0, 2.2, 0.3]
 offsets :: LA.Vector R = LA.fromList [0,1,0]
 vars = coneWeighted 100 0.1
 varListToWeights = LA.cmap (\x -> 1/sqrt x) . LA.fromList
 wgts = varListToWeights vars
 
-testRegression :: Double -> Double -> Bool -> Bool -> (Matrix R -> Vector R -> Vector R -> SL.Logger Test (LS.RegressionResult R))  -> Test ()
+testRegression :: Double -> Double -> Bool -> Bool -> (Matrix R -> Vector R -> Vector R -> SL.Logger Test (RE.RegressionResult R)) -> Test ()
 testRegression yNoise xNoise weighted offset f = do
   let scopeT = "Vy=" <> showText yNoise <> "; Vx=" <> showText xNoise <> (if weighted then "; cone weights" else "") <> (if offset then "; w/offsets" else "")
       vars = if weighted then coneWeighted 100 0.1 else unweighted 100
@@ -83,7 +85,7 @@ testRegression yNoise xNoise weighted offset f = do
   logged $ do
     (ys, xs) <- SL.liftLog $ io $ buildRegressable vars offsetM yNoise coeffs xNoise
     result <- f xs ys wgts
-    SL.liftLog $ note $ scopeT <> "\n" <> showText result
+    SL.liftLog $ note $ scopeT <> "\n" <> RE.prettyPrintRegressionResult "y" ["x1","x2","x3"] result 0.95
     SL.liftLog $ ok -- expect $ errR2 result
 
 const3 f x y z = f x y
