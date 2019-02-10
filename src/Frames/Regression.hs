@@ -28,6 +28,7 @@ import qualified Math.Regression.Regression as MR
 import qualified Math.Regression.LeastSquares as MR
 import qualified System.PipesLogger as SL
 
+import qualified Colonnade                      as C
 import qualified Control.Foldl        as FL
 import           Control.Lens         ((^.))
 import qualified Control.Lens         as L
@@ -115,11 +116,24 @@ prepWeightedRegression dat =
 
 prettyPrintRegressionResult :: forall y as. (F.ColumnHeaders '[y]
                                             ,F.ColumnHeaders as)
-  => MR.RegressionResult Double -> Double -> T.Text
-prettyPrintRegressionResult res ci = 
+  => (T.Text -> T.Text) -> MR.RegressionResult Double -> Double -> T.Text
+prettyPrintRegressionResult headerF res ci = 
   let yName = FV.colName @y
       xNames = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
-  in MR.prettyPrintRegressionResult yName xNames res ci
+  in MR.prettyPrintRegressionResult (headerF yName) xNames res ci
+
+prettyPrintRegressionResults :: forall y as ks f. ( F.ColumnHeaders '[y]
+                                                  , F.ColumnHeaders as
+                                                  , V.ReifyConstraint Show F.ElField ks
+                                                  , V.RecordToList ks
+                                                  , V.RMap ks
+                                                  , Foldable f)
+  => f (F.Record ks, MR.RegressionResult R) -> R -> T.Text
+prettyPrintRegressionResults keyed ci =
+  let keyValuesAsText rks = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ T.pack $ show x) $ V.reifyConstraint @Show rks
+      namedKeys rks = T.intercalate "; " $ keyValuesAsText rks
+      headerF keyRec yName = "Explaining " <> yName <> " (" <> namedKeys keyRec <> ")"     
+  in FL.fold (FL.Fold (\t (rk,res) -> t <> prettyPrintRegressionResult @y @as (headerF rk) res ci) "\n" id) keyed
 
 -- explain y in terms of as
 leastSquaresByMinimization :: forall y as rs f. (Foldable f

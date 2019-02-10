@@ -51,8 +51,8 @@ namedEstimates pNames res ciPct =
 
 namedEstimatesColonnade :: R -> C.Colonnade C.Headed (NamedEstimate R) T.Text
 namedEstimatesColonnade  ci = C.headed "parameter" regressorName
-                           <> C.headed "estimate" (T.pack . TP.printf "%.2f" . regressorEstimate)
-                           <> C.headed ((T.pack $ TP.printf "%.0f" (100 * ci)) <> "% interval") (T.pack . TP.printf "%.2f" . regressorCI)
+                           <> C.headed "estimate" (T.pack . TP.printf "%4.3f" . regressorEstimate)
+                           <> C.headed ((T.pack $ TP.printf "%.0f" (100 * ci)) <> "% interval") (T.pack . TP.printf "%4.3f" . regressorCI)
 
 namedSummaryStats :: RegressionResult R -> [(T.Text, R)]
 namedSummaryStats r =
@@ -63,14 +63,13 @@ namedSummaryStats r =
   ]
 
 namedSummaryStatsColonnade :: C.Colonnade C.Headed (T.Text,Double) T.Text
-namedSummaryStatsColonnade  = C.headed "Summary Stat." fst <> C.headed "Value" (T.pack . TP.printf "%.2f" . snd)
+namedSummaryStatsColonnade  = C.headed "Summary Stat." fst <> C.headed "Value" (T.pack . TP.printf "%.2g" . snd)
 
 prettyPrintRegressionResult :: T.Text -> [T.Text] -> RegressionResult R -> R -> T.Text
-prettyPrintRegressionResult yName xNames r ci =
-  let header = "Explaining " <> yName <> ":\n"
-      nEsts = namedEstimates xNames r ci
+prettyPrintRegressionResult header xNames r ci =
+  let nEsts = namedEstimates xNames r ci
       nSS = namedSummaryStats r
-  in header <>
+  in header <> "\n" <>
      (T.pack $ C.ascii (fmap T.unpack $ namedEstimatesColonnade ci) nEsts)
      <> (T.pack $ C.ascii (fmap T.unpack namedSummaryStatsColonnade) nSS)
 
