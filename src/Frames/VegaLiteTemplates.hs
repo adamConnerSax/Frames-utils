@@ -18,6 +18,7 @@ module Frames.VegaLiteTemplates
 
 import qualified Frames.VegaLite as FV
 import qualified Frames.Transform as FT
+import qualified Frames.Regression as FR
 import qualified Math.Regression.Regression as RE 
 
 import           Data.Text              (Text)
@@ -50,8 +51,7 @@ import Text.Printf (printf)
 regressionCoefficientPlot :: T.Text -> [T.Text] -> RE.RegressionResult Double -> Double -> GV.VegaLite
 regressionCoefficientPlot title names r ci = regressionCoefficientPlotFlex False id title names (V.Identity ("",r)) ci
 
-regressionCoefficientPlotMany :: forall k f. ( Show k
-                                              , Foldable f)
+regressionCoefficientPlotMany :: Foldable f
                               => (k -> T.Text) -> T.Text -> [T.Text] -> f (k, RE.RegressionResult Double) -> Double -> GV.VegaLite
 regressionCoefficientPlotMany = regressionCoefficientPlotFlex True 
 
@@ -88,6 +88,20 @@ regressionCoefficientPlotFlex haveLegend printKey title names results ci =
         ]
   in vl 
 
+-- 
+{-
+class Frame2DRegressionScatter f rs a where
+  regressionResultToFit :: a -> T.Text -> FitToPlot rs
+  frame2DRegressionScatter :: T.Text -> T.Text -> a -> f (F.Record rs) -> GV.VegaLite
+
+instance (Foldable f, F.ElemOf rs x, F.ElemOf rs y) => Frame2DRegressionScatter (FR.FrameRegressionResult y 'True [x] FR.Unweighted) where
+  regressionResultToFit frr fitName rs =
+    let coeffs = MR.parameterEstimates $ FR.regressionResult $ frr
+        (b, bC) = 
+  frame2DRegressionScatter title fitname frr frame =
+    let errorF = const 0
+        fitF = FitToPlot fitName (\x ->
+-}
 --
 type YError = "yError" F.:-> Double
 type YFit = "yFit" F.:-> Double

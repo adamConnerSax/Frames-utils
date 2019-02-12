@@ -59,6 +59,7 @@ library
                     , time
                     , text
                     , hvega
+                    , void
 
   hs-source-dirs:      src
   default-language:    Haskell2010
