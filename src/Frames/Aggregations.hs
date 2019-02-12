@@ -18,8 +18,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Aggregations
   (
-    RescaleType (..)
-  , FType
+    FType
   , DblX
   , DblY
   , goodDataCount
@@ -33,14 +32,11 @@ module Frames.Aggregations
   , aggregateF
   , aggregateFsM
   , aggregateFs
-  , transformEachM
-  , transformEach
-  , rescale
-  , ScaleAndUnscale(..)
-  , scaleAndUnscale
-  , weightedScaleAndUnscale
-  , DataField
-  , DataFieldOf
+  , aggregateAndAnalyzeEachM
+  , aggregateAndAnalyzeEachM'
+  , aggregateAndAnalyzeEach
+  , RealField
+  , RealFieldOf
   , TwoColData
   , ThreeColData
   , ThreeDTransformable
@@ -82,7 +78,7 @@ import           Control.Arrow (second)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
-import           GHC.TypeLits (KnownSymbol)
+import           GHC.TypeLits (Symbol,KnownSymbol)
 import           Data.Random.Source.PureMT as R
 import           Data.Random as R
 import           Data.Function (on)
@@ -183,76 +179,6 @@ reshapeRowSimple _ classifiers newDataF r =
   let ids = F.rcast r :: F.Record ss
   in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
 
--- We use a GADT here so that each constructor can carry the proofs of numerical type.  E.g., We don't want RescaleNone to require RealFloat. 
-data RescaleType a where
-  RescaleNone :: RescaleType a
-  RescaleMean :: RealFrac a => Double -> RescaleType a
-  RescaleMedian :: (Ord a, Real a) => Double -> RescaleType a
-  RescaleNormalize :: RealFloat a => Double -> RescaleType a
-  RescaleGiven :: (a, Double) -> RescaleType a
-
-rescale :: forall a. Num a  => RescaleType a -> FL.Fold a (a, Double)
-rescale RescaleNone = pure (0,1)
-rescale (RescaleGiven x) = pure x
-rescale (RescaleMean s) = (,) <$> pure 0 <*> (fmap ((/s) . realToFrac) FL.mean)
-rescale (RescaleNormalize s) =
-  let folds = (,,) <$> FL.mean <*> FL.std <*> FL.length
-      sc (_,sd,n) = if n == 1 then 1 else realToFrac sd
-      g f@(m,_,_) = (realToFrac m, (sc f)/s)
-  in  g <$> folds
-rescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . listToMedian) FL.list) where
-  listToMedian unsorted =
-    let l = List.sort unsorted
-        n = List.length l
-    in case n of
-      0 -> 1
-      _ -> let m = n `div` 2 in if (odd n) then realToFrac (l !! m) else realToFrac (l List.!! m + l List.!! (m - 1))/2.0
-
-
-wgt :: (Real a, Real w) => (a , w) -> Double
-wgt  (x,y) = realToFrac x * realToFrac y
-
-weightedRescale :: forall a w. (Real a, Real w)  => RescaleType a -> FL.Fold (a,w) (a, Double)
-weightedRescale RescaleNone = pure (0,1)
-weightedRescale (RescaleGiven x) = pure x
-weightedRescale (RescaleMean s) =
-  let folds = (,) <$> PF.lmap wgt FL.mean <*> PF.lmap snd FL.sum
-      f (wm, tw) = (0, wm/(s * realToFrac tw))
-  in f <$> folds 
-weightedRescale (RescaleNormalize s) =
-  let folds = (,,,) <$> PF.lmap wgt FL.mean <*> PF.lmap wgt FL.std <*> PF.lmap snd FL.sum <*> FL.length
-      weightedMean x n tw =realToFrac n * realToFrac x/realToFrac tw
-      weightedSD sd n tw = if n == 1 then 1 else sqrt (realToFrac n) * sd/realToFrac tw
-      f (wm, ws, tw, n) = (weightedMean wm n tw, (weightedSD ws n tw)/s)
-  in f <$> folds
-weightedRescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . realToFrac . listToMedian) FL.list) where
-  listToMedian :: [(a,w)] -> a
-  listToMedian unsorted =
-    let l = List.sortBy (compare `on` fst) unsorted
-        tw = FL.fold (PF.lmap snd FL.sum) l
-    in case (List.length l) of
-      0 -> 1
-      _ -> go 0 l where
-        mw = (realToFrac tw)/2
-        go :: w -> [(a,w)] -> a
-        go _ [] = 0 -- this shouldn't happen
-        go wgtSoFar ((a,w) : was) = let wgtSoFar' = wgtSoFar + w in if realToFrac wgtSoFar' > mw then a else go wgtSoFar' was
-        
-data ScaleAndUnscale a = ScaleAndUnscale { from :: (a -> Double), backTo :: (Double -> a) }
-
-scaleAndUnscaleHelper :: Real a => (Double -> a) -> ((a, Double), (a,Double)) -> ScaleAndUnscale a
-scaleAndUnscaleHelper toA s = ScaleAndUnscale (csF s) (osF s) where
-  csF ((csShift,csScale),_) a = realToFrac (a - csShift)/csScale
-  uncsF ((csShift, csScale),_) x = (x * csScale) + realToFrac csShift
-  osF s@(_q,(osShift, osScale)) x = toA $ (uncsF s x - realToFrac osShift)/osScale
-
-scaleAndUnscale :: Real a => RescaleType a -> RescaleType a -> (Double -> a) -> FL.Fold a (ScaleAndUnscale a)
-scaleAndUnscale computeScale outScale toA = fmap (scaleAndUnscaleHelper toA) shifts where 
-  shifts = (,) <$> rescale computeScale <*> rescale outScale
-
-weightedScaleAndUnscale :: (Real a, Real w) => RescaleType a -> RescaleType a -> (Double -> a) -> FL.Fold (a,w) (ScaleAndUnscale a)
-weightedScaleAndUnscale computeScale outScale toA = fmap (scaleAndUnscaleHelper toA) shifts where
-  shifts = (,) <$> weightedRescale computeScale <*> weightedRescale outScale
 
 type FType x = V.Snd x
 
@@ -260,14 +186,14 @@ type DblX = "double_x" F.:-> Double
 type DblY = "double_y" F.:-> Double
 
 type UseCols ks x y w = ks V.++ '[x,y,w]
-type DataField x = (V.KnownField x, Real (FType x))
+type RealField x = (V.KnownField x, Real (FType x))
 
 -- This thing is...unfortunate. Is there something built into Frames or Vinyl that would do this?
-class (DataField x, x ∈ rs) => DataFieldOf rs x
-instance (DataField x, x ∈ rs) => DataFieldOf rs x
+class (RealField x, x ∈ rs) => RealFieldOf rs x
+instance (RealField x, x ∈ rs) => RealFieldOf rs x
 
-type TwoColData x y = F.AllConstrained (DataFieldOf [x,y]) '[x, y]
-type ThreeColData x y z = ([x,z] F.⊆ [x,y,z], [y,z] F.⊆ [x,y,z], [x,y] F.⊆ [x,y,z], F.AllConstrained (DataFieldOf [x,y,z]) '[x, y, z])
+type TwoColData x y = F.AllConstrained (RealFieldOf [x,y]) '[x, y]
+type ThreeColData x y z = ([x,z] F.⊆ [x,y,z], [y,z] F.⊆ [x,y,z], [x,y] F.⊆ [x,y,z], F.AllConstrained (RealFieldOf [x,y,z]) '[x, y, z])
 
 type KeyedRecord ks rs = (ks F.⊆ rs, Ord (F.Record ks))
 
@@ -276,22 +202,30 @@ type ThreeDTransformable rs ks x y w = (ThreeColData x y w, FI.RecVec (ks V.++ [
                                         ks F.⊆ (ks V.++ [x,y,w]), (ks V.++ [x,y,w]) F.⊆ rs,
                                         F.ElemOf (ks V.++ [x,y,w]) x, F.ElemOf (ks V.++ [x,y,w]) y, F.ElemOf (ks V.++ [x,y,w]) w)
 
-transformEachM :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w, Applicative m)
+aggregateAndAnalyzeEachM :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w, Applicative m)
                => Proxy ks
                -> Proxy [x,y,w]
                -> ([F.Record '[x,y,w]] -> m [F.Record '[x,y,w]])
                -> FL.FoldM m (F.Record rs) (F.FrameRec (UseCols ks x y w))
-transformEachM proxy_ks _ doOne =
+aggregateAndAnalyzeEachM proxy_ks _ doOne =
   let combine l r = F.rcast @[x,y,w] r : l
   in aggregateFsM proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
-transformEach :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w)
+aggregateAndAnalyzeEach :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w)
                   => Proxy ks
                   -> Proxy [x,y,w]
                   -> ([F.Record '[x,y,w]] -> [F.Record '[x,y,w]])
                   -> FL.Fold (F.Record rs) (F.FrameRec (UseCols ks x y w))
-transformEach proxy_ks proxy_xyw doOne = FL.simplify $ transformEachM proxy_ks proxy_xyw (Identity . doOne)
+aggregateAndAnalyzeEach proxy_ks proxy_xyw doOne = FL.simplify $ aggregateAndAnalyzeEachM proxy_ks proxy_xyw (Identity . doOne)
 --  let combine l r = F.rcast @[x,y,w] r : l
 --  in aggregateFs proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
+type UnKeyed rs ks = F.Record (F.RDeleteAll ks rs)
+aggregateAndAnalyzeEachM' :: forall rs ks as m. (KeyedRecord ks rs, FI.RecVec (ks V.++ as), Applicative m)
+               => Proxy ks
+               -> ([F.Record rs] -> m [F.Record as])
+               -> FL.FoldM m (F.Record rs) (F.FrameRec (ks V.++ as))
+aggregateAndAnalyzeEachM' proxy_ks doOne =
+  let combine l r = r : l
+  in aggregateFsM proxy_ks V.Identity combine [] doOne
 
