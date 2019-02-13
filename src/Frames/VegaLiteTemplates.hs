@@ -4,12 +4,18 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ConstraintKinds #-}
 module Frames.VegaLiteTemplates
   (
     clustersWithClickIntoVL
+  , Frame2DRegressionScatterFit (..)
   , scatterWithFit
   , FitToPlot (..)
   , regressionCoefficientPlot
@@ -21,6 +27,7 @@ import qualified Frames.Transform as FT
 import qualified Frames.Regression as FR
 import qualified Math.Regression.Regression as RE 
 
+import           Data.Maybe (fromMaybe)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Vinyl             as V
@@ -35,6 +42,10 @@ import qualified Control.Foldl          as FL
 import qualified Data.List              as List
 import           Data.Proxy             (Proxy(..))
 import Text.Printf (printf)
+
+import Data.Kind (Constraint)
+
+import qualified Statistics.Types               as S
 
 
 -- | Plot regression coefficents with error bars
@@ -89,19 +100,112 @@ regressionCoefficientPlotFlex haveLegend printKey title names results ci =
   in vl 
 
 -- 
-{-
-class Frame2DRegressionScatter f rs a where
-  regressionResultToFit :: a -> T.Text -> FitToPlot rs
-  frame2DRegressionScatter :: T.Text -> T.Text -> a -> f (F.Record rs) -> GV.VegaLite
 
-instance (Foldable f, F.ElemOf rs x, F.ElemOf rs y) => Frame2DRegressionScatter (FR.FrameRegressionResult y 'True [x] FR.Unweighted) where
-  regressionResultToFit frr fitName rs =
-    let coeffs = MR.parameterEstimates $ FR.regressionResult $ frr
-        (b, bC) = 
-  frame2DRegressionScatter title fitname frr frame =
-    let errorF = const 0
-        fitF = FitToPlot fitName (\x ->
+frameRegressionError :: forall y wc as w rs. (V.KnownField w, F.ElemOf rs w) => FR.FrameRegressionResult y wc as w -> Error rs
+frameRegressionError (FR.FrameUnweightedRegressionResult _) = const 0
+frameRegressionError (FR.FrameWeightedRegressionResult wf _) = wf . F.rgetField @w
+
+type ScatterFitConstraints x y = ( F.ColumnHeaders '[x]
+                                 , F.ColumnHeaders '[y]
+                                 , FV.ToVLDataValue (F.ElField x)
+                                 , FV.ToVLDataValue (F.ElField y)
+                                 , V.KnownField y
+                                 , Real (V.Snd y)
+                                 )
+
+type ScatterFitC1 rs x y = ( F.ElemOf (rs V.++ [YError,YFit,YFitError]) x
+                           , F.ElemOf (rs V.++ [YError,YFit,YFitError]) y
+                           , F.ElemOf (rs V.++ [YError,YFit,YFitError]) YError
+                           , F.ElemOf (rs V.++ [YError,YFit,YFitError]) YFit
+                           , F.ElemOf (rs V.++ [YError,YFit,YFitError]) YFitError)
+                           
+class Frame2DRegressionScatterFit rs a where
+  regressionResultToError :: a -> Error rs
+  regressionResultToFit :: Maybe T.Text -> a -> Double -> FitToPlot rs
+  scatterPlot :: (Foldable f, Functor f) => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
+  
+
+instance ( V.KnownField x
+         , Real (V.Snd x)
+         , ScatterFitConstraints x y
+         , ScatterFitC1 rs x y
+         , F.ElemOf (rs V.++ [YError,YFit,YFitError]) x
+         , F.ElemOf (rs V.++ [YError,YFit,YFitError]) y
+         , F.ElemOf rs x
+         , F.ElemOf rs y
+         , F.ElemOf rs w
+         , V.KnownField w
+         , rs F.⊆ rs
+         ) => Frame2DRegressionScatterFit rs (FR.FrameRegressionResult y 'True '[x] w) where
+  regressionResultToError = frameRegressionError
+  regressionResultToFit fitNameM frr ci =
+    let label = fromMaybe "fit" fitNameM
+        predF = RE.predictNormalAtConfidence frr (S.mkCL ci)        
+    in FitToPlot label predF
+
+  scatterPlot title fitNameM frr ci frame = 
+      scatterWithFit @x @y @rs @rs (regressionResultToError frr) (regressionResultToFit fitNameM frr ci) Nothing title frame
+
+
+-- in this case we have y = a(x1) + b(x2) so we plot (y/x1) vs (a + b(x1/x2))
+type YOverX1 = "y_over_x1" F.:-> Double
+type X2OverX1 = "x2_over_x1" F.:-> Double
+
+instance ( F.ElemOf rs x1
+         , F.ElemOf rs x2
+         , F.ElemOf rs w
+         , F.ElemOf rs y
+         , V.KnownField y         
+         , V.KnownField x1
+         , V.KnownField x2
+         , V.KnownField w
+         , Real (V.Snd x1)
+         , Real (V.Snd x2)
+         , Real (V.Snd y)
+         , F.ElemOf [x1,x2] x1
+         , F.ElemOf [x1,x2] x2
+         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) x1
+         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) x2
+         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) w
+         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) y
+         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) X2OverX1
+         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) YOverX1
+         , rs F.⊆ (rs V.++  [YOverX1, X2OverX1])
+         , ScatterFitC1 (rs V.++ [YOverX1, X2OverX1]) YOverX1 X2OverX1
+         ) => Frame2DRegressionScatterFit rs (FR.FrameRegressionResult y 'False '[x1,x2] w) where
+  regressionResultToError frr =
+    let x1 = realToFrac . F.rgetField @x1
+    in (\r -> frameRegressionError frr r/x1 r)
+  
+  regressionResultToFit fitNameM frr ci =
+    let label = fromMaybe "fit" fitNameM
+        predF r =
+          let x1 = realToFrac $ F.rgetField @x1 r
+              (y,dy) = RE.predictNormalAtConfidence frr (S.mkCL ci) r
+          in (y/x1, dy/x1)
+    in FitToPlot label predF    
+
+  scatterPlot title fitNameM frr ci frame =
+    let mut :: F.Record rs -> F.Record [YOverX1, X2OverX1]
+        mut r =
+          let y = F.rgetField @y r
+              x1 = F.rgetField @x1 r
+              x2 = F.rgetField @x2 r
+          in (realToFrac y/realToFrac x1) F.&: (realToFrac x2/realToFrac x1) F.&: V.RNil
+        mutData = fmap (FT.mutate mut) frame
+        yName = FV.colName @y
+        x1Name = FV.colName @x1
+        x2Name = FV.colName @x2
+        xLabel = x2Name <> "/" <> x1Name
+        yLabel = yName <> "/" <> x1Name
+    in scatterWithFit @X2OverX1 @YOverX1 @(rs V.++ [YOverX1,X2OverX1]) @rs (regressionResultToError @rs frr) (regressionResultToFit @rs fitNameM frr ci) (Just (xLabel,yLabel)) title mutData
+
+{-    
+frame2DRegressionScatter :: forall x y rs a f. (Foldable f, Frame2DRegressionScatterFit rs x y a)
+  => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite    
+frame2DRegressionScatter title fitNameM frr ci frame =
 -}
+
 --
 type YError = "yError" F.:-> Double
 type YFit = "yFit" F.:-> Double
@@ -115,20 +219,19 @@ data FitToPlot rs = FitToPlot { fitLabel :: T.Text, fitFunction :: F.Record rs -
 -- | Since both calculations use the record itself as the domain, you can put the error and fit into the record and just use
 -- | field selection.  But this allows more flexibility and doesn't require adding things to the input frame record just for the plot.
 
-scatterWithFit :: forall x y f rs. ( F.ColumnHeaders '[x]
-                                   , F.ColumnHeaders '[y]
-                                   , FV.ToVLDataValue (F.ElField x)
-                                   , FV.ToVLDataValue (F.ElField y)
-                                   , F.ElemOf rs x
-                                   , F.ElemOf rs y
-                                   , [x,y,YError,YFit,YFitError]  F.⊆ (rs V.++ '[YError,YFit,YFitError]) 
-                                   , Foldable f)
-               => Error rs -> FitToPlot rs -> Text -> f (F.Record rs) -> GV.VegaLite
-scatterWithFit err fit title frame =
+scatterWithFit :: forall x y rs as f. ( ScatterFitConstraints x y
+                                      , as F.⊆ rs
+                                      , ScatterFitC1 rs x y
+                                      , Foldable f)
+               => Error as -> FitToPlot as -> Maybe (T.Text, T.Text) -> Text -> f (F.Record rs) -> GV.VegaLite
+scatterWithFit err fit axisLabelsM title frame =
   let mut :: F.Record rs -> F.Record '[YError, YFit, YFitError]
-      mut r = let (f,fe) = fitFunction fit r in err r F.&: f F.&: fe F.&: V.RNil
+      mut r =
+        let a = F.rcast r
+            (f,fe) = fitFunction fit a
+        in err a F.&: f F.&: fe F.&: V.RNil
       vegaDat = FV.recordsToVLData (F.rcast @[x,y,YError,YFit,YFitError] . FT.mutate mut) frame
-  in scatterWithFit' @x @y @YError @YFit @YFitError title (fitLabel fit) vegaDat
+  in scatterWithFit' @x @y @YError @YFit @YFitError axisLabelsM title (fitLabel fit) vegaDat
 
 
 -- TODO: Add xErrors as well, in scatter and in fit
@@ -137,8 +240,8 @@ scatterWithFit' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]
                                          , F.ColumnHeaders '[ye]
                                          , F.ColumnHeaders '[fy]
                                          , F.ColumnHeaders '[fye])
-  => Text -> Text -> GV.Data -> GV.VegaLite
-scatterWithFit' title fitLabel dat =
+  => Maybe (T.Text, T.Text) -> Text -> Text -> GV.Data -> GV.VegaLite
+scatterWithFit' axisLabelsM title fitLabel dat =
 -- create 4 new cols so we can use rules/areas for errors
   let yLoCalc yName yErrName = "datum." <> yName <> " - (datum." <> yErrName <> "/2)"
       yHiCalc yName yErrName = "datum." <> yName <> " + (datum." <> yErrName <> "/2)"
@@ -146,9 +249,10 @@ scatterWithFit' title fitLabel dat =
                   . GV.calculateAs (yHiCalc (FV.colName @y) (FV.colName @ye)) "yHi"
                   . GV.calculateAs (yLoCalc (FV.colName @fy) (FV.colName @fye)) "fyLo"
                   . GV.calculateAs (yHiCalc (FV.colName @fy) (FV.colName @fye)) "fyHi"
-
-      xEnc = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
-      yEnc = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
+      xLabel = fromMaybe (FV.colName @x) (fst <$> axisLabelsM)
+      yLabel = fromMaybe (FV.colName @y) (snd <$> axisLabelsM)
+      xEnc = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]]
+      yEnc = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle yLabel]]
       yLEnc = GV.position GV.Y [GV.PName "yLo", GV.PmType GV.Quantitative]
       yHEnc = GV.position GV.Y2 [GV.PName "yHi", GV.PmType GV.Quantitative]
 --      yErrorEnc = GV.position GV.YError [FV.pName @ye, GV.PmType GV.Quantitative]

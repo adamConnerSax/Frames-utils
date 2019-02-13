@@ -7,11 +7,13 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Transform
   (
-    mutate
+    mutate    
   , transform
+  , fieldEndo
   , recordSingleton
   , BinaryFunction(..)
   , bfApply
@@ -25,15 +27,23 @@ import qualified Data.Vinyl.Derived as V
 import Data.Vinyl.TypeLevel (type (++), Snd)
 import Data.Vinyl.Functor (Lift(..), Identity(..))
 import qualified Frames               as F
-import Frames.Melt (RDeleteAll)
+import Frames.Melt (RDeleteAll, ElemOf)
+import           Data.Vinyl.Lens            (type (∈))
 
 import GHC.TypeLits (KnownSymbol, Symbol)
 
---  mutation functions
+-- |  mutation functions
+
+-- | Type preserving single-field mapping
+fieldEndo :: forall x rs. (V.KnownField x, ElemOf rs x {-x ∈ rs -}) => (Snd x -> Snd x) -> F.Record rs -> F.Record rs
+fieldEndo f r = F.rputField @x (f $ F.rgetField @x r) r
+
+-- | replace subset with a calculated different set of fields
 transform :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
              => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs ++ bs)
 transform f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
 
+-- | append calculated subset 
 mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs ++ bs)
 mutate f xs = xs `F.rappend` f xs 
 

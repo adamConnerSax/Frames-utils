@@ -34,13 +34,35 @@ import qualified Numeric.LinearAlgebra          as LA
 import           Numeric.LinearAlgebra.Data     (Matrix, R, Vector)
 import qualified Numeric.LinearAlgebra.Data     as LA
 
+import           Data.Kind                      (Type)
+
+-- NB: for normal errors, we will request the ci and get it.  For interval errors, we may request it but we can't produce
+-- what we request, we can only produce what we have.  So we make an interface for both.  We take CL as input to predict
+-- *and* return it as output, in the prediction.
+
+class Predictor e a b p where
+  predict :: p -> b -> S.Estimate e a -- do we need a predict :: (b, b) -> (a, a) for uncertain inputs?
+
+predictNormalAtConfidence :: (RealFrac a, Predictor S.NormalErr a b p) => p -> S.CL Double -> b -> (a, a)
+predictNormalAtConfidence p cl b =
+  let S.Estimate pt (S.NormalErr sigma) = predict p b
+      predCI = S.quantile (S.normalDistr 0 (realToFrac $ sigma)) (S.confidenceLevel cl)
+  in (pt, realToFrac predCI)
+
 data RegressionResult a = RegressionResult
                           {
                             parameterEstimates :: [S.Estimate S.NormalErr a]
                           , meanSquaredError   :: a
                           , rSquared           :: Double
                           , adjRSquared        :: Double
+                          , covariances        :: Matrix Double
                           } deriving (Show)
+
+instance (LA.Element a, LA.Numeric a, RealFloat a) => Predictor S.NormalErr a (Vector a) (RegressionResult a) where
+  predict rr va =
+    let sigmaPred = sqrt (va <.> ((LA.cmap realToFrac $ covariances rr) #> va))
+        pred = va LA.<.> (V.fromList $ fmap S.estPoint $ parameterEstimates rr)
+    in S.estimateNormErr pred sigmaPred
 
 data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a }
 

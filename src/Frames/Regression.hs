@@ -59,7 +59,8 @@ import qualified Pipes.Prelude        as P
 import           Control.Arrow (second)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Storable as VS
+--import qualified Data.Vector.Unboxed as U
 import           Data.Random.Source.PureMT as R
 import           Data.Random as R
 import           Data.Void (Void)
@@ -69,6 +70,8 @@ import qualified MachineLearning.Regression as ML
 import qualified Numeric.LinearAlgebra      as LA
 import qualified Numeric.LinearAlgebra.Data as LA
 import           Numeric.LinearAlgebra.Data (R)
+import qualified Statistics.Types               as S
+
 
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
@@ -92,6 +95,30 @@ data FrameRegressionResult (y :: (Symbol, Type)) (wc :: Bool) (xs :: [(Symbol, T
   FrameUnweightedRegressionResult :: (w ~ Unweighted) => MR.RegressionResult R -> FrameRegressionResult y wc xs Unweighted
   FrameWeightedRegressionResult :: (V.Snd w -> R) -> MR.RegressionResult R -> FrameRegressionResult y wc xs w
 
+realRecToList :: ( RealFrac b
+                 , V.RMap as
+                 , V.RecordToList as
+                 , V.ReifyConstraint Real F.ElField as
+                 , V.NatToInt (V.RLength as))
+  => F.Record as -> [b]
+realRecToList = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ realToFrac x) . V.reifyConstraint @Real 
+
+instance ( MR.Predictor S.NormalErr a (LA.Vector a) (MR.RegressionResult R)
+         , BoolVal wc
+         , LA.Element a
+         , LA.Numeric a
+         , RealFloat a
+         , xs F.⊆ rs
+         , V.RMap xs
+         , V.RecordToList xs
+         , V.ReifyConstraint Real F.ElField xs
+         , V.NatToInt (V.RLength xs)
+         ) => MR.Predictor S.NormalErr a (F.Record rs) (FrameRegressionResult y wc xs w) where
+  predict frr r =
+    let rr = regressionResult frr
+        addBias l = if asBool @wc then 1 : l else l -- if we regressed with a constant term, we need to put it into the xs for prediction
+        va :: LA.Vector a = VS.fromList $ addBias $ realRecToList (F.rcast @xs r)        
+    in MR.predict rr va
 
 regressionResult :: FrameRegressionResult y wc xs w -> MR.RegressionResult R
 regressionResult (FrameUnweightedRegressionResult x) = x
@@ -117,8 +144,7 @@ prepRegression :: forall y as f rs. ( Foldable f
 prepRegression dat =
   let nCols = V.natToInt @(V.RLength as)
       yListF = PF.dimap (realToFrac . F.rgetField @y) List.reverse FL.list
-      toListOfDoubles :: F.Record as -> [Double]
-      toListOfDoubles xs = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ realToFrac x) $ V.reifyConstraint @Real xs 
+      toListOfDoubles :: F.Record as -> [Double] = realRecToList
       mListF = PF.dimap (toListOfDoubles . F.rcast) (List.concat . List.reverse) FL.list
       (yList, mList) = FL.fold ((,) <$> yListF <*> mListF) dat
   in (LA.matrix nCols mList, LA.vector yList) 
@@ -141,8 +167,7 @@ prepWeightedRegression dat =
   let nCols = V.natToInt @(V.RLength as)
       yListF = PF.dimap (realToFrac . F.rgetField @y) List.reverse FL.list
       wListF = PF.dimap (realToFrac . F.rgetField @w) List.reverse FL.list
-      toListOfDoubles :: F.Record as -> [Double]
-      toListOfDoubles xs = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ realToFrac x) $ V.reifyConstraint @Real xs 
+      toListOfDoubles :: F.Record as -> [Double] = realRecToList
       mListF = PF.dimap (toListOfDoubles . F.rcast) (List.concat . List.reverse) FL.list
       (yList, mList, wList) = FL.fold ((,,) <$> yListF <*> mListF <*> wListF) dat
   in (LA.matrix nCols mList, LA.vector yList, LA.vector wList) 
