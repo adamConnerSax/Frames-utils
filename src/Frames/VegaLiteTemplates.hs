@@ -103,7 +103,7 @@ regressionCoefficientPlotFlex haveLegend printKey title names results ci =
 
 frameRegressionError :: forall y wc as w rs. (V.KnownField w, F.ElemOf rs w) => FR.FrameRegressionResult y wc as w -> Error rs
 frameRegressionError (FR.FrameUnweightedRegressionResult _) = const 0
-frameRegressionError (FR.FrameWeightedRegressionResult wf _) = wf . F.rgetField @w
+frameRegressionError (FR.FrameWeightedRegressionResult wf _) = (\r -> 1/(wf $ F.rgetField @w r))
 
 type ScatterFitConstraints x y = ( F.ColumnHeaders '[x]
                                  , F.ColumnHeaders '[y]
