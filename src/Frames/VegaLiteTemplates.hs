@@ -42,8 +42,8 @@ import qualified Control.Foldl          as FL
 import qualified Data.List              as List
 import           Data.Proxy             (Proxy(..))
 import Text.Printf (printf)
-
-import Data.Kind (Constraint)
+import GHC.TypeLits (Symbol)
+import Data.Kind (Constraint, Type)
 
 import qualified Statistics.Types               as S
 
@@ -99,11 +99,17 @@ regressionCoefficientPlotFlex haveLegend printKey title names results ci =
         ]
   in vl 
 
--- 
+--
+{-
+type family WeightElemOf (rs :: [(Symbol, Type)]) (w :: (Symbol, Type)) :: Constraint where
+  WeightElemOf _ FR.Unweighted = ()
+  WeightElemOf rs w  = F.ElemOf rs w
+-}
 
-frameRegressionError :: forall y wc as w rs. (V.KnownField w, F.ElemOf rs w) => FR.FrameRegressionResult y wc as w -> Error rs
+frameRegressionError :: forall y wc as w rs. FR.FrameRegressionResult y wc as w rs -> Error rs
 frameRegressionError (FR.FrameUnweightedRegressionResult _) = const 0
 frameRegressionError (FR.FrameWeightedRegressionResult wf _) = (\r -> 1/(wf $ F.rgetField @w r))
+
 
 type ScatterFitConstraints x y = ( F.ColumnHeaders '[x]
                                  , F.ColumnHeaders '[y]
@@ -133,10 +139,9 @@ instance ( V.KnownField x
          , F.ElemOf (rs V.++ [YError,YFit,YFitError]) y
          , F.ElemOf rs x
          , F.ElemOf rs y
-         , F.ElemOf rs w
          , V.KnownField w
          , rs F.⊆ rs
-         ) => Frame2DRegressionScatterFit rs (FR.FrameRegressionResult y 'True '[x] w) where
+         ) => Frame2DRegressionScatterFit rs (FR.FrameRegressionResult y 'True '[x] w rs) where
   regressionResultToError = frameRegressionError
   regressionResultToFit fitNameM frr ci =
     let label = fromMaybe "fit" fitNameM
@@ -153,7 +158,6 @@ type X2OverX1 = "x2_over_x1" F.:-> Double
 
 instance ( F.ElemOf rs x1
          , F.ElemOf rs x2
-         , F.ElemOf rs w
          , F.ElemOf rs y
          , V.KnownField y         
          , V.KnownField x1
@@ -166,13 +170,12 @@ instance ( F.ElemOf rs x1
          , F.ElemOf [x1,x2] x2
          , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) x1
          , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) x2
-         , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) w
          , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) y
          , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) X2OverX1
          , F.ElemOf (rs V.++ [YOverX1, X2OverX1]) YOverX1
          , rs F.⊆ (rs V.++  [YOverX1, X2OverX1])
          , ScatterFitC1 (rs V.++ [YOverX1, X2OverX1]) YOverX1 X2OverX1
-         ) => Frame2DRegressionScatterFit rs (FR.FrameRegressionResult y 'False '[x1,x2] w) where
+         ) => Frame2DRegressionScatterFit rs (FR.FrameRegressionResult y 'False '[x1,x2] w rs) where
   regressionResultToError frr =
     let x1 = realToFrac . F.rgetField @x1
     in (\r -> frameRegressionError frr r/x1 r)

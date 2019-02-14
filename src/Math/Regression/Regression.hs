@@ -22,6 +22,8 @@ import qualified Data.List                      as List
 import qualified Data.Profunctor                as PF
 import qualified Data.Text                      as T
 import qualified Data.Vector.Storable           as V
+import qualified Lucid                          as H
+import qualified Lucid.Colonnade                as C
 import qualified Statistics.Distribution        as S
 import qualified Statistics.Distribution.Normal as S
 import qualified Statistics.Types               as S
@@ -94,6 +96,14 @@ prettyPrintRegressionResult header xNames r ci =
   in header <> "\n" <>
      (T.pack $ C.ascii (fmap T.unpack $ namedEstimatesColonnade ci) nEsts)
      <> (T.pack $ C.ascii (fmap T.unpack namedSummaryStatsColonnade) nSS)
+
+prettyPrintRegressionResultHtml :: T.Text -> [T.Text] -> RegressionResult R -> R -> H.Html ()
+prettyPrintRegressionResultHtml header xNames r ci = do
+  let nEsts = namedEstimates xNames r ci
+      nSS = namedSummaryStats r
+  H.p_ (H.toHtmlRaw header)
+  C.encodeCellTable [] (fmap C.textCell $ namedEstimatesColonnade ci) nEsts
+  C.encodeCellTable [] (fmap C.textCell $ namedSummaryStatsColonnade) nSS
 
 
 goodnessOfFit :: Int -> Vector R -> Vector R -> (R, R)

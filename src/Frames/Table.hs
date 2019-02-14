@@ -11,6 +11,8 @@
 module Frames.Table where
 
 import qualified Colonnade       as C
+import qualified Lucid.Colonnade as C
+import qualified Lucid as H
 import           Data.Monoid     (mempty, mconcat, (<>))
 import           Data.Profunctor (lmap)
 import           Data.Proxy      (Proxy (..))
@@ -41,10 +43,11 @@ instance RecordColonnade '[] where
 instance (V.KnownField r, rs F.⊆ (r : rs), Show (V.Snd r), RecordColonnade rs) => RecordColonnade (r : rs) where
   recColonnade = recordFieldToColonnade @r @(r : rs) <> (lmap (F.rcast @rs) (recColonnade @rs))
 
-
 textTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> T.Text
 textTable = T.pack . C.ascii (fmap T.unpack recColonnade)
 
+lucidTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> H.Html ()
+lucidTable = C.encodeCellTable [] (fmap C.textCell recColonnade)  
 
 
 

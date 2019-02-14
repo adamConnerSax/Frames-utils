@@ -28,6 +28,7 @@ import qualified Math.Regression.Regression as MR
 import qualified Math.Regression.LeastSquares as MR
 import qualified System.PipesLogger as SL
 
+import qualified Lucid as H
 import qualified Colonnade                      as C
 import qualified Control.Foldl        as FL
 import           Control.Lens         ((^.))
@@ -91,9 +92,11 @@ instance BoolVal 'True where
 instance BoolVal 'False where
   asBool = False
 
-data FrameRegressionResult (y :: (Symbol, Type)) (wc :: Bool) (xs :: [(Symbol, Type)]) (w :: (Symbol,Type)) where
-  FrameUnweightedRegressionResult :: (w ~ Unweighted) => MR.RegressionResult R -> FrameRegressionResult y wc xs Unweighted
-  FrameWeightedRegressionResult :: (V.Snd w -> R) -> MR.RegressionResult R -> FrameRegressionResult y wc xs w
+data FrameRegressionResult (y :: (Symbol, Type)) (wc :: Bool) (xs :: [(Symbol, Type)]) (w :: (Symbol,Type)) (rs :: [(Symbol, Type)]) where
+  FrameUnweightedRegressionResult :: (w ~ Unweighted)
+    => MR.RegressionResult R -> FrameRegressionResult y wc xs Unweighted rs
+  FrameWeightedRegressionResult :: (V.KnownField w, F.ElemOf rs w)
+    => (V.Snd w -> R) -> MR.RegressionResult R -> FrameRegressionResult y wc xs w rs
 
 realRecToList :: ( RealFrac b
                  , V.RMap as
@@ -113,21 +116,21 @@ instance ( MR.Predictor S.NormalErr a (LA.Vector a) (MR.RegressionResult R)
          , V.RecordToList xs
          , V.ReifyConstraint Real F.ElField xs
          , V.NatToInt (V.RLength xs)
-         ) => MR.Predictor S.NormalErr a (F.Record rs) (FrameRegressionResult y wc xs w) where
+         ) => MR.Predictor S.NormalErr a (F.Record rs) (FrameRegressionResult y wc xs w as) where
   predict frr r =
     let rr = regressionResult frr
         addBias l = if asBool @wc then 1 : l else l -- if we regressed with a constant term, we need to put it into the xs for prediction
         va :: LA.Vector a = VS.fromList $ addBias $ realRecToList (F.rcast @xs r)        
     in MR.predict rr va
 
-regressionResult :: FrameRegressionResult y wc xs w -> MR.RegressionResult R
+regressionResult :: FrameRegressionResult y wc xs w rs -> MR.RegressionResult R
 regressionResult (FrameUnweightedRegressionResult x) = x
 regressionResult (FrameWeightedRegressionResult _ x) = x
 
-withConstant :: forall y wc xs w. (BoolVal wc) => FrameRegressionResult y wc xs w -> Bool  
+withConstant :: forall y wc xs w rs. (BoolVal wc) => FrameRegressionResult y wc xs w rs -> Bool  
 withConstant _ = asBool @wc
 
-weightedRegression :: forall y wc xs w. (BoolVal (NonVoidField w)) => FrameRegressionResult y wc xs w -> Bool
+weightedRegression :: forall y wc xs w rs. (BoolVal (NonVoidField w)) => FrameRegressionResult y wc xs w rs -> Bool
 weightedRegression _ = asBool @(NonVoidField w)
 
 -- make X, y from the data 
@@ -173,11 +176,11 @@ prepWeightedRegression dat =
   in (LA.matrix nCols mList, LA.vector yList, LA.vector wList) 
 
 
-prettyPrintRegressionResult :: forall y wc as w. ( F.ColumnHeaders '[y]
-                                                 , F.ColumnHeaders '[w]
-                                                 , F.ColumnHeaders as
-                                                 , BoolVal wc)
-  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w -> Double -> T.Text
+prettyPrintRegressionResult :: forall y wc as w rs. ( F.ColumnHeaders '[y]
+                                                    , F.ColumnHeaders '[w]
+                                                    , F.ColumnHeaders as
+                                                    , BoolVal wc)
+  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> Double -> T.Text
 prettyPrintRegressionResult headerF res ci = 
   let yName = FV.colName @y
       wName = FV.colName @w
@@ -185,16 +188,28 @@ prettyPrintRegressionResult headerF res ci =
       xNames = if withConstant res then "intercept" : xNames' else xNames'
   in MR.prettyPrintRegressionResult (headerF yName wName) xNames (regressionResult res) ci
 
-prettyPrintRegressionResults :: forall y wc as w ks f. ( F.ColumnHeaders '[y]
-                                                       , F.ColumnHeaders '[w]
-                                                       , F.ColumnHeaders as
-                                                       , BoolVal wc
-                                                       , BoolVal (NonVoidField w)
-                                                       , V.ReifyConstraint Show F.ElField ks
-                                                       , V.RecordToList ks
-                                                       , V.RMap ks
-                                                       , Foldable f)
-  => f (F.Record ks, FrameRegressionResult y wc as w) -> R -> T.Text
+prettyPrintRegressionResultHtml :: forall y wc as w rs. ( F.ColumnHeaders '[y]
+                                                        , F.ColumnHeaders '[w]
+                                                        , F.ColumnHeaders as
+                                                        , BoolVal wc)
+  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> Double -> H.Html ()
+prettyPrintRegressionResultHtml headerF res ci = 
+  let yName = FV.colName @y
+      wName = FV.colName @w
+      xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
+      xNames = if withConstant res then "intercept" : xNames' else xNames'
+  in MR.prettyPrintRegressionResultHtml (headerF yName wName) xNames (regressionResult res) ci  
+
+prettyPrintRegressionResults :: forall y wc as w rs ks f. ( F.ColumnHeaders '[y]
+                                                          , F.ColumnHeaders '[w]
+                                                          , F.ColumnHeaders as
+                                                          , BoolVal wc
+                                                          , BoolVal (NonVoidField w)
+                                                          , V.ReifyConstraint Show F.ElField ks
+                                                          , V.RecordToList ks
+                                                          , V.RMap ks
+                                                          , Foldable f)
+  => f (F.Record ks, FrameRegressionResult y wc as w rs) -> R -> T.Text
 prettyPrintRegressionResults keyed ci =
   let keyValuesAsText rks = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ T.pack $ show x) $ V.reifyConstraint @Show rks
       namedKeys rks = T.intercalate "; " $ keyValuesAsText rks
@@ -232,7 +247,7 @@ ordinaryLeastSquares :: forall y wc as rs f m. ( Monad m
                                                , V.ReifyConstraint Real F.ElField as
                                                , BoolVal wc
                                                , V.NatToInt (V.RLength as))
-                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as Unweighted)
+                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as Unweighted rs)
 ordinaryLeastSquares dat = do
   let (mA, vB) = prepRegression @y @as dat
       withConstant = asBool @wc
@@ -251,7 +266,7 @@ weightedLeastSquares :: forall y wc as w rs f m. ( Monad m
                                                  , V.RecordToList as
                                                  , V.ReifyConstraint Real F.ElField as
                                                  , V.NatToInt (V.RLength as))
-                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w)
+                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
 weightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc
@@ -271,7 +286,7 @@ popWeightedLeastSquares :: forall y wc as w rs f m .( Monad m
                                                     , V.RecordToList as
                                                     , V.ReifyConstraint Real F.ElField as
                                                     , V.NatToInt (V.RLength as))
-                        =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w)
+                        =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
 popWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc
@@ -293,7 +308,7 @@ varWeightedLeastSquares :: forall y wc as w rs f m .( Monad m
                                                     , V.RecordToList as
                                                     , V.ReifyConstraint Real F.ElField as
                                                     , V.NatToInt (V.RLength as))
-                        =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w)
+                        =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
 varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc
@@ -311,7 +326,7 @@ totalLeastSquares :: forall y wc as rs f m .( Monad m
                                             , V.RecordToList as
                                             , V.ReifyConstraint Real F.ElField as
                                             , V.NatToInt (V.RLength as))
-                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as Unweighted)
+                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as Unweighted rs)
 totalLeastSquares dat = do
   let (mA, vB) = prepRegression @y @as dat
       withConstant = asBool @wc
@@ -331,7 +346,7 @@ weightedTLS :: forall y wc as w rs f m .( Monad m
                                         , V.RecordToList as
                                         , V.ReifyConstraint Real F.ElField as
                                         , V.NatToInt (V.RLength as))
-            =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w)
+            =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
 weightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc  
@@ -350,7 +365,7 @@ popWeightedTLS :: forall y wc as w rs f m .( Monad m
                                            , V.RecordToList as
                                            , V.ReifyConstraint Real F.ElField as
                                            , V.NatToInt (V.RLength as))
-               =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w)
+               =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
 popWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc  
@@ -370,7 +385,7 @@ varWeightedTLS :: forall y wc as w rs f m .( Monad m
                                            , V.RecordToList as
                                            , V.ReifyConstraint Real F.ElField as
                                            , V.NatToInt (V.RLength as))
-            =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w)
+            =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
 varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc    
