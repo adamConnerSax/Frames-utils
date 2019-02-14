@@ -16,6 +16,7 @@ module Frames.VegaLiteTemplates
   (
     clustersWithClickIntoVL
   , Frame2DRegressionScatterFit (..)
+  , scatterPlot
   , scatterWithFit
   , FitToPlot (..)
   , regressionCoefficientPlot
@@ -69,7 +70,7 @@ regressionCoefficientPlotMany = regressionCoefficientPlotFlex True
 regressionCoefficientPlotFlex :: Foldable f
                               => Bool -> (k -> Text) -> T.Text -> [T.Text] -> f (k, RE.RegressionResult Double) -> Double -> GV.VegaLite
 regressionCoefficientPlotFlex haveLegend printKey title names results ci =
-  let toRow m (RE.NamedEstimate n e eci) = [("Parameter",GV.Str (n <> T.replicate m "'")), ("Estimate",GV.Number e), ("Confidence",GV.Number eci)]
+  let toRow m (RE.NamedEstimate n e eci epi) = [("Parameter",GV.Str (n <> T.replicate m "'")), ("Estimate",GV.Number e), ("Confidence",GV.Number eci)]
       addKey k l = ("Key", GV.Str $ printKey k) : l
       dataRowFold = FL.Fold (\(l,n) (k,regRes) -> (l ++ fmap (flip GV.dataRow [] . addKey k . toRow n) (RE.namedEstimates names regRes ci), n+1)) ([],0) (GV.dataFromRows [] . List.concat . fst)
       dat = FL.fold dataRowFold results
@@ -128,8 +129,25 @@ type ScatterFitC1 rs x y = ( F.ElemOf (rs V.++ [YError,YFit,YFitError]) x
 class Frame2DRegressionScatterFit rs a where
   regressionResultToError :: a -> Error rs
   regressionResultToFit :: Maybe T.Text -> a -> Double -> FitToPlot rs
-  scatterPlot :: (Foldable f, Functor f) => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
-  
+--  scatterPlot :: (Foldable f, Functor f) => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
+  scatterPlotSpec :: (Foldable f, Functor f) => Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VLSpec
+
+scatterPlot :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f)
+            => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
+scatterPlot title fitNameM frr ci frame =
+  let configuration = GV.configure
+        . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+      swfSpec = GV.layer [scatterPlotSpec fitNameM frr ci frame]
+  in GV.toVegaLite [configuration [], swfSpec, GV.title title]
+
+scatterPlots :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f, Foldable g, Functor g) 
+  => T.Text -> (k -> T.Text) -> g (k, a) -> Double -> f (F.Record rs) -> GV.VegaLite
+scatterPlots title keyText keyedFits ci dat =
+  let toSpec (k, a) = scatterPlotSpec (Just $ keyText k) a ci dat
+      specs = FL.fold FL.list (fmap toSpec keyedFits)
+      configuration = GV.configure
+        . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+  in GV.toVegaLite [configuration [], GV.layer specs, GV.title title]
 
 instance ( V.KnownField x
          , Real (V.Snd x)
@@ -145,11 +163,15 @@ instance ( V.KnownField x
   regressionResultToError = frameRegressionError
   regressionResultToFit fitNameM frr ci =
     let label = fromMaybe "fit" fitNameM
-        predF = RE.predictNormalAtConfidence frr (S.mkCL ci)        
+        dof = RE.degreesOfFreedom (FR.regressionResult frr)
+        predF = RE.predictFromEstimateAtConfidence dof frr (S.mkCL ci)        
     in FitToPlot label predF
 
-  scatterPlot title fitNameM frr ci frame = 
-      scatterWithFit @x @y @rs @rs (regressionResultToError frr) (regressionResultToFit fitNameM frr ci) Nothing title frame
+--  scatterPlot title fitNameM frr ci frame = 
+--    scatterWithFit @x @y @rs @rs (regressionResultToError frr) (regressionResultToFit fitNameM frr ci) Nothing title frame
+    
+  scatterPlotSpec fitNameM frr ci frame = 
+      scatterWithFitSpec @x @y @rs @rs (regressionResultToError frr) (regressionResultToFit fitNameM frr ci) Nothing frame
 
 
 -- in this case we have y = a(x1) + b(x2) so we plot (y/x1) vs (a + b(x1/x2))
@@ -182,13 +204,14 @@ instance ( F.ElemOf rs x1
   
   regressionResultToFit fitNameM frr ci =
     let label = fromMaybe "fit" fitNameM
+        dof = RE.degreesOfFreedom (FR.regressionResult frr)
         predF r =
           let x1 = realToFrac $ F.rgetField @x1 r
-              (y,dy) = RE.predictNormalAtConfidence frr (S.mkCL ci) r
+              (y,dy) = RE.predictFromEstimateAtConfidence dof frr (S.mkCL ci) r
           in (y/x1, dy/x1)
     in FitToPlot label predF    
 
-  scatterPlot title fitNameM frr ci frame =
+  scatterPlotSpec fitNameM frr ci frame =
     let mut :: F.Record rs -> F.Record [YOverX1, X2OverX1]
         mut r =
           let y = F.rgetField @y r
@@ -201,7 +224,7 @@ instance ( F.ElemOf rs x1
         x2Name = FV.colName @x2
         xLabel = x2Name <> "/" <> x1Name
         yLabel = yName <> "/" <> x1Name
-    in scatterWithFit @X2OverX1 @YOverX1 @(rs V.++ [YOverX1,X2OverX1]) @rs (regressionResultToError @rs frr) (regressionResultToFit @rs fitNameM frr ci) (Just (xLabel,yLabel)) title mutData
+    in scatterWithFitSpec @X2OverX1 @YOverX1 @(rs V.++ [YOverX1,X2OverX1]) @rs (regressionResultToError @rs frr) (regressionResultToFit @rs fitNameM frr ci) (Just (xLabel,yLabel)) mutData
 
 {-    
 frame2DRegressionScatter :: forall x y rs a f. (Foldable f, Frame2DRegressionScatterFit rs x y a)
@@ -228,16 +251,26 @@ scatterWithFit :: forall x y rs as f. ( ScatterFitConstraints x y
                                       , Foldable f)
                => Error as -> FitToPlot as -> Maybe (T.Text, T.Text) -> Text -> f (F.Record rs) -> GV.VegaLite
 scatterWithFit err fit axisLabelsM title frame =
+  let configuration = GV.configure
+        . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+      swfSpec = GV.specification $ scatterWithFitSpec @x @y @rs @as @f err fit axisLabelsM frame
+  in GV.toVegaLite [configuration [], swfSpec, GV.title title]
+  
+scatterWithFitSpec :: forall x y rs as f. ( ScatterFitConstraints x y
+                                          , as F.⊆ rs
+                                          , ScatterFitC1 rs x y
+                                          , Foldable f)
+               => Error as -> FitToPlot as -> Maybe (T.Text, T.Text) -> f (F.Record rs) -> GV.VLSpec
+scatterWithFitSpec err fit axisLabelsM frame =  
   let mut :: F.Record rs -> F.Record '[YError, YFit, YFitError]
       mut r =
         let a = F.rcast r
             (f,fe) = fitFunction fit a
         in err a F.&: f F.&: fe F.&: V.RNil
       vegaDat = FV.recordsToVLData (F.rcast @[x,y,YError,YFit,YFitError] . FT.mutate mut) frame
-  in scatterWithFit' @x @y @YError @YFit @YFitError axisLabelsM title (fitLabel fit) vegaDat
+  in scatterWithFitSpec' @x @y @YError @YFit @YFitError axisLabelsM (fitLabel fit) vegaDat
 
 
--- TODO: Add xErrors as well, in scatter and in fit
 scatterWithFit' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]
                                          , F.ColumnHeaders '[y]
                                          , F.ColumnHeaders '[ye]
@@ -245,9 +278,22 @@ scatterWithFit' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]
                                          , F.ColumnHeaders '[fye])
   => Maybe (T.Text, T.Text) -> Text -> Text -> GV.Data -> GV.VegaLite
 scatterWithFit' axisLabelsM title fitLabel dat =
+  let configuration = GV.configure
+        . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+      swfSpec = GV.specification $ scatterWithFitSpec' @x @y @ye @fy @fye axisLabelsM fitLabel dat
+  in GV.toVegaLite [configuration [], swfSpec, GV.title title]
+
+-- TODO: Add xErrors as well, in scatter and in fit
+scatterWithFitSpec' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]
+                                             , F.ColumnHeaders '[y]
+                                             , F.ColumnHeaders '[ye]
+                                             , F.ColumnHeaders '[fy]
+                                             , F.ColumnHeaders '[fye])
+  => Maybe (T.Text, T.Text) -> Text -> GV.Data -> GV.VLSpec
+scatterWithFitSpec' axisLabelsM fitLabel dat =
 -- create 4 new cols so we can use rules/areas for errors
-  let yLoCalc yName yErrName = "datum." <> yName <> " - (datum." <> yErrName <> "/2)"
-      yHiCalc yName yErrName = "datum." <> yName <> " + (datum." <> yErrName <> "/2)"
+  let yLoCalc yName yErrName = "datum." <> yName <> " - (datum." <> yErrName <> ")"
+      yHiCalc yName yErrName = "datum." <> yName <> " + (datum." <> yErrName <> ")"
       calcHiLos = GV.calculateAs (yLoCalc (FV.colName @y) (FV.colName @ye)) "yLo"
                   . GV.calculateAs (yHiCalc (FV.colName @y) (FV.colName @ye)) "yHi"
                   . GV.calculateAs (yLoCalc (FV.colName @fy) (FV.colName @fye)) "fyLo"
@@ -299,15 +345,14 @@ scatterWithFit' axisLabelsM title fitLabel dat =
       layers = GV.layer [ scatterSpec, scatterBarSpec, fitLineSpec, fitBandSpec]
       configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
-      vl =
-        GV.toVegaLite
+      spec =
+        GV.asSpec
         [
-          GV.title title 
-        , (GV.transform . calcHiLos) []
+          (GV.transform . calcHiLos) []
         , layers
         , dat
-        , configuration []]
-  in vl
+        ]
+  in spec
 
 -- | Plot a view of clustered data
 -- | Use TypeApplications to specify:
