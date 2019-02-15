@@ -7,10 +7,12 @@ module Html.Report
   , placeVisualization
   , placeTextSection
   , latexToHtml
+  , htmlToIOLogged
   , latex_
   )
 where
 
+import           Control.Monad.Morph        (generalize, hoist, lift)
 import           Control.Monad.Trans        (lift)
 import qualified Data.Aeson.Encode.Pretty   as A
 import qualified Data.ByteString.Lazy.Char8 as BS
@@ -22,7 +24,7 @@ import qualified Graphics.Vega.VegaLite     as GV
 import qualified Lucid                      as H
 import qualified Text.Pandoc                as P
 
-
+import qualified System.PipesLogger         as SL
 
 latexToHtml :: Monad m => T.Text -> H.HtmlT m ()
 latexToHtml lText = do
@@ -78,3 +80,9 @@ placeVisualization idText vl =
 
 placeTextSection :: Monad m => H.HtmlT m () -> H.HtmlT m ()
 placeTextSection x = H.section_ [{- attributes/styles here -}] x
+
+
+-- utilities for lifting through
+
+htmlToIOLogged :: H.Html a -> SL.Logger (H.HtmlT IO) a
+htmlToIOLogged = SL.liftPureAction

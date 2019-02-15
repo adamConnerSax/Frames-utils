@@ -110,9 +110,10 @@ prettyPrintRegressionResultHtml header xNames r ci = do
   let nEsts = namedEstimates xNames r ci
       nSS = namedSummaryStats r
       toCell t = C.Cell [H.style_ "border: 1px solid black"] (H.toHtmlRaw t)
-  H.p_ (H.toHtmlRaw header)
-  C.encodeCellTable [H.style_ "border: 1px solid black"] (fmap toCell $ namedEstimatesColonnade ci) nEsts
-  C.encodeCellTable [H.style_ "border: 1px solid black"] (fmap toCell $ namedSummaryStatsColonnade) nSS
+  H.div_ [H.style_ "display: inline-block; padding: 7px; border-collapse: collapse"] $ do
+    H.span_ (H.toHtmlRaw header)
+    C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedEstimatesColonnade ci) nEsts
+    C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedSummaryStatsColonnade) nSS
 
 
 goodnessOfFit :: Int -> Vector R -> Vector R -> (R, R)

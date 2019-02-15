@@ -1,12 +1,14 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module System.PipesLogger where
 
 import           Control.Monad.IO.Class (MonadIO (..))
 import           Control.Monad.State    (MonadState, StateT, evalStateT, get,
                                          modify)
-import Control.Monad.Trans (lift)                 
+import           Control.Monad.Morph (lift, hoist, generalize, MonadTrans, MFunctor)
+import           Data.Functor.Identity (Identity)
 import qualified Data.List              as List
 import           Data.Monoid            ((<>))
 import qualified Data.Text              as T
@@ -70,8 +72,13 @@ runLogger ls logged = P.runEffect $ P.for logged (doLogOutput ls)
 runLoggerIO :: MonadIO m => [LogSeverity] -> Logger m () -> m ()
 runLoggerIO ls logged = flip evalStateT [] $ runLogger ls logged
 
-liftLog :: Monad m => m a -> Logger m a
-liftLog = lift . lift
+liftAction :: Monad m => m a -> Logger m a
+liftAction = lift . lift
 
+liftPureAction :: (MonadTrans t, Monad (t IO), MFunctor t) => t Identity a -> Logger (t IO) a
+liftPureAction a = liftAction $ hoist generalize a
+
+liftFunction :: forall m b. Monad m => (forall a. m a -> m a) -> Logger m b -> Logger m b
+liftFunction f = hoist (hoist f)
 
 

@@ -200,23 +200,32 @@ prettyPrintRegressionResultHtml headerF res ci =
       xNames = if withConstant res then "intercept" : xNames' else xNames'
   in MR.prettyPrintRegressionResultHtml (headerF yName wName) xNames (regressionResult res) ci  
 
-prettyPrintRegressionResults :: forall y wc as w rs ks f. ( F.ColumnHeaders '[y]
-                                                          , F.ColumnHeaders '[w]
-                                                          , F.ColumnHeaders as
-                                                          , BoolVal wc
-                                                          , BoolVal (NonVoidField w)
-                                                          , V.ReifyConstraint Show F.ElField ks
-                                                          , V.RecordToList ks
-                                                          , V.RMap ks
-                                                          , Foldable f)
-  => f (F.Record ks, FrameRegressionResult y wc as w rs) -> R -> T.Text
-prettyPrintRegressionResults keyed ci =
+keyRecordText :: (V.ReifyConstraint Show F.ElField ks
+                 , V.RecordToList ks
+                 , V.RMap ks)
+                 => F.Record ks -> T.Text
+keyRecordText keyRec =
   let keyValuesAsText rks = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ T.pack $ show x) $ V.reifyConstraint @Show rks
-      namedKeys rks = T.intercalate "; " $ keyValuesAsText rks
-      headerF res keyRec yName wName = case weightedRegression res of
-        True -> "Explaining " <> yName <> " (" <> namedKeys keyRec <> "; weights from " <> wName <> ")"     
-        False -> "Explaining " <> yName <> " (" <> namedKeys keyRec <> ")"     
-  in FL.fold (FL.Fold (\t (rk,res) -> t <> prettyPrintRegressionResult (headerF res rk) res ci) "\n" id) keyed
+  in  T.intercalate "; " $ keyValuesAsText keyRec
+
+prettyPrintRegressionResults :: forall y wc as w rs k f a. ( F.ColumnHeaders '[y]
+                                                            , F.ColumnHeaders '[w]
+                                                            , F.ColumnHeaders as
+                                                            , BoolVal wc
+                                                            , BoolVal (NonVoidField w)
+                                                            , Foldable f
+                                                            , Monoid a)
+  => (k -> T.Text)
+  -> f (k, FrameRegressionResult y wc as w rs)
+  -> R
+  -> ((T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> Double -> a)
+  -> a
+  -> a
+prettyPrintRegressionResults keyText keyed ci printOne sepEach =
+  let headerF res key yName wName = case weightedRegression res of
+        True -> "Explaining " <> yName <> " (" <> keyText key <> "; weights from " <> wName <> ")"     
+        False -> "Explaining " <> yName <> " (" <> keyText key <> ")"     
+  in FL.fold (FL.Fold (\t (rk,res) -> t <> printOne (headerF res rk) res ci) sepEach id) keyed
 
 -- explain y in terms of as
 leastSquaresByMinimization :: forall y as rs f. (Foldable f

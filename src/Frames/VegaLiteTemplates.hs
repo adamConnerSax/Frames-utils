@@ -16,7 +16,8 @@ module Frames.VegaLiteTemplates
   (
     clustersWithClickIntoVL
   , Frame2DRegressionScatterFit (..)
-  , scatterPlot
+  , frameScatterWithFit
+  , keyedLayeredFrameScatterWithFit
   , scatterWithFit
   , FitToPlot (..)
   , regressionCoefficientPlot
@@ -132,17 +133,17 @@ class Frame2DRegressionScatterFit rs a where
 --  scatterPlot :: (Foldable f, Functor f) => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
   scatterPlotSpec :: (Foldable f, Functor f) => Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VLSpec
 
-scatterPlot :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f)
-            => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
-scatterPlot title fitNameM frr ci frame =
+frameScatterWithFit :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f)
+                    => T.Text -> Maybe T.Text -> a -> Double -> f (F.Record rs) -> GV.VegaLite
+frameScatterWithFit title fitNameM frr ci frame =
   let configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
       swfSpec = GV.layer [scatterPlotSpec fitNameM frr ci frame]
   in GV.toVegaLite [configuration [], swfSpec, GV.title title]
 
-scatterPlots :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f, Foldable g, Functor g) 
+keyedLayeredFrameScatterWithFit :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f, Foldable g, Functor g) 
   => T.Text -> (k -> T.Text) -> g (k, a) -> Double -> f (F.Record rs) -> GV.VegaLite
-scatterPlots title keyText keyedFits ci dat =
+keyedLayeredFrameScatterWithFit title keyText keyedFits ci dat =
   let toSpec (k, a) = scatterPlotSpec (Just $ keyText k) a ci dat
       specs = FL.fold FL.list (fmap toSpec keyedFits)
       configuration = GV.configure
@@ -294,10 +295,11 @@ scatterWithFitSpec' axisLabelsM fitLabel dat =
 -- create 4 new cols so we can use rules/areas for errors
   let yLoCalc yName yErrName = "datum." <> yName <> " - (datum." <> yErrName <> ")"
       yHiCalc yName yErrName = "datum." <> yName <> " + (datum." <> yErrName <> ")"
-      calcHiLos = GV.calculateAs (yLoCalc (FV.colName @y) (FV.colName @ye)) "yLo"
-                  . GV.calculateAs (yHiCalc (FV.colName @y) (FV.colName @ye)) "yHi"
-                  . GV.calculateAs (yLoCalc (FV.colName @fy) (FV.colName @fye)) "fyLo"
-                  . GV.calculateAs (yHiCalc (FV.colName @fy) (FV.colName @fye)) "fyHi"
+      calcs = GV.calculateAs (yLoCalc (FV.colName @y) (FV.colName @ye)) "yLo"
+              . GV.calculateAs (yHiCalc (FV.colName @y) (FV.colName @ye)) "yHi"
+              . GV.calculateAs (yLoCalc (FV.colName @fy) (FV.colName @fye)) "fyLo"
+              . GV.calculateAs (yHiCalc (FV.colName @fy) (FV.colName @fye)) "fyHi"
+              . GV.calculateAs ("\"" <> fitLabel <> "\"")  "fitLabel"
       xLabel = fromMaybe (FV.colName @x) (fst <$> axisLabelsM)
       yLabel = fromMaybe (FV.colName @y) (snd <$> axisLabelsM)
       xEnc = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]]
@@ -308,16 +310,17 @@ scatterWithFitSpec' axisLabelsM fitLabel dat =
       yFitEnc t = GV.position GV.Y [FV.pName @fy, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle t]]
       yFitLEnc = GV.position GV.Y [GV.PName "fyLo", GV.PmType GV.Quantitative]
       yFitHEnc = GV.position GV.Y2 [GV.PName "fyHi", GV.PmType GV.Quantitative]
+      colorEnc = GV.color [GV.MName "fitLabel", GV.MmType GV.Nominal]
   --    yFitErrorEnc = GV.position GV.YError [FV.pName @fye, GV.PmType GV.Quantitative]
-      scatterEnc = xEnc . yEnc
-      scatterBarEnc = xEnc . yLEnc . yHEnc 
-      fitEnc t = xEnc . yFitEnc t
-      fitBandEnc = xEnc . yFitLEnc . yFitHEnc 
+      scatterEnc = xEnc . yEnc 
+      scatterBarEnc = xEnc . yLEnc . yHEnc
+      fitEnc t = xEnc . yFitEnc t . colorEnc
+      fitBandEnc = xEnc . yFitLEnc . yFitHEnc . colorEnc 
                   
-      selectScalesS = GV.select "scalesS" GV.Interval [GV.BindScales]
-      selectScalesSE = GV.select "scalesSE" GV.Interval [GV.BindScales]
-      selectScalesF = GV.select "scalesF" GV.Interval [GV.BindScales]
-      selectScalesFE = GV.select "scalesFE" GV.Interval [GV.BindScales]
+      selectScalesS = GV.select ("scalesS" <> fitLabel) GV.Interval [GV.BindScales]
+      selectScalesSE = GV.select("scalesSE" <> fitLabel) GV.Interval [GV.BindScales]
+      selectScalesF = GV.select ("scalesF" <> fitLabel) GV.Interval [GV.BindScales]
+      selectScalesFE = GV.select ("scalesFE" <> fitLabel) GV.Interval [GV.BindScales]
       scatterSpec = GV.asSpec
         [
           (GV.encoding . scatterEnc) []
@@ -339,7 +342,7 @@ scatterWithFitSpec' axisLabelsM fitLabel dat =
       fitBandSpec = GV.asSpec
         [
           (GV.encoding . fitBandEnc) []
-        , GV.mark GV.Area [GV.MOpacity 0.5]
+        , GV.mark GV.Area [GV.MOpacity 0.5, GV.MFillOpacity 0.3]
         , (GV.selection . selectScalesFE) []
         ]
       layers = GV.layer [ scatterSpec, scatterBarSpec, fitLineSpec, fitBandSpec]
@@ -348,7 +351,7 @@ scatterWithFitSpec' axisLabelsM fitLabel dat =
       spec =
         GV.asSpec
         [
-          (GV.transform . calcHiLos) []
+          (GV.transform . calcs) []
         , layers
         , dat
         ]
