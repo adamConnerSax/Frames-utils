@@ -48,7 +48,7 @@ main = do
         H.li_ "For unweighted data we use ordinary least squares (OLS) and total least square (TLS)."
         H.li_ "For weighted data we use weighted least squares (WOLS) and weighted total least squares (WTLS)."
         H.li_ "Both TLS and WTLS are computed via the Singular Value Decomposition."
-        H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals."
+        H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals. The shaded regions in each plot are the \"prediction intervals\" which take into account the uncertainty of the coefficients as well as the remainining noise in the data."
     logged $ do
       testMany
 --      testOLS
