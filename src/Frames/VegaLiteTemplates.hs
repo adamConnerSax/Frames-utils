@@ -71,7 +71,7 @@ regressionCoefficientPlotMany = regressionCoefficientPlotFlex True
 regressionCoefficientPlotFlex :: Foldable f
                               => Bool -> (k -> Text) -> T.Text -> [T.Text] -> f (k, RE.RegressionResult Double) -> Double -> GV.VegaLite
 regressionCoefficientPlotFlex haveLegend printKey title names results ci =
-  let toRow m (RE.NamedEstimate n e eci epi) = [("Parameter",GV.Str (n <> T.replicate m "'")), ("Estimate",GV.Number e), ("Confidence",GV.Number eci)]
+  let toRow m (RE.NamedEstimate n e eci) = [("Parameter",GV.Str (n <> T.replicate m "'")), ("Estimate",GV.Number e), ("Confidence",GV.Number eci)]
       addKey k l = ("Key", GV.Str $ printKey k) : l
       dataRowFold = FL.Fold (\(l,n) (k,regRes) -> (l ++ fmap (flip GV.dataRow [] . addKey k . toRow n) (RE.namedEstimates names regRes ci), n+1)) ([],0) (GV.dataFromRows [] . List.concat . fst)
       dat = FL.fold dataRowFold results
@@ -293,8 +293,8 @@ scatterWithFitSpec' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]
   => Maybe (T.Text, T.Text) -> Text -> GV.Data -> GV.VLSpec
 scatterWithFitSpec' axisLabelsM fitLabel dat =
 -- create 4 new cols so we can use rules/areas for errors
-  let yLoCalc yName yErrName = "datum." <> yName <> " - (datum." <> yErrName <> ")"
-      yHiCalc yName yErrName = "datum." <> yName <> " + (datum." <> yErrName <> ")"
+  let yLoCalc yName yErrName = "datum." <> yName <> " - (datum." <> yErrName <> ")/2"
+      yHiCalc yName yErrName = "datum." <> yName <> " + (datum." <> yErrName <> ")/2"
       calcs = GV.calculateAs (yLoCalc (FV.colName @y) (FV.colName @ye)) "yLo"
               . GV.calculateAs (yHiCalc (FV.colName @y) (FV.colName @ye)) "yHi"
               . GV.calculateAs (yLoCalc (FV.colName @fy) (FV.colName @fye)) "fyLo"

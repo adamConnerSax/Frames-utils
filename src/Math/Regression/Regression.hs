@@ -51,7 +51,7 @@ predictFromEstimateAtConfidence :: (RealFrac a, Predictor S.NormalErr a b p) => 
 predictFromEstimateAtConfidence dof p cl b =
   let S.Estimate pt (S.NormalErr sigma) = predict p b
       prob = S.confidenceLevel $ S.mkCLFromSignificance (S.significanceLevel cl /2)
-      predCI = S.quantile (S.studentTUnstandardized (realToFrac dof) 0 (realToFrac $ sigma)) prob
+      predCI = S.quantile (S.studentTUnstandardized (realToFrac dof) 0 (realToFrac sigma)) prob
   in (pt, realToFrac predCI)
 
 data RegressionResult a = RegressionResult
@@ -66,25 +66,24 @@ data RegressionResult a = RegressionResult
 
 instance (LA.Element a, LA.Numeric a, RealFloat a) => Predictor S.NormalErr a (Vector a) (RegressionResult a) where
   predict rr va =
-    let sigmaPred = sqrt (va <.> ((LA.cmap realToFrac $ covariances rr) #> va))
+    let mse = meanSquaredError rr
+        sigmaPred = sqrt (mse + va <.> ((LA.cmap realToFrac $ covariances rr) #> va))
         pred = va LA.<.> (V.fromList $ fmap S.estPoint $ parameterEstimates rr)
     in S.estimateNormErr pred sigmaPred
 
-data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a, regressorPI :: a }
+data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a }
 
 namedEstimates :: [T.Text] -> RegressionResult R -> R -> [NamedEstimate R]
 namedEstimates pNames res ciPct =
   let sigma e = S.normalError $ S.estError e
       dof = realToFrac $ degreesOfFreedom res
-      ci e = 2 * S.quantile (S.normalDistr 0 (sigma e)) ciPct
-      pi e = 2 * S.quantile (S.studentTUnstandardized dof 0 (sigma e)) (1 - (1 -ciPct)/2)
-  in List.zipWith (\n e -> NamedEstimate n (S.estPoint e) (ci e) (pi e)) pNames (parameterEstimates res)
+      ci e = 2 * S.quantile (S.studentTUnstandardized dof 0 (sigma e)) ciPct
+  in List.zipWith (\n e -> NamedEstimate n (S.estPoint e) (ci e)) pNames (parameterEstimates res)
 
 namedEstimatesColonnade :: R -> C.Colonnade C.Headed (NamedEstimate R) T.Text
 namedEstimatesColonnade  ci = C.headed "parameter" regressorName
                            <> C.headed "estimate" (T.pack . TP.printf "%4.3f" . regressorEstimate)
                            <> C.headed ((T.pack $ TP.printf "%.0f" (100 * ci)) <> "% confidence") (T.pack . TP.printf "%4.3f" . regressorCI)
-                           <> C.headed ((T.pack $ TP.printf "%.0f" (100 * ci)) <> "% prediction") (T.pack . TP.printf "%4.3f" . regressorPI)
 
 namedSummaryStats :: RegressionResult R -> [(T.Text, R)]
 namedSummaryStats r =
