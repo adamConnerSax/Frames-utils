@@ -44,13 +44,14 @@ import qualified Numeric.LinearAlgebra.Data as LA
 ordinaryLS :: Monad m => Bool -> Matrix R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 ordinaryLS withConstant mA vB = do
   let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
+      (n, dof) = LA.size mAwc
   HU.checkVectorMatrix "b" "A" vB mAwc  -- vB <> mA is legal, b has same length as A has rows
   let vX = mAwc <\> vB
-      vU = vB - (mA #> vX) -- residuals
-      mse = (vU <.> vU) / (realToFrac $ LA.size vU)
+      vU = vB - (mAwc #> vX) -- residuals
+      mse = (vU <.> vU) / (realToFrac (n - dof))
       (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vB vU
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) mse rSq aRSq
+  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq cov
 
 weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 weightedLS withConstant mA vB vW = do
@@ -58,20 +59,22 @@ weightedLS withConstant mA vB vW = do
   let mW = LA.diag vW
       vWB = mW #> vB
       mAwc = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
+      (n,dof) = LA.size mAwc
   HU.checkVectorMatrix "b" "A" vB mAwc
   let mWA = mW LA.<> mAwc
       vX = mWA <\> vWB
       vU = vB - (mAwc #> vX)
       vWU = mW #> vU
       (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vWB vWU
-      mse = (vWU <.> vWU) / LA.sumElements vW
+      mse = (realToFrac n/realToFrac (n - dof)) * (vWU <.> vWU) / LA.sumElements vW
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) mse rSq aRSq
+  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq cov
 
 totalLS :: Monad m =>  Bool -> Matrix R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 totalLS withConstant mA vB = do
   let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
-      p = snd $ LA.size mAwc
+      (n,dof) = LA.size mAwc
+      p = dof -- just for notation !!
   HU.checkVectorMatrix "b" "Awc" vB mAwc
   let mAB = (mAwc LA.||| LA.asColumn vB)
       (sv, mV') = LA.rightSV mAB
@@ -83,12 +86,12 @@ totalLS withConstant mA vB = do
       mV2 = mV' LA.?? (LA.All, LA.TakeLast 1)
       mABt = mAB LA.<> mV2 LA.<> (LA.tr mV2)
       mAt = mABt LA.?? (LA.All, LA.DropLast 1)
-      vBfit = (mA - mAt) #> vX
+      vBfit = mAwc #> vX --(mAwc - mAt) #> vX -- this is confusing.
       vU = vB - vBfit
-      (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vB vU --(vB - mA #> vX)
-      mse = (vU <.> vU) / (realToFrac $ LA.size vU)
+      (rSq, aRSq) = RE.goodnessOfFit dof vB vU --(vB - mA #> vX)
+      mse = (vU <.> vU) / (realToFrac (n - dof))
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) mse rSq aRSq
+  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq cov
 
 weightedTLS :: Monad m =>  Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 weightedTLS withConstant mA vB vW = do
@@ -96,7 +99,8 @@ weightedTLS withConstant mA vB vW = do
   let mW = LA.diag vW
       vWB = mW #> vB
       mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
-      p = snd $ LA.size mAwc
+      (n,dof) = LA.size mAwc
+      p = dof -- just for notation
   HU.checkVectorMatrix "b" "Awc" vB mAwc
   let mWA = mW LA.<> mAwc
       mWAB = (mWA LA.||| LA.asColumn vWB)
@@ -109,12 +113,12 @@ weightedTLS withConstant mA vB vW = do
       mV2 = mV' LA.?? (LA.All, LA.TakeLast 1)
       mWABt = mWAB LA.<> mV2 LA.<> (LA.tr mV2)
       mWAt = mWABt LA.?? (LA.All, LA.DropLast 1)
-      vBfit = (mWA - mWAt) #> vX
+      vBfit = mWA #> vX -- (mWA - mWAt) #> vX -- this is confusing
       vWU = vWB - vBfit
-      (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vWB vWU --(vB - mA #> vX)
-      mse = (vWU <.> vWU) / LA.sumElements vW
+      (rSq, aRSq) = RE.goodnessOfFit dof vWB vWU --(vB - mA #> vX)
+      mse = (realToFrac n/realToFrac (n-dof)) * (vWU <.> vWU) / LA.sumElements vW
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) mse rSq aRSq
+  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq cov
 
 addBiasCol :: Int -> Matrix R -> Matrix R
 addBiasCol rows mA =

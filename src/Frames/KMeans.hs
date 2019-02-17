@@ -245,7 +245,7 @@ kMeansOne :: forall x y w f m. (FA.ThreeColData x y w, Foldable f, Functor f, Mo
 kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = SL.wrapPrefix "KMeansOne" $ do
   let (sunX, sunY) = FL.fold ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF) dataRows
       scaledRows = fmap (V.runcurryX (\x y w -> (MR.from sunX) x &: (MR.from sunY) y &: w &: V.RNil)) dataRows  
-  initial <- SL.liftLog $ makeInitial numClusters scaledRows 
+  initial <- SL.liftAction $ makeInitial numClusters scaledRows 
   let initialCentroids = Centroids $ V.fromList $ initial
   (Clusters clusters) <- fst <$> weightedKMeans initialCentroids weighted distance scaledRows
   let fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
@@ -306,7 +306,7 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
       addY = FT.recordSingleton @FA.DblY . MR.from sunY . F.rgetField @y
       addXY r = addX r F.<+> addY r
       plusScaled = fmap (FT.mutate addXY) dataRows
-  initials <- mapM (const $ fmap (Centroids . V.fromList) $ SL.liftLog $ makeInitial numClusters $ fmap F.rcast plusScaled) (V.replicate numTries ()) -- here we can throw away the other cols
+  initials <- mapM (const $ fmap (Centroids . V.fromList) $ SL.liftAction $ makeInitial numClusters $ fmap F.rcast plusScaled) (V.replicate numTries ()) -- here we can throw away the other cols
 --  let initialCentroids = Centroids $ V.fromList $ initial
   tries <- mapM (\cs -> weightedKMeans cs weighted distance plusScaled) initials -- here we can't
   let costs = fmap (kMeansCostWeighted distance weighted . fst) tries
