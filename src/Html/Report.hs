@@ -24,7 +24,7 @@ import qualified Graphics.Vega.VegaLite     as GV
 import qualified Lucid                      as H
 import qualified Text.Pandoc                as P
 
-import qualified System.PipesLogger         as SL
+import qualified System.Logger              as SL
 
 latexToHtml :: Monad m => T.Text -> H.HtmlT m ()
 latexToHtml lText = do

@@ -42,7 +42,8 @@ library
                  , Math.HMatrixUtils
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
-                 , System.PipesLogger
+                 , Control.Monad.Freer.Logger
+                 , Control.Monad.Freer.Html
                  , Html.Report
   -- other-modules:
   -- other-extensions:  
