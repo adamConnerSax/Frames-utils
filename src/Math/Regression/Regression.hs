@@ -47,17 +47,17 @@ import           Data.Kind                        (Type)
 class Predictor e a b p where
   predict :: p -> b -> S.Estimate e a -- do we need a predict :: (b, b) -> (a, a) for uncertain inputs?
 
-predictFromEstimateAtConfidence :: (RealFrac a, Predictor S.NormalErr a b p) => Int -> p -> S.CL Double -> b -> (a, a)
+predictFromEstimateAtConfidence :: (RealFrac a, Predictor S.NormalErr a b p) => Double -> p -> S.CL Double -> b -> (a, a)
 predictFromEstimateAtConfidence dof p cl b =
   let S.Estimate pt (S.NormalErr sigma) = predict p b
       prob = S.confidenceLevel $ S.mkCLFromSignificance (S.significanceLevel cl /2)
-      predCI = S.quantile (S.studentTUnstandardized (realToFrac dof) 0 (realToFrac sigma)) prob
+      predCI = 2 * S.quantile (S.studentTUnstandardized dof 0 (realToFrac sigma)) prob
   in (pt, realToFrac predCI)
 
 data RegressionResult a = RegressionResult
                           {
                             parameterEstimates :: [S.Estimate S.NormalErr a]
-                          , degreesOfFreedom   :: Int
+                          , degreesOfFreedom   :: Double -- since N may be an effective N
                           , meanSquaredError   :: a
                           , rSquared           :: Double
                           , adjRSquared        :: Double
@@ -77,7 +77,8 @@ namedEstimates :: [T.Text] -> RegressionResult R -> R -> [NamedEstimate R]
 namedEstimates pNames res ciPct =
   let sigma e = S.normalError $ S.estError e
       dof = realToFrac $ degreesOfFreedom res
-      ci e = 2 * S.quantile (S.studentTUnstandardized dof 0 (sigma e)) ciPct
+      prob = 1 - (1-ciPct)/2
+      ci e = 2 * S.quantile (S.studentTUnstandardized dof 0 (sigma e)) prob
   in List.zipWith (\n e -> NamedEstimate n (S.estPoint e) (ci e)) pNames (parameterEstimates res)
 
 namedEstimatesColonnade :: R -> C.Colonnade C.Headed (NamedEstimate R) T.Text
