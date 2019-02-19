@@ -180,25 +180,25 @@ prettyPrintRegressionResult :: forall y wc as w rs. ( F.ColumnHeaders '[y]
                                                     , F.ColumnHeaders '[w]
                                                     , F.ColumnHeaders as
                                                     , BoolVal wc)
-  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> Double -> T.Text
-prettyPrintRegressionResult headerF res ci = 
+  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> S.CL Double -> T.Text
+prettyPrintRegressionResult headerF res cl = 
   let yName = FV.colName @y
       wName = FV.colName @w
       xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
       xNames = if withConstant res then "intercept" : xNames' else xNames'
-  in MR.prettyPrintRegressionResult (headerF yName wName) xNames (regressionResult res) ci
+  in MR.prettyPrintRegressionResult (headerF yName wName) xNames (regressionResult res) cl
 
 prettyPrintRegressionResultHtml :: forall y wc as w rs. ( F.ColumnHeaders '[y]
                                                         , F.ColumnHeaders '[w]
                                                         , F.ColumnHeaders as
                                                         , BoolVal wc)
-  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> Double -> H.Html ()
-prettyPrintRegressionResultHtml headerF res ci = 
+  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> S.CL Double -> H.Html ()
+prettyPrintRegressionResultHtml headerF res cl = 
   let yName = FV.colName @y
       wName = FV.colName @w
       xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
       xNames = if withConstant res then "intercept" : xNames' else xNames'
-  in MR.prettyPrintRegressionResultHtml (headerF yName wName) xNames (regressionResult res) ci  
+  in MR.prettyPrintRegressionResultHtml (headerF yName wName) xNames (regressionResult res) cl
 
 keyRecordText :: (V.ReifyConstraint Show F.ElField ks
                  , V.RecordToList ks
@@ -217,15 +217,15 @@ prettyPrintRegressionResults :: forall y wc as w rs k f a. ( F.ColumnHeaders '[y
                                                             , Monoid a)
   => (k -> T.Text)
   -> f (k, FrameRegressionResult y wc as w rs)
-  -> R
-  -> ((T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> Double -> a)
+  -> S.CL R
+  -> ((T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> S.CL Double -> a)
   -> a
   -> a
-prettyPrintRegressionResults keyText keyed ci printOne sepEach =
+prettyPrintRegressionResults keyText keyed cl printOne sepEach =
   let headerF res key yName wName = case weightedRegression res of
         True -> "Explaining " <> yName <> " (" <> keyText key <> "; weights from " <> wName <> ")"     
         False -> "Explaining " <> yName <> " (" <> keyText key <> ")"     
-  in FL.fold (FL.Fold (\t (rk,res) -> t <> printOne (headerF res rk) res ci) sepEach id) keyed
+  in FL.fold (FL.Fold (\t (rk,res) -> t <> printOne (headerF res rk) res cl) sepEach id) keyed
 
 -- explain y in terms of as
 leastSquaresByMinimization :: forall y as rs f. (Foldable f

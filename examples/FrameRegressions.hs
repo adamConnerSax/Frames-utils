@@ -32,10 +32,10 @@ import qualified Html.Report                  as H
 import qualified Lucid                        as H
 import qualified Math.Regression.LeastSquares as LS
 import qualified Math.Regression.Regression   as RE
+import qualified Statistics.Types             as S
 import           System.IO                    (BufferMode (..), hSetBuffering,
                                                stdout)
 import qualified System.PipesLogger           as SL
-
 
 
 main :: IO ()
@@ -49,6 +49,7 @@ main = do
         H.li_ "For weighted data we use weighted least squares (WOLS) and weighted total least squares (WTLS)."
         H.li_ "Both TLS and WTLS are computed via the Singular Value Decomposition."
         H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals. The shaded regions in each plot are the \"prediction intervals\" which take into account the uncertainty of the coefficients as well as the remainining noise in the data."
+        H.li_ "The F-stat is computed for each fit via comparision to the model of intercept-only.  So the p-value of the overall fit is the probability that the data are better explained as noise around their (weighted) mean value than by the fit."
     logged $ do
       testMany
 --      testOLS
@@ -100,9 +101,9 @@ makeFrame vars (ys, xs) = do
 unweighted :: Int -> [Double]
 unweighted n = List.replicate n (1.0)
 
-coneWeighted :: Int -> Double -> [Double]
-coneWeighted n increment =
-  let w0 = [(realToFrac i) * increment | i <- [1..n]]
+coneWeighted :: Int -> Double -> Double -> [Double]
+coneWeighted n base increment =
+  let w0 = [base + (realToFrac i) * increment | i <- [1..n]]
       s = realToFrac n/FL.fold FL.sum w0
   in fmap (*s) w0
 
@@ -111,7 +112,7 @@ showText = T.pack . show
 
 coeffs :: LA.Vector R = LA.fromList [1.0, 2.2]
 offsets :: LA.Vector R = LA.fromList [1]
-vars = coneWeighted 100 0.1
+vars = coneWeighted 100 1 0.1
 varListToWeights = LA.cmap (\x -> 1/sqrt x) . LA.fromList
 wgts = varListToWeights vars
 
@@ -133,15 +134,15 @@ testRegression yNoise xNoise weighted offset vizId f = do
   let scopeT = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
                <> " (" <> (if weighted then "cone weights" else "unweighted") <> (if offset then ", w/offsets" else "") <> ")"
-      vars = if weighted then coneWeighted 100 0.1 else unweighted 100
+      vars = if weighted then coneWeighted 100 1 0.1 else unweighted 100
       wgts = varListToWeights vars
       offsetM = if offset then (Just offsets) else Nothing
   frame <- htmlLift $ SL.liftAction $ (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
   result <- htmlLift $ f frame
   let header _ _ = scopeT
-  H.htmlToIOLogged $ FR.prettyPrintRegressionResultHtml header result 0.95
-  H.htmlToIOLogged $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result 0.95 frame
-  htmlLift $ SL.log SL.Info $ FR.prettyPrintRegressionResult header result 0.95
+  H.htmlToIOLogged $ FR.prettyPrintRegressionResultHtml header result S.cl95
+  H.htmlToIOLogged $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result S.cl95 frame
+  htmlLift $ SL.log SL.Info $ FR.prettyPrintRegressionResult header result S.cl95
   return ()
 
 --const3 f x y z = f x y
@@ -158,7 +159,7 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   let title = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
                <> " (" <> (if weighted then "cone weights" else "unweighted") <> (if offset then ", w/offsets" else "") <> ")"
-      vars = if weighted then coneWeighted 100 0.1 else unweighted 100
+      vars = if weighted then coneWeighted 100 1 0.1 else unweighted 100
       wgts = varListToWeights vars
       offsetM = if offset then (Just offsets) else Nothing
       doOne dat (key, f) = do
@@ -168,9 +169,9 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   results <- htmlLift $ traverse (doOne frame) keyedFs
   let header _ _ = title
   SL.liftFunction (H.div_ [H.style_ "display: block-inline"]) $ do
-    H.htmlToIOLogged $ FR.prettyPrintRegressionResults id results 0.95 FR.prettyPrintRegressionResultHtml (mempty)
-    H.htmlToIOLogged $ H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results 0.95 frame
-    H.htmlToIOLogged $ H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) 0.95
+    H.htmlToIOLogged $ FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultHtml (mempty)
+    H.htmlToIOLogged $ H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
+    H.htmlToIOLogged $ H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
   return ()
 
 
@@ -191,10 +192,11 @@ testMany = SL.wrapPrefix "Many" $ do
   testRegressions 0.0 0.0 False False "many1" toTestUW
   testRegressions 0.3 0.0 False False "many2" toTestUW
   testRegressions 0.5 0.0 False False "many3" toTestUW
-  testRegressions 0.3 0.3 False False "many4" toTestUW
+  testRegressions 0.3 0.1 False False "many4" toTestUW
+  testRegressions 3 0.0 False False "many9" toTestUW
   testRegressions @Weight 0.3 0.0 True False "many6" toTestW
   testRegressions @Weight 0.5 0.0 True False "many7" toTestW
-  testRegressions @Weight 0.3 0.3 True False "many8" toTestW
+  testRegressions @Weight 0.3 0.1 True False "many8" toTestW
 
 testOLS :: SL.Logger (H.HtmlT IO) ()
 testOLS =  SL.wrapPrefix "OLS" $ do

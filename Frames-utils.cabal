@@ -21,6 +21,7 @@ common deps
                , hmatrix
                , random-fu
                , random-source
+               , statistics
                , text
                , vector
                , vinyl >= 0.10.0.1
@@ -61,7 +62,6 @@ library
                   , pandoc
                   , pipes
                   , profunctors
-                  , statistics
                   , time
                   , text
                   , hvega
@@ -71,6 +71,7 @@ library
   default-language:    Haskell2010
 
 executable FrameRegressions
+  import: deps
   build-depends: base
                , foldl
                , Frames-utils

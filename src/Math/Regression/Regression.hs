@@ -11,34 +11,36 @@
 
 module Math.Regression.Regression where
 
-import qualified Math.HMatrixUtils                as HU
+import qualified Math.HMatrixUtils                     as HU
 
-import qualified Colonnade                        as C
-import qualified Control.Foldl                    as FL
-import qualified Control.Foldl.Statistics         as FS
-import qualified Data.Foldable                    as Foldable
-import           Data.Function                    (on)
-import qualified Data.List                        as List
-import qualified Data.Profunctor                  as PF
-import qualified Data.Text                        as T
-import qualified Data.Vector.Storable             as V
-import qualified Lucid                            as H
-import qualified Lucid.Colonnade                  as C
-import qualified Lucid.Html5                      as H
-import qualified Statistics.Distribution          as S
-import qualified Statistics.Distribution.Normal   as S
-import qualified Statistics.Distribution.StudentT as S
-import qualified Statistics.Types                 as S
-import qualified System.PipesLogger               as SL
-import qualified Text.Printf                      as TP
+import qualified Colonnade                             as C
+import qualified Control.Foldl                         as FL
+import qualified Control.Foldl.Statistics              as FS
+import qualified Data.Foldable                         as Foldable
+import           Data.Function                         (on)
+import qualified Data.List                             as List
+import qualified Data.Profunctor                       as PF
+import qualified Data.Text                             as T
+import qualified Data.Vector.Storable                  as V
+import qualified Lucid                                 as H
+import qualified Lucid.Colonnade                       as C
+import qualified Lucid.Html5                           as H
+import qualified Statistics.Distribution               as S
+import qualified Statistics.Distribution.FDistribution as S
+import qualified Statistics.Distribution.Normal        as S
+import qualified Statistics.Distribution.StudentT      as S
+import qualified Statistics.Types                      as S
+import qualified System.PipesLogger                    as SL
+import qualified Text.Printf                           as TP
 
 
-import           Numeric.LinearAlgebra            (( #> ), (<#), (<.>), (<\>))
-import qualified Numeric.LinearAlgebra            as LA
-import           Numeric.LinearAlgebra.Data       (Matrix, R, Vector)
-import qualified Numeric.LinearAlgebra.Data       as LA
+import           Numeric.LinearAlgebra                 (( #> ), (<#), (<.>),
+                                                        (<\>))
+import qualified Numeric.LinearAlgebra                 as LA
+import           Numeric.LinearAlgebra.Data            (Matrix, R, Vector)
+import qualified Numeric.LinearAlgebra.Data            as LA
 
-import           Data.Kind                        (Type)
+import           Data.Kind                             (Type)
 
 -- NB: for normal errors, we will request the ci and get it.  For interval errors, we may request it but we can't produce
 -- what we request, we can only produce what we have.  So we make an interface for both.  We take CL as input to predict
@@ -61,6 +63,7 @@ data RegressionResult a = RegressionResult
                           , meanSquaredError   :: a
                           , rSquared           :: Double
                           , adjRSquared        :: Double
+                          , fStatistic         :: Double
                           , covariances        :: Matrix Double
                           } deriving (Show)
 
@@ -71,60 +74,88 @@ instance (LA.Element a, LA.Numeric a, RealFloat a) => Predictor S.NormalErr a (V
         pred = va LA.<.> (V.fromList $ fmap S.estPoint $ parameterEstimates rr)
     in S.estimateNormErr pred sigmaPred
 
-data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a }
+data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a, regressorPValue :: a }
 
-namedEstimates :: [T.Text] -> RegressionResult R -> R -> [NamedEstimate R]
-namedEstimates pNames res ciPct =
-  let sigma e = S.normalError $ S.estError e
-      dof = realToFrac $ degreesOfFreedom res
-      prob = 1 - (1-ciPct)/2
-      ci e = 2 * S.quantile (S.studentTUnstandardized dof 0 (sigma e)) prob
-  in List.zipWith (\n e -> NamedEstimate n (S.estPoint e) (ci e)) pNames (parameterEstimates res)
+namedEstimates :: [T.Text] -> RegressionResult R -> S.CL R -> [NamedEstimate R]
+namedEstimates pNames res cl =
+  let prob = S.confidenceLevel $ S.mkCLFromSignificance (S.significanceLevel cl /2)
+      dof = degreesOfFreedom res
+      sigma e = S.normalError $ S.estError e
+      dist e = S.studentTUnstandardized dof 0 (sigma e)
+      ci e = 2 * S.quantile (dist e) prob
+      pValue e = S.complCumulative (dist e) (S.estPoint e)
+  in List.zipWith (\n e -> NamedEstimate n (S.estPoint e) (ci e) (pValue e)) pNames (parameterEstimates res)
 
-namedEstimatesColonnade :: R -> C.Colonnade C.Headed (NamedEstimate R) T.Text
-namedEstimatesColonnade  ci = C.headed "parameter" regressorName
-                           <> C.headed "estimate" (T.pack . TP.printf "%4.3f" . regressorEstimate)
-                           <> C.headed ((T.pack $ TP.printf "%.0f" (100 * ci)) <> "% confidence") (T.pack . TP.printf "%4.3f" . regressorCI)
+namedEstimatesColonnade :: S.CL R -> C.Colonnade C.Headed (NamedEstimate R) T.Text
+namedEstimatesColonnade  cl =
+  C.headed "parameter" regressorName
+  <> C.headed "estimate" (T.pack . TP.printf "%4.3f" . regressorEstimate)
+  <> C.headed ((T.pack $ TP.printf "%.0f" (100 * S.confidenceLevel cl)) <> "% confidence") (T.pack . TP.printf "%4.3f" . regressorCI)
+  <> C.headed "p-value" (T.pack . TP.printf "%4.3f" . regressorPValue)
 
 namedSummaryStats :: RegressionResult R -> [(T.Text, R)]
 namedSummaryStats r =
-  [
-    ("R-Squared",(rSquared r))
-  , ("Adj. R-squared",(adjRSquared r))
-  , ("Mean Squared Error",(meanSquaredError r))
-  ]
+  let p = List.length (parameterEstimates r)
+      effN = (degreesOfFreedom r) + (realToFrac p)
+      d1 = realToFrac $ p - 1
+      d2 = effN - (realToFrac p)
+      dist = S.fDistributionReal d1 d2
+      fStat = fStatistic r
+  in [
+      ("R-Squared",(rSquared r))
+    , ("Adj. R-squared",(adjRSquared r))
+    , ("F-stat", fStat)
+    , ("p-value", S.complCumulative dist fStat)
+    , ("Mean Squared Error",(meanSquaredError r))
+    ]
 
 namedSummaryStatsColonnade :: C.Colonnade C.Headed (T.Text,Double) T.Text
-namedSummaryStatsColonnade  = C.headed "Summary Stat." fst <> C.headed "Value" (T.pack . TP.printf "%.2g" . snd)
+namedSummaryStatsColonnade  = C.headed "Summary Stat." fst <> C.headed "Value" (T.pack . TP.printf "%4.3f" . snd)
 
-prettyPrintRegressionResult :: T.Text -> [T.Text] -> RegressionResult R -> R -> T.Text
-prettyPrintRegressionResult header xNames r ci =
-  let nEsts = namedEstimates xNames r ci
+prettyPrintRegressionResult :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> T.Text
+prettyPrintRegressionResult header xNames r cl =
+  let nEsts = namedEstimates xNames r cl
       nSS = namedSummaryStats r
   in header <> "\n" <>
-     (T.pack $ C.ascii (fmap T.unpack $ namedEstimatesColonnade ci) nEsts)
+     (T.pack $ C.ascii (fmap T.unpack $ namedEstimatesColonnade cl) nEsts)
      <> (T.pack $ C.ascii (fmap T.unpack namedSummaryStatsColonnade) nSS)
 
-prettyPrintRegressionResultHtml :: T.Text -> [T.Text] -> RegressionResult R -> R -> H.Html ()
-prettyPrintRegressionResultHtml header xNames r ci = do
-  let nEsts = namedEstimates xNames r ci
+prettyPrintRegressionResultHtml :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> H.Html ()
+prettyPrintRegressionResultHtml header xNames r cl = do
+  let nEsts = namedEstimates xNames r cl
       nSS = namedSummaryStats r
       toCell t = C.Cell [H.style_ "border: 1px solid black"] (H.toHtmlRaw t)
   H.div_ [H.style_ "display: inline-block; padding: 7px; border-collapse: collapse"] $ do
     H.span_ (H.toHtmlRaw header)
-    C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedEstimatesColonnade ci) nEsts
+    C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedEstimatesColonnade cl) nEsts
     C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedSummaryStatsColonnade) nSS
 
 
-goodnessOfFit :: Int -> Vector R -> Vector R -> (R, R)
-goodnessOfFit p vB vU =
+data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: a}
+
+goodnessOfFit :: Monad m => Int -> Vector R -> Maybe (Vector R) -> Vector R -> SL.Logger m (FitStatistics R)
+goodnessOfFit pInt vB vWM vU = SL.wrapPrefix "goodnessOfFit" $ do
   let n = LA.size vB
-      meanB = LA.sumElements vB / (realToFrac $ LA.size vB)
-      ssTot = let x = LA.cmap (\y -> y - meanB) vB in x <.> x
-      ssRes = vU <.> vU
+      p = realToFrac pInt
+      vW = maybe (V.fromList $ List.replicate n (1.0/realToFrac n)) (\v -> LA.scale (1/(realToFrac $ LA.sumElements v)) v) vWM
+      mW = LA.diag vW
+      vWB = mW #> vB
+--      vWU = mW #> vU
+      meanWB = LA.sumElements vWB
+      effN = 1 / (vW <.> vW)
+      ssTot = let x = LA.cmap (\y -> y - meanWB) vB in x <.> (mW #> x)
+      ssRes = vU <.> (mW #> vU) -- weighted ssq of residuals
       rSq = 1 - (ssRes/ssTot)
-      arSq = 1 - (1 - rSq)*(realToFrac $ (n - 1))/(realToFrac $ (n - p - 1))
-  in (rSq, arSq)
+      arSq = 1 - (1 - rSq)*(realToFrac $ (effN - 1))/(realToFrac $ (effN - p - 1))
+      fStat = ((ssTot - ssRes)/ (p - 1.0)) / (ssRes / (effN - p))
+  SL.log SL.Diagnostic $ "n=" <> (T.pack $ show n)
+  SL.log SL.Diagnostic $ "p=" <> (T.pack $ show p)
+  SL.log SL.Diagnostic $ "vW=" <> (T.pack $ show vW)
+  SL.log SL.Diagnostic $ "effN=" <> (T.pack $ show effN)
+  SL.log SL.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
+  SL.log SL.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
+
+  return $ FitStatistics rSq arSq fStat
 
 estimates :: Matrix R -> Vector R -> [S.Estimate S.NormalErr R]
 estimates cov means =

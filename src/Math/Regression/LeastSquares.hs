@@ -50,9 +50,9 @@ ordinaryLS withConstant mA vB = do
   let vX = mAwc <\> vB
       vU = vB - (mAwc #> vX) -- residuals
       mse = (vU <.> vU) / (realToFrac dof)
-      (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vB vU
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) (realToFrac dof) mse rSq aRSq cov
+  RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB Nothing vU
+  return $ RE.RegressionResult (RE.estimates cov vX) (realToFrac dof) mse rSq aRSq fStat cov
 
 weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 weightedLS withConstant mA vB vW = do
@@ -68,10 +68,11 @@ weightedLS withConstant mA vB vW = do
       vWU = mW #> vU
       sumW = LA.sumElements vW
       effN = (sumW * sumW) / (vW <.> vW)
-      (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vWB vWU
+--      (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vWB vWU
       mse = effN /(effN - realToFrac p) * (vWU <.> vWU) / sumW
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) (effN - realToFrac p) mse rSq aRSq cov
+  RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB (Just vW) vU
+  return $ RE.RegressionResult (RE.estimates cov vX) (effN - realToFrac p) mse rSq aRSq fStat cov
 
 totalLS :: Monad m =>  Bool -> Matrix R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 totalLS withConstant mA vB = do
@@ -91,10 +92,11 @@ totalLS withConstant mA vB = do
       mAt = mABt LA.?? (LA.All, LA.DropLast 1)
       vBfit = mAwc #> vX --(mAwc - mAt) #> vX -- this is confusing.
       vU = vB - vBfit
-      (rSq, aRSq) = RE.goodnessOfFit p vB vU --(vB - mA #> vX)
+--      (rSq, aRSq) = RE.goodnessOfFit p vB vU --(vB - mA #> vX)
       mse = (vU <.> vU) / (realToFrac (n - p))
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq cov
+  RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB Nothing vU
+  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq fStat cov
 
 weightedTLS :: Monad m =>  Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RE.RegressionResult R)
 weightedTLS withConstant mA vB vW = do
@@ -115,15 +117,17 @@ weightedTLS withConstant mA vB vW = do
       mV2 = mV' LA.?? (LA.All, LA.TakeLast 1)
       mWABt = mWAB LA.<> mV2 LA.<> (LA.tr mV2)
       mWAt = mWABt LA.?? (LA.All, LA.DropLast 1)
-      vBfit = mWA #> vX -- (mWA - mWAt) #> vX -- this is confusing
-      vWU = vWB - vBfit
+      vBfit = mAwc #> vX -- (mWA - mWAt) #> vX -- this is confusing
+      vU = vB - (mAwc #> vX)
+      vWU = mW #> vU
       sumW = LA.sumElements vW
       effN = (sumW * sumW) / (vW <.> vW)
       dof = effN - realToFrac p
       mse = effN /dof * (vWU <.> vWU) / sumW
-      (rSq, aRSq) = RE.goodnessOfFit p vWB vWU --(vB - mA #> vX)
+--      (rSq, aRSq) = RE.goodnessOfFit p vWB vWU --(vB - mA #> vX)
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
-  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq cov
+  RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB (Just vW) vU
+  return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq fStat cov
 
 addBiasCol :: Int -> Matrix R -> Matrix R
 addBiasCol rows mA =
