@@ -22,6 +22,7 @@ common deps
                , random-fu
                , random-source
                , statistics
+               , freer-simple
                , text
                , vector
                , vinyl >= 0.10.0.1
