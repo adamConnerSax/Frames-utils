@@ -43,7 +43,9 @@ library
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
                  , Control.Monad.Freer.Logger
+                 , Control.Monad.Freer.Docs
                  , Control.Monad.Freer.Html
+                 , Control.Monad.Freer.Random
                  , Html.Report
   -- other-modules:
   -- other-extensions:  

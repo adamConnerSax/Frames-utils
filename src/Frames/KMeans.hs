@@ -5,18 +5,19 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE QuasiQuotes               #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
 module Frames.KMeans
   (
     kMeans
@@ -257,7 +258,7 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = Log.w
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
   return $ catMaybes $ V.toList $ fmap (fmap fix . centroid weighted . members) clusters -- we drop empty clusters ??
 
-kMeansWithClusters :: forall rs ks x y w effs f. ( FA.ThreeDTransformable rs ks x y w
+kMeansWithClusters :: forall effs ks rs x y w f. ( FA.ThreeDTransformable rs ks x y w
                                                  , F.ElemOf [FA.DblX,FA.DblY,w] w
                                                  , F.ElemOf rs x
                                                  , F.ElemOf rs y
@@ -272,8 +273,7 @@ kMeansWithClusters :: forall rs ks x y w effs f. ( FA.ThreeDTransformable rs ks 
                                                  , FR.Member Log.Logger effs
                                                  , Show (FA.FType w)
                                                  , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
-                   => Proxy ks
-                   -> Proxy '[x,y,w]
+                   => Proxy '[x,y,w]
                    -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
                    -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                    -> Int
@@ -281,7 +281,7 @@ kMeansWithClusters :: forall rs ks x y w effs f. ( FA.ThreeDTransformable rs ks 
                    -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> FR.Eff effs [U.Vector Double])  -- initial centroids
                    -> Distance
                    -> FL.FoldM (FR.Eff effs) (F.Record rs) (M.Map (F.Record ks) [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])])
-kMeansWithClusters proxy_ks _ sunXF sunYF numClusters numTries makeInitial distance =
+kMeansWithClusters _ sunXF sunYF numClusters numTries makeInitial distance =
   let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
       toRecord (x, y, w) = x &: y &: w &: V.RNil 
       computeOne = kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance 

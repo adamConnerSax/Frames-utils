@@ -9,35 +9,47 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Control.Monad.Freer.Html where
+module Control.Monad.Freer.Html
+  (
+    Html
+  , HtmlDocs
+  , NamedDoc(..)
+  , html
+  , newHtmlDoc
+  , htmlToNamedText
+  , htmlToText
+  ) where
 
---import           Control.Monad.IO.Class (MonadIO (..))
-import qualified Lucid                  as H
-import qualified Data.Text.Lazy              as T
-import qualified Control.Monad.Freer    as FR
-{-
-import qualified Data.List              as List
-import           Data.Monoid            ((<>))
+import qualified Lucid                       as H
+import qualified Data.Text.Lazy              as TL
+import qualified Data.Text                   as T
+import qualified Control.Monad.Freer         as FR
+import qualified Control.Monad.Freer.Writer  as FR
+import           Control.Monad.Freer.Docs    (Docs, NamedDoc(..), newDoc, toNamedDocList)
 
-import qualified Pipes                  as P
-
-import qualified Control.Monad.Freer.State   as FR
-import qualified Control.Monad.Freer.Writer   as FR
--}
-
+-- For now, just handle the Html () case since then it's monoidal and we can interpret via writer
+--newtype FreerHtml = FreerHtml { unFreer :: H.Html () }
 
 data Html r where
-  Html :: H.Html a -> Html a 
-
-html :: FR.Member Html effs => H.Html a -> FR.Eff effs a
+  Html   :: H.Html () -> Html () -- add to current doc
+  
+html :: FR.Member Html effs => H.Html () -> FR.Eff effs ()
 html = FR.send . Html
 
-htmlToText :: forall a effs. FR.Eff (Html ': effs) a -> FR.Eff effs T.Text
-htmlToText h = FR.interpretWith f (toTextHelper h) where
-  f :: forall v. Html v -> (v -> FR.Eff effs T.Text) -> FR.Eff effs T.Text
-  f (Html x) _ = pure $ H.renderText x
+toWriter :: FR.Eff (Html ': effs) a -> FR.Eff (FR.Writer (H.Html ()) ': effs) a
+toWriter = FR.translate (\(Html x) -> FR.Tell x)
 
---  fmap H.renderText . FR.interpret (\(Html x) -> pure x)
+type HtmlDocs = Docs (H.Html ())
 
-toTextHelper :: FR.Eff (Html ': effs) a -> FR.Eff (Html ': effs) T.Text
-toTextHelper l = l >> (html $ pure "") -- add a pure text value so that we have the right type for FR.interpretWith
+newHtmlDocPure :: FR.Member HtmlDocs effs => T.Text -> H.Html () -> FR.Eff effs ()
+newHtmlDocPure = newDoc  
+
+newHtmlDoc :: FR.Member HtmlDocs effs => T.Text -> FR.Eff (Html ': effs) () -> FR.Eff effs ()
+newHtmlDoc n l = (fmap snd $ FR.runWriter $ toWriter l) >>= newHtmlDocPure n 
+
+htmlToNamedText :: FR.Eff (HtmlDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
+htmlToNamedText = fmap (fmap (fmap H.renderText)) . toNamedDocList -- monad, list, NamedDoc itself
+               
+htmlToText :: FR.Eff (Html ': effs) () -> FR.Eff effs TL.Text
+htmlToText = fmap (H.renderText . snd) . FR.runWriter . toWriter
+
