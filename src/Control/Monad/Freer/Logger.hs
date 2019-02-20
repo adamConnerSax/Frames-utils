@@ -8,8 +8,23 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Control.Monad.Freer.Logger where
+module Control.Monad.Freer.Logger
+  (
+    LogSeverity (..)
+  , Logger
+  , logAll
+  , nonDiagnostic
+  , log
+  , wrapPrefix
+  , logToStdout
+  -- re-exports
+  , Eff
+  , Member
+  )
+where
 
+
+import           Prelude hiding (log)
 import           Control.Monad.IO.Class (MonadIO (..))
 import           Control.Monad.State    (MonadState, State, evalState, StateT, evalStateT, get,
                                          modify)
@@ -20,6 +35,7 @@ import           Data.Monoid            ((<>))
 import qualified Data.Text              as T
 import qualified Pipes                  as P
 import qualified Control.Monad.Freer    as FR
+import           Control.Monad.Freer    (Eff, Member)
 import qualified Control.Monad.Freer.State   as FR
 import qualified Control.Monad.Freer.Writer   as FR
 
@@ -87,6 +103,14 @@ writeLogStdout = FR.interpret (\(WriteToLog t) -> liftIO $ putStrLn (T.unpack t)
 
 logToStdout :: MonadIO (FR.Eff effs) => FR.Eff (Logger ': effs) a -> FR.Eff effs a
 logToStdout = writeLogStdout . runLogger 
+
+wrapPrefix :: FR.Member Logger effs => T.Text -> FR.Eff effs a -> FR.Eff effs a
+wrapPrefix p l = do
+  addPrefix p
+  res <- l
+  removePrefix
+  return res
+
   
 {-
 type Logger m = P.Producer LogEntry (StateT LoggerPrefix m)
@@ -101,12 +125,6 @@ removePrefix :: Monad m => Logger m ()
 removePrefix = modify tail
 
 
-wrapPrefix :: FR.Member Logger effs => T.Text -> FR.Eff effs a -> FR.Eff effs a
-wrapPrefix p l = do
-  addPrefix p
-  res <- l
-  removePrefix
-  return res
   
 doLogOutput :: (MonadState LoggerPrefix m, MonadIO m) => [LogSeverity] -> LogEntry -> m ()
 doLogOutput ls le = case filterLogEntry ls le of

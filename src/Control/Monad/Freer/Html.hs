@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.Monad.Freer.Html where
 
@@ -26,10 +27,13 @@ import qualified Control.Monad.Freer.Writer   as FR
 
 
 data Html r where
-  Html :: H.Html a -> Html a
+  Html :: H.Html a -> Html a 
 
 html :: FR.Member Html effs => H.Html a -> FR.Eff effs a
 html = FR.send . Html
 
-htmlToText :: FR.Eff (Html ': effs) () -> FR.Eff effs T.Text
-htmlToText = FR.interpret (\(Html x) -> pure $ H.renderText x)
+htmlToText :: FR.Eff (Html ': effs) a -> FR.Eff effs T.Text
+htmlToText = fmap H.renderText . FR.interpret (\(Html x) -> pure x)
+
+toTextHelper :: FR.Eff (Html ': effs) a -> FR.Eff (Html ': effs) T.Text
+toTextHelper l = l >> (html $ pure "") -- add a pure text value so that we have the right type for FR.interpret  
