@@ -19,6 +19,7 @@ import qualified Control.Foldl.Statistics              as FS
 import qualified Data.Foldable                         as Foldable
 import           Data.Function                         (on)
 import qualified Data.List                             as List
+import           Data.Maybe                            (fromMaybe)
 import qualified Data.Profunctor                       as PF
 import qualified Data.Text                             as T
 import qualified Data.Vector.Storable                  as V
@@ -64,7 +65,7 @@ data RegressionResult a = RegressionResult
                           , meanSquaredError   :: a
                           , rSquared           :: Double
                           , adjRSquared        :: Double
-                          , fStatistic         :: Double
+                          , fStatistic         :: Maybe Double -- we can't compute this for fits with one parameter
                           , covariances        :: Matrix Double
                           } deriving (Show)
 
@@ -84,7 +85,7 @@ namedEstimates pNames res cl =
       sigma e = S.normalError $ S.estError e
       dist e = S.studentTUnstandardized dof 0 (sigma e)
       ci e = 2 * S.quantile (dist e) prob
-      pValue e = S.complCumulative (dist e) (S.estPoint e)
+      pValue e = S.complCumulative (dist e) (abs $ S.estPoint e)
   in List.zipWith (\n e -> NamedEstimate n (S.estPoint e) (ci e) (pValue e)) pNames (parameterEstimates res)
 
 namedEstimatesColonnade :: S.CL R -> C.Colonnade C.Headed (NamedEstimate R) T.Text
@@ -94,24 +95,25 @@ namedEstimatesColonnade  cl =
   <> C.headed ((T.pack $ TP.printf "%.0f" (100 * S.confidenceLevel cl)) <> "% confidence") (T.pack . TP.printf "%4.3f" . regressorCI)
   <> C.headed "p-value" (T.pack . TP.printf "%4.3f" . regressorPValue)
 
-namedSummaryStats :: RegressionResult R -> [(T.Text, R)]
+namedSummaryStats :: RegressionResult R -> [(T.Text, T.Text)]
 namedSummaryStats r =
   let p = List.length (parameterEstimates r)
       effN = (degreesOfFreedom r) + (realToFrac p)
       d1 = realToFrac $ p - 1
       d2 = effN - (realToFrac p)
-      dist = S.fDistributionReal d1 d2
-      fStat = fStatistic r
+      pValM = fmap (S.complCumulative (S.fDistributionReal d1 d2)) (fStatistic r)
+      printNum = T.pack . TP.printf "%4.3f"
+      printMaybeNum = fromMaybe "N/A" . fmap printNum
   in [
-      ("R-Squared",(rSquared r))
-    , ("Adj. R-squared",(adjRSquared r))
-    , ("F-stat", fStat)
-    , ("p-value", S.complCumulative dist fStat)
-    , ("Mean Squared Error",(meanSquaredError r))
+      ("R-Squared",printNum (rSquared r))
+    , ("Adj. R-squared",printNum (adjRSquared r))
+    , ("F-stat", printMaybeNum (fStatistic r))
+    , ("p-value", printMaybeNum pValM)
+    , ("Mean Squared Error",printNum (meanSquaredError r))
     ]
 
-namedSummaryStatsColonnade :: C.Colonnade C.Headed (T.Text,Double) T.Text
-namedSummaryStatsColonnade  = C.headed "Summary Stat." fst <> C.headed "Value" (T.pack . TP.printf "%4.3f" . snd)
+namedSummaryStatsColonnade :: C.Colonnade C.Headed (T.Text,T.Text) T.Text
+namedSummaryStatsColonnade = C.headed "Summary Stat." fst <> C.headed "Value" snd
 
 prettyPrintRegressionResult :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> T.Text
 prettyPrintRegressionResult header xNames r cl =
@@ -132,10 +134,9 @@ prettyPrintRegressionResultHtml header xNames r cl = do
     C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedSummaryStatsColonnade) nSS
 
 
-data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: a}
+data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: Maybe a}
 
-goodnessOfFit :: FR.Member Log.Logger effs
-  => Int -> Vector R -> Maybe (Vector R) -> Vector R -> FR.Eff effs (FitStatistics R)
+goodnessOfFit :: FR.Member Log.Logger effs => Int -> Vector R -> Maybe (Vector R) -> Vector R -> FR.Eff effs (FitStatistics R)
 goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
   let n = LA.size vB
       p = realToFrac pInt
@@ -149,23 +150,21 @@ goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
       ssRes = vU <.> (mW #> vU) -- weighted ssq of residuals
       rSq = 1 - (ssRes/ssTot)
       arSq = 1 - (1 - rSq)*(realToFrac $ (effN - 1))/(realToFrac $ (effN - p - 1))
-      fStat = ((ssTot - ssRes)/ (p - 1.0)) / (ssRes / (effN - p))
+      fStatM = if (pInt > 1) then Just (((ssTot - ssRes)/ (p - 1.0)) / (ssRes / (effN - p))) else Nothing
   Log.log Log.Diagnostic $ "n=" <> (T.pack $ show n)
   Log.log Log.Diagnostic $ "p=" <> (T.pack $ show p)
   Log.log Log.Diagnostic $ "vW=" <> (T.pack $ show vW)
   Log.log Log.Diagnostic $ "effN=" <> (T.pack $ show effN)
   Log.log Log.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
   Log.log Log.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
-
-  return $ FitStatistics rSq arSq fStat
+  return $ FitStatistics rSq arSq fStatM
 
 estimates :: Matrix R -> Vector R -> [S.Estimate S.NormalErr R]
 estimates cov means =
   let sigmas = LA.cmap sqrt (LA.takeDiag cov)
   in List.zipWith (\m s -> S.estimateNormErr m s) (LA.toList means) (LA.toList sigmas)
 
-eickerHeteroscedasticityEstimator :: FR.Member Log.Logger effs
-  => Matrix R -> Vector R -> Vector R -> FR.Eff effs (Matrix R)
+eickerHeteroscedasticityEstimator :: FR.Member Log.Logger effs => Matrix R -> Vector R -> Vector R -> FR.Eff effs (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
   HU.checkVectorMatrix "b" "A" vB mA
   HU.checkVectorMatrix "b'" "A" vB' mA
