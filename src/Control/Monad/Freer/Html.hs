@@ -32,8 +32,12 @@ data Html r where
 html :: FR.Member Html effs => H.Html a -> FR.Eff effs a
 html = FR.send . Html
 
-htmlToText :: FR.Eff (Html ': effs) a -> FR.Eff effs T.Text
-htmlToText = fmap H.renderText . FR.interpret (\(Html x) -> pure x)
+htmlToText :: forall a effs. FR.Eff (Html ': effs) a -> FR.Eff effs T.Text
+htmlToText h = FR.interpretWith f (toTextHelper h) where
+  f :: forall v. Html v -> (v -> FR.Eff effs T.Text) -> FR.Eff effs T.Text
+  f (Html x) _ = pure $ H.renderText x
+
+--  fmap H.renderText . FR.interpret (\(Html x) -> pure x)
 
 toTextHelper :: FR.Eff (Html ': effs) a -> FR.Eff (Html ': effs) T.Text
-toTextHelper l = l >> (html $ pure "") -- add a pure text value so that we have the right type for FR.interpret  
+toTextHelper l = l >> (html $ pure "") -- add a pure text value so that we have the right type for FR.interpretWith

@@ -87,22 +87,25 @@ removePrefix :: FR.Member Logger effs => FR.Eff effs ()
 removePrefix = FR.send RemovePrefix
 
 -- interpret in State (for prefixes) and WriteToLog
-runLogger :: forall effs a. FR.Eff (Logger ': effs) a -> FR.Eff (LogWriter ': effs) a
-runLogger = FR.evalState [] . loggerToStateLogWriter where
+runLogger :: forall effs a. [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff (LogWriter ': effs) a
+runLogger lss = FR.evalState [] . loggerToStateLogWriter where
   loggerToStateLogWriter :: forall x. FR.Eff (Logger ': effs) x -> FR.Eff (FR.State [T.Text] ': (LogWriter ': effs)) x
   loggerToStateLogWriter = FR.reinterpret2 $ \case
     LogText ls t -> do
-      ps <- FR.get
-      let prefixText = T.intercalate "." (List.reverse ps)
-      writeToLog $ prefixText <> ": " <> (logEntryPretty $ (LogEntry ls t))
+      case filterLogEntry lss (LogEntry ls t) of
+        Nothing -> return ()
+        Just le -> do
+          ps <- FR.get
+          let prefixText = T.intercalate "." (List.reverse ps)
+          writeToLog $ prefixText <> ": " <> (logEntryPretty le)
     AddPrefix t -> FR.modify (\ps -> t : ps)  
     RemovePrefix -> FR.modify @[T.Text] tail -- type application required here since tail is polymorphic
 
 writeLogStdout :: MonadIO (FR.Eff effs) => FR.Eff (LogWriter ': effs) a -> FR.Eff effs a
 writeLogStdout = FR.interpret (\(WriteToLog t) -> liftIO $ putStrLn (T.unpack t))
 
-logToStdout :: MonadIO (FR.Eff effs) => FR.Eff (Logger ': effs) a -> FR.Eff effs a
-logToStdout = writeLogStdout . runLogger 
+logToStdout :: MonadIO (FR.Eff effs) => [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff effs a
+logToStdout lss = writeLogStdout . runLogger lss
 
 wrapPrefix :: FR.Member Logger effs => T.Text -> FR.Eff effs a -> FR.Eff effs a
 wrapPrefix p l = do

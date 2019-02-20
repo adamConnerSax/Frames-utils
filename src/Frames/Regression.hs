@@ -26,7 +26,8 @@ import qualified Frames.VegaLite as FV
 import qualified Math.Rescale as MR
 import qualified Math.Regression.Regression as MR
 import qualified Math.Regression.LeastSquares as MR
-import qualified System.PipesLogger as SL
+import qualified Control.Monad.Freer.Logger as Log
+import qualified Control.Monad.Freer as FR
 
 import qualified Lucid as H
 import qualified Colonnade                      as C
@@ -245,44 +246,24 @@ leastSquaresByMinimization withConstant guess dat =
   in LA.toList solution
 
 
-ordinaryLeastSquares :: forall y wc as rs f m. ( Monad m
-                                               , Foldable f
-                                               , as F.⊆ rs
-                                               , F.ElemOf rs y
-                                               , FA.RealField y
-                                               , V.AllConstrained (FA.RealFieldOf rs) as
-                                               , V.RMap as
-                                               , V.RecordToList as
-                                               , V.ReifyConstraint Real F.ElField as
-                                               , BoolVal wc
-                                               , V.NatToInt (V.RLength as))
-                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as Unweighted rs)
+ordinaryLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
+                                                  , Foldable f
+                                                  , as F.⊆ rs
+                                                  , F.ElemOf rs y
+                                                  , FA.RealField y
+                                                  , V.AllConstrained (FA.RealFieldOf rs) as
+                                                  , V.RMap as
+                                                  , V.RecordToList as
+                                                  , V.ReifyConstraint Real F.ElField as
+                                                  , BoolVal wc
+                                                  , V.NatToInt (V.RLength as))
+                     =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as Unweighted rs)
 ordinaryLeastSquares dat = do
   let (mA, vB) = prepRegression @y @as dat
       withConstant = asBool @wc
   FrameUnweightedRegressionResult <$> MR.ordinaryLS withConstant mA vB
 
-weightedLeastSquares :: forall y wc as w rs f m. ( Monad m
-                                                 , Foldable f
-                                                 , as F.⊆ rs
-                                                 , F.ElemOf rs y
-                                                 , FA.RealField y
-                                                 , F.ElemOf rs w
-                                                 , FA.RealField w
-                                                 , BoolVal wc
-                                                 , V.AllConstrained (FA.RealFieldOf rs) as
-                                                 , V.RMap as
-                                                 , V.RecordToList as
-                                                 , V.ReifyConstraint Real F.ElField as
-                                                 , V.NatToInt (V.RLength as))
-                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
-weightedLeastSquares dat = do
-  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc
-  FrameWeightedRegressionResult realToFrac <$> MR.weightedLS withConstant mA vB vW  
-
--- special case when weights come from observations being population averages of different populations
-popWeightedLeastSquares :: forall y wc as w rs f m .( Monad m
+weightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                                                     , Foldable f
                                                     , as F.⊆ rs
                                                     , F.ElemOf rs y
@@ -295,7 +276,27 @@ popWeightedLeastSquares :: forall y wc as w rs f m .( Monad m
                                                     , V.RecordToList as
                                                     , V.ReifyConstraint Real F.ElField as
                                                     , V.NatToInt (V.RLength as))
-                        =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
+                     =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+weightedLeastSquares dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+      withConstant = asBool @wc
+  FrameWeightedRegressionResult realToFrac <$> MR.weightedLS withConstant mA vB vW  
+
+-- special case when weights come from observations being population averages of different populations
+popWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+                                                       , Foldable f
+                                                       , as F.⊆ rs
+                                                       , F.ElemOf rs y
+                                                       , FA.RealField y
+                                                       , F.ElemOf rs w
+                                                       , FA.RealField w
+                                                       , BoolVal wc
+                                                       , V.AllConstrained (FA.RealFieldOf rs) as
+                                                       , V.RMap as
+                                                       , V.RecordToList as
+                                                       , V.ReifyConstraint Real F.ElField as
+                                                       , V.NatToInt (V.RLength as))
+                        =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 popWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc
@@ -304,64 +305,45 @@ popWeightedLeastSquares dat = do
 
 
 -- special case when we know residuals are heteroscedastic with variances proportional to given numbers
-varWeightedLeastSquares :: forall y wc as w rs f m .( Monad m
-                                                    , Foldable f
-                                                    , as F.⊆ rs
-                                                    , F.ElemOf rs y
-                                                    , FA.RealField y
-                                                    , F.ElemOf rs w
-                                                    , FA.RealField w
-                                                    , BoolVal wc
-                                                    , V.AllConstrained (FA.RealFieldOf rs) as
-                                                    , V.RMap as
-                                                    , V.RecordToList as
-                                                    , V.ReifyConstraint Real F.ElField as
-                                                    , V.NatToInt (V.RLength as))
-                        =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
+varWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+                                                       , Foldable f
+                                                       , as F.⊆ rs
+                                                       , F.ElemOf rs y
+                                                       , FA.RealField y
+                                                       , F.ElemOf rs w
+                                                       , FA.RealField w
+                                                       , BoolVal wc
+                                                       , V.AllConstrained (FA.RealFieldOf rs) as
+                                                       , V.RMap as
+                                                       , V.RecordToList as
+                                                       , V.ReifyConstraint Real F.ElField as
+                                                       , V.NatToInt (V.RLength as))
+                        =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc
       vWvar = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
   FrameWeightedRegressionResult (\x -> 1/(sqrt $ realToFrac x)) <$> MR.weightedLS withConstant mA vB vWvar  
 
-totalLeastSquares :: forall y wc as rs f m .( Monad m
-                                            , Foldable f
-                                            , as F.⊆ rs
-                                            , F.ElemOf rs y
-                                            , FA.RealField y
-                                            , BoolVal wc
-                                            , V.AllConstrained (FA.RealFieldOf rs) as
-                                            , V.RMap as
-                                            , V.RecordToList as
-                                            , V.ReifyConstraint Real F.ElField as
-                                            , V.NatToInt (V.RLength as))
-                     =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as Unweighted rs)
+totalLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
+                                               , Foldable f
+                                               , as F.⊆ rs
+                                               , F.ElemOf rs y
+                                               , FA.RealField y
+                                               , BoolVal wc
+                                               , V.AllConstrained (FA.RealFieldOf rs) as
+                                               , V.RMap as
+                                               , V.RecordToList as
+                                               , V.ReifyConstraint Real F.ElField as
+                                               , V.NatToInt (V.RLength as))
+                     =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as Unweighted rs)
 totalLeastSquares dat = do
   let (mA, vB) = prepRegression @y @as dat
       withConstant = asBool @wc
   FrameUnweightedRegressionResult <$> MR.totalLS withConstant mA vB
 
 
-weightedTLS :: forall y wc as w rs f m .( Monad m
-                                        , Foldable f
-                                        , as F.⊆ rs
-                                        , F.ElemOf rs y
-                                        , FA.RealField y
-                                        , BoolVal wc
-                                        , F.ElemOf rs w
-                                        , FA.RealField w
-                                        , V.AllConstrained (FA.RealFieldOf rs) as
-                                        , V.RMap as
-                                        , V.RecordToList as
-                                        , V.ReifyConstraint Real F.ElField as
-                                        , V.NatToInt (V.RLength as))
-            =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
-weightedTLS dat = do
-  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc  
-  FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConstant mA vB vW
-
-popWeightedTLS :: forall y wc as w rs f m .( Monad m
+weightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                                            , Foldable f
                                            , as F.⊆ rs
                                            , F.ElemOf rs y
@@ -374,27 +356,46 @@ popWeightedTLS :: forall y wc as w rs f m .( Monad m
                                            , V.RecordToList as
                                            , V.ReifyConstraint Real F.ElField as
                                            , V.NatToInt (V.RLength as))
-               =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
+            =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+weightedTLS dat = do
+  let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
+      withConstant = asBool @wc  
+  FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConstant mA vB vW
+
+popWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+                                              , Foldable f
+                                              , as F.⊆ rs
+                                              , F.ElemOf rs y
+                                              , FA.RealField y
+                                              , BoolVal wc
+                                              , F.ElemOf rs w
+                                              , FA.RealField w
+                                              , V.AllConstrained (FA.RealFieldOf rs) as
+                                              , V.RMap as
+                                              , V.RecordToList as
+                                              , V.ReifyConstraint Real F.ElField as
+                                              , V.NatToInt (V.RLength as))
+               =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 popWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc  
       vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
   FrameWeightedRegressionResult (sqrt . realToFrac) <$> MR.weightedTLS withConstant mA vB vWpop
 
-varWeightedTLS :: forall y wc as w rs f m .( Monad m
-                                           , Foldable f
-                                           , as F.⊆ rs
-                                           , F.ElemOf rs y
-                                           , FA.RealField y
-                                           , BoolVal wc
-                                           , F.ElemOf rs w
-                                           , FA.RealField w                                        
-                                           , V.AllConstrained (FA.RealFieldOf rs) as
-                                           , V.RMap as
-                                           , V.RecordToList as
-                                           , V.ReifyConstraint Real F.ElField as
-                                           , V.NatToInt (V.RLength as))
-            =>  f (F.Record rs) -> SL.Logger m (FrameRegressionResult y wc as w rs)
+varWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+                                              , Foldable f
+                                              , as F.⊆ rs
+                                              , F.ElemOf rs y
+                                              , FA.RealField y
+                                              , BoolVal wc
+                                              , F.ElemOf rs w
+                                              , FA.RealField w                                        
+                                              , V.AllConstrained (FA.RealFieldOf rs) as
+                                              , V.RMap as
+                                              , V.RecordToList as
+                                              , V.ReifyConstraint Real F.ElField as
+                                              , V.NatToInt (V.RLength as))
+            =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConstant = asBool @wc    
