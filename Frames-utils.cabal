@@ -46,10 +46,13 @@ library
                  , Control.Monad.Freer.Docs
                  , Control.Monad.Freer.Html
                  , Control.Monad.Freer.Random
+                 , Control.Monad.Freer.PandocMonad
+                 , Control.Monad.Freer.Pandoc
                  , Html.Report
   -- other-modules:
   -- other-extensions:  
   build-depends:    aeson-pretty
+                  , blaze-html
                   , bytestring
                   , containers
                   , colonnade
@@ -66,6 +69,7 @@ library
                   , pandoc
                   , pipes
                   , profunctors
+                  , random
                   , time
                   , text
                   , hvega

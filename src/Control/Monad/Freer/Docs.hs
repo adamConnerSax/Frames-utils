@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveTraversable   #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.Monad.Freer.Docs
   (
@@ -33,7 +34,7 @@ newDoc name doc = FR.send $ NewDoc name doc
 
 -- interpret in State
 
-data NamedDoc a = NamedDoc { ndName :: T.Text, ndDoc :: a } deriving (Functor)
+data NamedDoc a = NamedDoc { ndName :: T.Text, ndDoc :: a } deriving (Functor, Foldable, Traversable)
 {-
 data MultiDocState a = MultiDocState { mdsCurrentName :: T.Text, mdsDocs :: [NamedDoc a] }
 

@@ -11,7 +11,7 @@
 module Control.Monad.Freer.Logger
   (
     LogSeverity (..)
-  , Logger
+  , Logger(..)
   , logAll
   , nonDiagnostic
   , log
@@ -20,8 +20,7 @@ module Control.Monad.Freer.Logger
   -- re-exports
   , Eff
   , Member
-  )
-where
+  ) where
 
 
 import           Prelude hiding (log)
@@ -66,6 +65,7 @@ type LoggerPrefix = [T.Text]
 
 -- Also, just Haskell confusing me:  how does this log in real time before things are finished now that it needs the state?  Pipes are confusing magic.
 
+-- output
 data LogWriter r where
   WriteToLog :: T.Text -> LogWriter ()
 
