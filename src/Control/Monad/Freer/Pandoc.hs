@@ -14,6 +14,10 @@ module Control.Monad.Freer.Pandoc
   (
     ToPandoc
   , FromPandoc
+  , PandocReadFormat(..)
+  , PandocWriteFormat(..)
+  , addFrom
+  , writeTo
   , Pandocs
   , NamedDoc(..)
   , newPandoc

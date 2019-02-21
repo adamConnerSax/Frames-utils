@@ -49,6 +49,7 @@ library
                  , Control.Monad.Freer.PandocMonad
                  , Control.Monad.Freer.Pandoc
                  , Html.Report
+                 , Pandoc.Report
   -- other-modules:
   -- other-extensions:  
   build-depends:    aeson-pretty
@@ -81,6 +82,7 @@ library
 executable FrameRegressions
   import: deps
   build-depends: base
+               , data-default
                , foldl
                , Frames-utils
                , Frames

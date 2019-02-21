@@ -30,6 +30,7 @@ import qualified Numeric.LinearAlgebra.Data   as LA
 import qualified Frames.Regression            as FR
 import qualified Frames.VegaLiteTemplates     as FV
 import qualified Html.Report                  as H
+import qualified Pandoc.Report                as P
 import qualified Lucid                        as H
 import qualified Math.Regression.LeastSquares as LS
 import qualified Math.Regression.Regression   as RE
@@ -38,15 +39,20 @@ import           System.IO                    (BufferMode (..), hSetBuffering,
                                                stdout)
 import qualified Control.Monad.Freer.Logger   as Log
 import qualified Control.Monad.Freer          as FR
+import qualified Control.Monad.Freer.PandocMonad as FR
+import qualified Control.Monad.Freer.Pandoc as P
 import           Control.Monad.Freer.Html     (Html, html, htmlToText)
+import Data.Default (def)
 
+--import Text.Pandoc.Class as P
 
 main :: IO ()
 main = do
-  let runAll = FR.runM . Log.logToStdout Log.logAll . Log.wrapPrefix "Main". htmlToText 
-  htmlAsText <- runAll $ do
-    Log.log Log.Info "here" 
-    html $ H.makeReportHtml "Frame Regression Examples" $ do
+  let runAll = FR.runM . Log.logToStdout Log.logAll . Log.wrapPrefix "Main". htmlToText
+      runAllP = FR.runPandocAndLoggingToIO Log.logAll . Log.wrapPrefix "Main" -- . htmlToText 
+  htmlAsTextE <- runAllP $ do
+    htmlTextHeader <- htmlToText $ html $ H.makeReportHtml "Frame Regression Examples" $ return ()
+    htmlTextNotes  <- htmlToText $ html $ do
       H.placeTextSection $ do
         H.h2_ "Regression Algorithm Comparison"
         H.ul_ $ do
@@ -56,13 +62,14 @@ main = do
           H.li_ "Both TLS and WTLS are computed via the Singular Value Decomposition."
           H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals. The shaded regions in each plot are the \"prediction intervals\" which take into account the uncertainty of the coefficients as well as the remainining noise in the data."
           H.li_ "The F-stat is computed for each fit via comparision to the model of intercept-only.  So the p-value of the overall fit is the probability that the data are better explained as noise around their (weighted) mean value than by the fit."
-    Log.log Log.Info "here"           
-    testMany
---      testOLS
---      testWOLS
---      testTLS
---      testWTLS
-  T.writeFile "examples/html/FrameRegressions.html" $ TL.toStrict $ htmlAsText
+    htmlTextPlots <- htmlToText $ testMany
+    htmlTextBody <- P.fromPandocE P.WriteHtml5String P.htmlWriterOptions $ do
+      P.addFrom P.ReadHtml P.htmlReaderOptionsWithHeader (TL.toStrict htmlTextNotes)
+      P.addFrom P.ReadHtml P.htmlReaderOptions (TL.toStrict htmlTextPlots)
+    return $ (TL.toStrict htmlTextHeader) <> htmlTextBody
+  case htmlAsTextE of
+    Right htmlAsText -> T.writeFile "examples/html/FrameRegressions.html" {-$ TL.toStrict -} $ htmlAsText
+    Left err -> putStrLn $ "pandoc error: " ++ show err
 
 --logged = Log.runLoggerIO Log.logAll
 -- regression tests
