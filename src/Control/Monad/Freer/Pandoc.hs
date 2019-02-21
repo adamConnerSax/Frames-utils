@@ -23,6 +23,8 @@ module Control.Monad.Freer.Pandoc
 import qualified Text.Pandoc                 as P
 --import qualified Data.Text.Lazy              as TL
 import qualified Data.Text                   as T
+import           Data.ByteString             (ByteString)
+import           Text.Blaze.Html             (Html)
 import qualified Control.Monad.Freer         as FR
 import qualified Control.Monad.Freer.Writer  as FR
 import           Control.Monad.Freer.Docs    (Docs, NamedDoc(..), newDoc, toNamedDocList)
@@ -30,22 +32,43 @@ import           Control.Monad.Freer.Docs    (Docs, NamedDoc(..), newDoc, toName
 -- For now, just handle the Html () case since then it's monoidal and we can interpret via writer
 --newtype FreerHtml = FreerHtml { unFreer :: H.Html () }
 
-data Pandoc r where
-  Html   :: H.Html () -> Html () -- add to current doc
-  
-html :: FR.Member Html effs => H.Html () -> FR.Eff effs ()
-html = FR.send . Html
+data PandocReadFormat a where
+  DocX :: PandocReadFormat ByteString
+  MarkDown :: PandocReadFormat T.Text
+  CommonMark :: PandocReadFormat T.Text
+  RST :: PandocReadFormat T.Text
+  LaTeX :: PandocReadFormat T.Text
+  Html :: PandocReadFormat T.Text deriving (Show)
 
-toWriter :: FR.Eff (Html ': effs) a -> FR.Eff (FR.Writer (H.Html ()) ': effs) a
+data PandocWriteFormat a where
+  DocX :: PandocWriteFormat ByteString
+  MarkDown :: T.Text
+  CommonMark :: T.Text
+  RST :: T.Text
+  LaTeX :: T.Text
+  Html5 :: Html
+  Html5String :: T.Text deriving (Show)
+
+data Pandoc r where
+  AddFrom  :: PandocReadFormat a -> P.ReaderOptions -> a -> Pandoc () -- add to current doc
+  WriteTo :: PandocWriteFormat a -> P.WriterOptions -> Pandoc a -- convert current doc to given format
+
+addFrom :: FR.Member Pandoc effs => PandocReadFormat a -> P.ReaderOptions -> a -> FR.Eff effs ()
+addFrom prf pro doc = FR.send $ AddFrom prf pro doc
+
+writeTo :: FR.Member Pandoc effs => PandocWriterFormat a -> P.WriterOptions -> FR.Eff effs a
+writeTo pwf pwo = FR.send $ WriteTo pwf pwo
+
+toWriter :: FR.Eff (Pandoc ': effs) a -> FR.Eff (FR.Writer (P.Pandoc) ': effs) a
 toWriter = FR.translate (\(Html x) -> FR.Tell x)
 
-type PanDocs = Docs (H.Html ())
+type PanDocs = Docs (P.Pandoc)
 
-newHtmlDocPure :: FR.Member HtmlDocs effs => T.Text -> H.Html () -> FR.Eff effs ()
-newHtmlDocPure = newDoc  
+newPandocPure :: FR.Member PanDocs effs => T.Text -> P.Pandoc  -> FR.Eff effs ()
+newPanDocPure = newDoc  
 
-newHtmlDoc :: FR.Member HtmlDocs effs => T.Text -> FR.Eff (Html ': effs) () -> FR.Eff effs ()
-newHtmlDoc n l = (fmap snd $ FR.runWriter $ toWriter l) >>= newHtmlDocPure n 
+newPanDoc :: FR.Member PanDocs effs => T.Text -> FR.Eff (Pandoc ': effs) () -> FR.Eff effs ()
+newPanDoc n l = (fmap snd $ FR.runWriter $ toWriter l) >>= newHtmlDocPure n 
 
 htmlToNamedText :: FR.Eff (HtmlDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
 htmlToNamedText = fmap (fmap (fmap H.renderText)) . toNamedDocList -- monad, list, NamedDoc itself
