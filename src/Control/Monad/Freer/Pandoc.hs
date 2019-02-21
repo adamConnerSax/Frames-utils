@@ -49,22 +49,35 @@ data PandocWriteFormat a where
   Html5 :: Html
   Html5String :: T.Text deriving (Show)
 
-data Pandoc r where
-  AddFrom  :: PandocReadFormat a -> P.ReaderOptions -> a -> Pandoc () -- add to current doc
-  WriteTo :: PandocWriteFormat a -> P.WriterOptions -> Pandoc a -- convert current doc to given format
+data ToPandoc r where
+  AddFrom  :: PandocReadFormat a -> P.ReaderOptions -> a -> ToPandoc () -- add to current doc
 
-addFrom :: FR.Member Pandoc effs => PandocReadFormat a -> P.ReaderOptions -> a -> FR.Eff effs ()
+data FromPandoc r   
+  WriteTo  :: PandocWriteFormat a -> P.WriterOptions -> P.Pandoc -> FromPandoc a -- convert to given format
+
+addFrom :: FR.Member ToPandoc effs => PandocReadFormat a -> P.ReaderOptions -> a -> FR.Eff effs ()
 addFrom prf pro doc = FR.send $ AddFrom prf pro doc
 
-writeTo :: FR.Member Pandoc effs => PandocWriterFormat a -> P.WriterOptions -> FR.Eff effs a
-writeTo pwf pwo = FR.send $ WriteTo pwf pwo
+writeTo :: FR.Member FromPandoc effs => PandocWriterFormat a -> P.WriterOptions -> P.Pandoc -> FR.Eff effs a
+writeTo pwf pwo pdoc = FR.send $ WriteTo pwf pwo
 
-toWriter :: FR.Eff (Pandoc ': effs) a -> FR.Eff (FR.Writer (P.Pandoc) ': effs) a
-toWriter = FR.translate (\(Html x) -> FR.Tell x)
+toPandoc :: P.PandocMonad m => PandocReadFormat a -> P.ReaderOptions -> a -> m P.Pandoc
+toPandoc prf pro x = case prf of
+  DocX -> P.readDocX pro x
+  MarkDown -> P.readMarkDown pro x
+  CommonMark -> P.readCommonMark pro x
+  RST -> P.readRST pro x
+  LaTeX -> P.readLaTeX pro x
+  Html -> P.readHtml pro x
+  
+
+toWriter :: (P.PandocMonad m, FR.LastMember m effs)
+  => FR.Eff (PandocReader ': effs) a -> FR.Eff (FR.Writer (P.Pandoc) ': effs) a
+toWriter = FR.translate (\(AddFrom rf ro x) -> FR.Tell toPax)
 
 type PanDocs = Docs (P.Pandoc)
 
-newPandocPure :: FR.Member PanDocs effs => T.Text -> P.Pandoc  -> FR.Eff effs ()
+newPandocPure :: FR.Member PanDocs effs => T.Text -> P.Pandoc -> FR.Eff effs ()
 newPanDocPure = newDoc  
 
 newPanDoc :: FR.Member PanDocs effs => T.Text -> FR.Eff (Pandoc ': effs) () -> FR.Eff effs ()
