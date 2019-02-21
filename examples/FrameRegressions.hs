@@ -11,6 +11,7 @@ module Main where
 
 import qualified Control.Foldl                as FL
 --import           Control.Monad.Trans          (lift)
+import           Control.Monad.IO.Class (MonadIO (..))
 import           Control.Monad.Morph          (generalize, hoist, lift)
 import qualified Data.List                    as List
 import           Data.Maybe                   (fromMaybe)
@@ -35,30 +36,35 @@ import qualified Math.Regression.Regression   as RE
 import qualified Statistics.Types             as S
 import           System.IO                    (BufferMode (..), hSetBuffering,
                                                stdout)
-import qualified System.PipesLogger           as SL
+import qualified Control.Monad.Freer.Logger   as Log
+import qualified Control.Monad.Freer          as FR
+import           Control.Monad.Freer.Html     (Html, html, htmlToText)
 
 
 main :: IO ()
 main = do
-  htmlAsText <- (H.makeReportHtmlAsText "Frame Regression Examples") $ do
-    H.placeTextSection $ do
-      H.h2_ "Regression Algorithm Comparison"
-      H.ul_ $ do
-        H.li_ "To get data for testing we choose xs evenly spaced between -0.5 and 0.5.  Then we compute ys via y=1 + 2.2x.  Then we add Gaussian noise to the ys.  We can optionally add Gaussian noise to the observed xs as well (that is, the ys are still calculated from the exact xs but we add noise to the xs before we regress) and add weights to the (x,y) pairs."
-        H.li_ "For unweighted data we use ordinary least squares (OLS) and total least square (TLS)."
-        H.li_ "For weighted data we use weighted least squares (WOLS) and weighted total least squares (WTLS)."
-        H.li_ "Both TLS and WTLS are computed via the Singular Value Decomposition."
-        H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals. The shaded regions in each plot are the \"prediction intervals\" which take into account the uncertainty of the coefficients as well as the remainining noise in the data."
-        H.li_ "The F-stat is computed for each fit via comparision to the model of intercept-only.  So the p-value of the overall fit is the probability that the data are better explained as noise around their (weighted) mean value than by the fit."
-    logged $ do
-      testMany
+  let runAll = FR.runM . Log.logToStdout Log.logAll . Log.wrapPrefix "Main". htmlToText 
+  htmlAsText <- runAll $ do
+    Log.log Log.Info "here" 
+    html $ H.makeReportHtml "Frame Regression Examples" $ do
+      H.placeTextSection $ do
+        H.h2_ "Regression Algorithm Comparison"
+        H.ul_ $ do
+          H.li_ "To get data for testing we choose xs evenly spaced between -0.5 and 0.5.  Then we compute ys via y=1 + 2.2x.  Then we add Gaussian noise to the ys.  We can optionally add Gaussian noise to the observed xs as well (that is, the ys are still calculated from the exact xs but we add noise to the xs before we regress) and add weights to the (x,y) pairs."
+          H.li_ "For unweighted data we use ordinary least squares (OLS) and total least square (TLS)."
+          H.li_ "For weighted data we use weighted least squares (WOLS) and weighted total least squares (WTLS)."
+          H.li_ "Both TLS and WTLS are computed via the Singular Value Decomposition."
+          H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals. The shaded regions in each plot are the \"prediction intervals\" which take into account the uncertainty of the coefficients as well as the remainining noise in the data."
+          H.li_ "The F-stat is computed for each fit via comparision to the model of intercept-only.  So the p-value of the overall fit is the probability that the data are better explained as noise around their (weighted) mean value than by the fit."
+    Log.log Log.Info "here"           
+    testMany
 --      testOLS
 --      testWOLS
 --      testTLS
 --      testWTLS
   T.writeFile "examples/html/FrameRegressions.html" $ TL.toStrict $ htmlAsText
 
-logged = SL.runLoggerIO SL.logAll
+--logged = Log.runLoggerIO Log.logAll
 -- regression tests
 
 -- build some data for testing
@@ -116,20 +122,22 @@ vars = coneWeighted 100 1 0.1
 varListToWeights = LA.cmap (\x -> 1/sqrt x) . LA.fromList
 wgts = varListToWeights vars
 
-htmlLift :: SL.Logger IO a -> SL.Logger (H.HtmlT IO) a
-htmlLift = hoist (hoist lift)
+--htmlLift :: Log.Logger IO a -> Log.Logger (H.HtmlT IO) a
+--htmlLift = hoist (hoist lift)
 
 
 
-testRegression :: (F.ColumnHeaders '[w], V.KnownField w)
+testRegression :: ( F.ColumnHeaders '[w]
+                  , V.KnownField w
+                  , FR.Members '[Log.Logger, Html] effs
+                  , MonadIO (FR.Eff effs))
                => Double
                -> Double
                -> Bool
                -> Bool
                -> T.Text
-               -> (F.FrameRec AllCols -> SL.Logger IO (FR.FrameRegressionResult Y True '[X] w AllCols))
-               -> SL.Logger (H.HtmlT IO) ()
---               -> SL.Logger (H.HtmlT IO) (T.Text, FR.FrameRegressionResult Y True '[X1] w AllCols, F.FrameRec AllCols)
+               -> (F.FrameRec AllCols -> FR.Eff effs (FR.FrameRegressionResult Y True '[X] w AllCols))
+               -> FR.Eff effs ()
 testRegression yNoise xNoise weighted offset vizId f = do
   let scopeT = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
@@ -137,24 +145,30 @@ testRegression yNoise xNoise weighted offset vizId f = do
       vars = if weighted then coneWeighted 100 1 0.1 else unweighted 100
       wgts = varListToWeights vars
       offsetM = if offset then (Just offsets) else Nothing
-  frame <- htmlLift $ SL.liftAction $ (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
-  result <- htmlLift $ f frame
+  frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
+  result <- f frame
   let header _ _ = scopeT
-  H.htmlToIOLogged $ FR.prettyPrintRegressionResultHtml header result S.cl95
-  H.htmlToIOLogged $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result S.cl95 frame
-  htmlLift $ SL.log SL.Info $ FR.prettyPrintRegressionResult header result S.cl95
+  html $ FR.prettyPrintRegressionResultHtml header result S.cl95
+  html $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result S.cl95 frame
+  Log.log Log.Info $ FR.prettyPrintRegressionResult header result S.cl95
   return ()
 
 --const3 f x y z = f x y
 
-testRegressions :: (F.ColumnHeaders '[w], FR.BoolVal (FR.NonVoidField w), V.KnownField w, Traversable f, Foldable f)
+testRegressions :: ( F.ColumnHeaders '[w]
+                   , FR.BoolVal (FR.NonVoidField w)
+                   , V.KnownField w
+                   , Traversable f
+                   , Foldable f
+                   , FR.Members '[Log.Logger, Html] effs
+                   , MonadIO (FR.Eff effs))
                 => Double
                 -> Double
                 -> Bool
                 -> Bool
                 -> T.Text
-                -> f (T.Text, (F.FrameRec AllCols -> SL.Logger IO (FR.FrameRegressionResult Y True '[X] w AllCols)))
-                -> SL.Logger (H.HtmlT IO) ()
+                -> f (T.Text, (F.FrameRec AllCols -> FR.Eff effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
+                -> FR.Eff effs ()
 testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   let title = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
@@ -165,19 +179,20 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
       doOne dat (key, f) = do
         result <- f dat
         return (key, result)
-  frame <- htmlLift $ SL.liftAction $ (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
-  results <- htmlLift $ traverse (doOne frame) keyedFs
+  frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
+  results <- traverse (doOne frame) keyedFs
   let header _ _ = title
-  SL.liftFunction (H.div_ [H.style_ "display: block-inline"]) $ do
-    H.htmlToIOLogged $ FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultHtml (mempty)
-    H.htmlToIOLogged $ H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
-    H.htmlToIOLogged $ H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
+  html $ H.div_ [H.style_ "display: block-inline"] $ do
+    FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultHtml mempty
+    H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
+    H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
   return ()
 
 
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
-testMany :: SL.Logger (H.HtmlT IO) ()
-testMany = SL.wrapPrefix "Many" $ do
+testMany :: ( FR.Members '[Log.Logger, Html] effs
+            , MonadIO (FR.Eff effs)) =>  FR.Eff effs ()
+testMany = Log.wrapPrefix "Many" $ do
   let toTestUW  =
         [
           ("OLS", FR.ordinaryLeastSquares)
@@ -188,7 +203,6 @@ testMany = SL.wrapPrefix "Many" $ do
           ("WOLS", FR.weightedLeastSquares)
         , ("WTLS", FR.weightedTLS)
         ]
-
   testRegressions 0.0 0.0 False False "many1" toTestUW
   testRegressions 0.3 0.0 False False "many2" toTestUW
   testRegressions 0.5 0.0 False False "many3" toTestUW
@@ -198,10 +212,11 @@ testMany = SL.wrapPrefix "Many" $ do
   testRegressions @Weight 0.5 0.0 True False "many7" toTestW
   testRegressions @Weight 0.3 0.1 True False "many8" toTestW
 
-testOLS :: SL.Logger (H.HtmlT IO) ()
-testOLS =  SL.wrapPrefix "OLS" $ do
+{-
+testOLS :: Log.Logger (H.HtmlT IO) ()
+testOLS =  Log.wrapPrefix "OLS" $ do
   let regress = FR.ordinaryLeastSquares
-  htmlLift $ SL.log SL.Info "Ordinary Least Squares"
+  htmlLift $ Log.log Log.Info "Ordinary Least Squares"
   testRegression 0 0 False False "OLS1" regress
   testRegression 0.1 0 False False "OLS2" regress
   testRegression 0.5 0 False False "OLS3" regress
@@ -210,10 +225,10 @@ testOLS =  SL.wrapPrefix "OLS" $ do
   testRegression 0.3 0 True False "OLS6" regress
   testRegression 0.3 0.3 True False "OLS7" regress
 
-testWOLS :: SL.Logger (H.HtmlT IO) ()
-testWOLS =  SL.wrapPrefix "WOLS" $ do
+testWOLS :: Log.Logger (H.HtmlT IO) ()
+testWOLS =  Log.wrapPrefix "WOLS" $ do
   let regress = FR.weightedLeastSquares
-  htmlLift $ SL.log SL.Info "Weighted Ordinary Least Squares"
+  htmlLift $ Log.log Log.Info "Weighted Ordinary Least Squares"
   testRegression @Weight 0 0 True False "WOLS1" regress
   testRegression @Weight 0.1 0 True False "WOLS2" regress
   testRegression @Weight 0.1 0 False False "WOLS3" regress
@@ -222,10 +237,10 @@ testWOLS =  SL.wrapPrefix "WOLS" $ do
 --  testRegression @Weight 0.1 0.1 True True "WOLS6" regress
   testRegression @Weight 0.3 0.3 True False "WOLS7" regress
 
-testTLS :: SL.Logger (H.HtmlT IO) ()
-testTLS = SL.wrapPrefix "TLS" $ do
+testTLS :: Log.Logger (H.HtmlT IO) ()
+testTLS = Log.wrapPrefix "TLS" $ do
   let regress = FR.totalLeastSquares
-  htmlLift $ SL.log SL.Info "Total Least Squares"
+  htmlLift $ Log.log Log.Info "Total Least Squares"
   testRegression 0 0 False False "TLS1" regress
   testRegression 0.1 0 False False "TLS2" regress
   testRegression 0.5 0 False False "TLS3" regress
@@ -234,10 +249,10 @@ testTLS = SL.wrapPrefix "TLS" $ do
   testRegression 0.3 0 True False "TLS6" regress
   testRegression 0.3 0.3 True False "TLS7" regress
 
-testWTLS :: SL.Logger (H.HtmlT IO) ()
-testWTLS =  SL.wrapPrefix "WTLS" $ do
+testWTLS :: Log.Logger (H.HtmlT IO) ()
+testWTLS =  Log.wrapPrefix "WTLS" $ do
   let regress = FR.weightedTLS
-  htmlLift $ SL.log SL.Info "Weighted Total Least Squares"
+  htmlLift $ Log.log Log.Info "Weighted Total Least Squares"
   testRegression @Weight 0 0 True False "WTLS1" regress
   testRegression @Weight 0.1 0 True False "WTLS2" regress
   testRegression @Weight 0.1 0 False False "WTLS3" regress
@@ -246,3 +261,4 @@ testWTLS =  SL.wrapPrefix "WTLS" $ do
 --  testRegression @Weight 0.1 0.1 True True "WTLS6" regress
   testRegression @Weight 0.3 0.3 True False "WTLS7" regress
 
+-}

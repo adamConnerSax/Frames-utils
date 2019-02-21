@@ -23,7 +23,8 @@ import qualified Data.Profunctor            as PF
 import qualified Data.Text                  as T
 import qualified Data.Vector.Storable       as V
 import qualified Statistics.Types           as S
-import qualified System.PipesLogger         as SL
+import qualified Control.Monad.Freer.Logger as Log
+import qualified Control.Monad.Freer as FR
 
 import           Numeric.LinearAlgebra      (( #> ), (<#), (<.>), (<\>))
 import qualified Numeric.LinearAlgebra      as LA
@@ -41,7 +42,7 @@ import qualified Numeric.LinearAlgebra.Data as LA
 -- we want an (n x d) matrix X which solves, or "best solves", AX = B.
 
 -- OLS: minimize ||AX - B||
-ordinaryLS :: Monad m => Bool -> Matrix R -> Vector R -> SL.Logger m (RE.RegressionResult R)
+ordinaryLS :: FR.Member Log.Logger effs => Bool -> Matrix R -> Vector R -> FR.Eff effs (RE.RegressionResult R)
 ordinaryLS withConstant mA vB = do
   let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
       (n, p) = LA.size mAwc
@@ -54,7 +55,8 @@ ordinaryLS withConstant mA vB = do
   RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB Nothing vU
   return $ RE.RegressionResult (RE.estimates cov vX) (realToFrac dof) mse rSq aRSq fStat cov
 
-weightedLS :: Monad m => Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RE.RegressionResult R)
+weightedLS :: FR.Member Log.Logger effs
+  => Bool -> Matrix R -> Vector R -> Vector R -> FR.Eff effs (RE.RegressionResult R)
 weightedLS withConstant mA vB vW = do
   HU.checkEqualVectors "b" "w" vB vW
   let mW = LA.diag vW
@@ -74,7 +76,8 @@ weightedLS withConstant mA vB vW = do
   RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB (Just vW) vU
   return $ RE.RegressionResult (RE.estimates cov vX) (effN - realToFrac p) mse rSq aRSq fStat cov
 
-totalLS :: Monad m =>  Bool -> Matrix R -> Vector R -> SL.Logger m (RE.RegressionResult R)
+totalLS :: FR.Member Log.Logger effs
+  =>  Bool -> Matrix R -> Vector R -> FR.Eff effs (RE.RegressionResult R)
 totalLS withConstant mA vB = do
   let mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
       (n,p) = LA.size mAwc
@@ -98,7 +101,8 @@ totalLS withConstant mA vB = do
   RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB Nothing vU
   return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq fStat cov
 
-weightedTLS :: Monad m =>  Bool -> Matrix R -> Vector R -> Vector R -> SL.Logger m (RE.RegressionResult R)
+weightedTLS :: FR.Member Log.Logger effs
+  =>  Bool -> Matrix R -> Vector R -> Vector R -> FR.Eff effs (RE.RegressionResult R)
 weightedTLS withConstant mA vB vW = do
   HU.checkEqualVectors "b" "w" vB vW
   let mW = LA.diag vW

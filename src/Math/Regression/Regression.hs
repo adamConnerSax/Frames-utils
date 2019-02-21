@@ -31,7 +31,8 @@ import qualified Statistics.Distribution.FDistribution as S
 import qualified Statistics.Distribution.Normal        as S
 import qualified Statistics.Distribution.StudentT      as S
 import qualified Statistics.Types                      as S
-import qualified System.PipesLogger                    as SL
+import qualified Control.Monad.Freer                   as FR
+import qualified Control.Monad.Freer.Logger            as Log
 import qualified Text.Printf                           as TP
 
 
@@ -135,8 +136,8 @@ prettyPrintRegressionResultHtml header xNames r cl = do
 
 data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: Maybe a}
 
-goodnessOfFit :: Monad m => Int -> Vector R -> Maybe (Vector R) -> Vector R -> SL.Logger m (FitStatistics R)
-goodnessOfFit pInt vB vWM vU = SL.wrapPrefix "goodnessOfFit" $ do
+goodnessOfFit :: FR.Member Log.Logger effs => Int -> Vector R -> Maybe (Vector R) -> Vector R -> FR.Eff effs (FitStatistics R)
+goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
   let n = LA.size vB
       p = realToFrac pInt
       vW = maybe (V.fromList $ List.replicate n (1.0/realToFrac n)) (\v -> LA.scale (1/(realToFrac $ LA.sumElements v)) v) vWM
@@ -150,12 +151,12 @@ goodnessOfFit pInt vB vWM vU = SL.wrapPrefix "goodnessOfFit" $ do
       rSq = 1 - (ssRes/ssTot)
       arSq = 1 - (1 - rSq)*(realToFrac $ (effN - 1))/(realToFrac $ (effN - p - 1))
       fStatM = if (pInt > 1) then Just (((ssTot - ssRes)/ (p - 1.0)) / (ssRes / (effN - p))) else Nothing
-  SL.log SL.Diagnostic $ "n=" <> (T.pack $ show n)
-  SL.log SL.Diagnostic $ "p=" <> (T.pack $ show p)
-  SL.log SL.Diagnostic $ "vW=" <> (T.pack $ show vW)
-  SL.log SL.Diagnostic $ "effN=" <> (T.pack $ show effN)
-  SL.log SL.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
-  SL.log SL.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
+  Log.log Log.Diagnostic $ "n=" <> (T.pack $ show n)
+  Log.log Log.Diagnostic $ "p=" <> (T.pack $ show p)
+  Log.log Log.Diagnostic $ "vW=" <> (T.pack $ show vW)
+  Log.log Log.Diagnostic $ "effN=" <> (T.pack $ show effN)
+  Log.log Log.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
+  Log.log Log.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
   return $ FitStatistics rSq arSq fStatM
 
 estimates :: Matrix R -> Vector R -> [S.Estimate S.NormalErr R]
@@ -163,7 +164,7 @@ estimates cov means =
   let sigmas = LA.cmap sqrt (LA.takeDiag cov)
   in List.zipWith (\m s -> S.estimateNormErr m s) (LA.toList means) (LA.toList sigmas)
 
-eickerHeteroscedasticityEstimator :: Monad m => Matrix R -> Vector R -> Vector R -> SL.Logger m (Matrix R)
+eickerHeteroscedasticityEstimator :: FR.Member Log.Logger effs => Matrix R -> Vector R -> Vector R -> FR.Eff effs (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
   HU.checkVectorMatrix "b" "A" vB mA
   HU.checkVectorMatrix "b'" "A" vB' mA
