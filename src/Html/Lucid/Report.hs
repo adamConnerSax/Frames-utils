@@ -1,13 +1,12 @@
 {-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-module Html.Report
+module Html.Lucid.Report
   (
     makeReportHtml
   , placeVisualization
   , placeTextSection
   , latexToHtml
---  , htmlToIOLogged
   , latex_
   )
 where

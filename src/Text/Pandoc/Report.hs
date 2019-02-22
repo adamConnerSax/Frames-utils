@@ -1,7 +1,7 @@
 {-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-module Pandoc.Report where
+module Text.Pandoc.Report where
 
 import           Control.Monad.Morph        (generalize, hoist, lift)
 import           Control.Monad.Trans        (lift)

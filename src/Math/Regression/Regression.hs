@@ -23,9 +23,12 @@ import           Data.Maybe                            (fromMaybe)
 import qualified Data.Profunctor                       as PF
 import qualified Data.Text                             as T
 import qualified Data.Vector.Storable                  as V
-import qualified Lucid                                 as H
-import qualified Lucid.Colonnade                       as C
-import qualified Lucid.Html5                           as H
+import qualified Lucid                                 as LH
+import qualified Lucid.Colonnade                       as LC
+import qualified Lucid.Html5                           as LH
+import qualified Text.Blaze.Html5                      as BH
+import qualified Text.Blaze.Html5.Attributes           as BHA
+import qualified Text.Blaze.Colonnade                  as BC
 import qualified Statistics.Distribution               as S
 import qualified Statistics.Distribution.FDistribution as S
 import qualified Statistics.Distribution.Normal        as S
@@ -123,15 +126,25 @@ prettyPrintRegressionResult header xNames r cl =
      (T.pack $ C.ascii (fmap T.unpack $ namedEstimatesColonnade cl) nEsts)
      <> (T.pack $ C.ascii (fmap T.unpack namedSummaryStatsColonnade) nSS)
 
-prettyPrintRegressionResultHtml :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> H.Html ()
-prettyPrintRegressionResultHtml header xNames r cl = do
+prettyPrintRegressionResultLucid :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> LH.Html ()
+prettyPrintRegressionResultLucid header xNames r cl = do
   let nEsts = namedEstimates xNames r cl
       nSS = namedSummaryStats r
-      toCell t = C.Cell [H.style_ "border: 1px solid black"] (H.toHtmlRaw t)
-  H.div_ [H.style_ "display: inline-block; padding: 7px; border-collapse: collapse"] $ do
-    H.span_ (H.toHtmlRaw header)
-    C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedEstimatesColonnade cl) nEsts
-    C.encodeCellTable [H.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedSummaryStatsColonnade) nSS
+      toCell t = LC.Cell [LH.style_ "border: 1px solid black"] (LH.toHtmlRaw t)
+  LH.div_ [LH.style_ "display: inline-block; padding: 7px; border-collapse: collapse"] $ do
+    LH.span_ (LH.toHtmlRaw header)
+    LC.encodeCellTable [LH.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedEstimatesColonnade cl) nEsts
+    LC.encodeCellTable [LH.style_ "border: 1px solid black; border-collapse: collapse"] (fmap toCell $ namedSummaryStatsColonnade) nSS
+
+prettyPrintRegressionResultBlaze :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> BH.Html
+prettyPrintRegressionResultBlaze header xNames r cl = do
+  let nEsts = namedEstimates xNames r cl
+      nSS = namedSummaryStats r
+      toCell t = BC.Cell (BHA.style "border: 1px solid black") (BH.toHtml t)
+  BH.div BH.! BHA.style "display: inline-block; padding: 7px; border-collapse: collapse" $ do
+    BH.span (BH.toHtml header)
+    BC.encodeCellTable (BHA.style "border: 1px solid black; border-collapse: collapse") (fmap toCell $ namedEstimatesColonnade cl) nEsts
+    BC.encodeCellTable (BHA.style "border: 1px solid black; border-collapse: collapse") (fmap toCell $ namedSummaryStatsColonnade) nSS    
 
 
 data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: Maybe a}

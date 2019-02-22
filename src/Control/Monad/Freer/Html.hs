@@ -11,45 +11,61 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.Monad.Freer.Html
   (
-    Html
-  , HtmlDocs
+    Lucid
+  , Blaze
+  , LucidDocs
+  , BlazeDocs
   , NamedDoc(..)
-  , html
-  , newHtmlDoc
-  , htmlToNamedText
-  , htmlToText
+  , lucid
+  , blaze
+  , lucidToNamedText
+  , blazeToNamedText
+  , lucidToText
+  , blazeToText
   ) where
 
-import qualified Lucid                       as H
-import qualified Data.Text.Lazy              as TL
-import qualified Data.Text                   as T
-import qualified Control.Monad.Freer         as FR
-import qualified Control.Monad.Freer.Writer  as FR
+import qualified Lucid                         as LH
+import qualified Text.Blaze.Html               as BH
+import qualified Text.Blaze.Html.Renderer.Text as BH
+import qualified Data.Text.Lazy                as TL
+import qualified Data.Text                     as T
+import qualified Control.Monad.Freer           as FR
+import qualified Control.Monad.Freer.Writer    as FR
 import           Control.Monad.Freer.Docs    (Docs, NamedDoc(..), newDoc, toNamedDocList)
 
 -- For now, just handle the Html () case since then it's monoidal and we can interpret via writer
 --newtype FreerHtml = FreerHtml { unFreer :: H.Html () }
 
-data Html r where
-  Html   :: H.Html () -> Html () -- add to current doc
+type Lucid = FR.Writer (LH.Html ())
+type Blaze = FR.Writer BH.Html
   
-html :: FR.Member Html effs => H.Html () -> FR.Eff effs ()
-html = FR.send . Html
+lucid :: FR.Member Lucid effs => LH.Html () -> FR.Eff effs ()
+lucid = FR.tell
 
-toWriter :: FR.Eff (Html ': effs) a -> FR.Eff (FR.Writer (H.Html ()) ': effs) a
-toWriter = FR.translate (\(Html x) -> FR.Tell x)
+blaze :: FR.Member Blaze effs => BH.Html  -> FR.Eff effs ()
+blaze = FR.tell
 
-type HtmlDocs = Docs (H.Html ())
+type LucidDocs = Docs (LH.Html ())
+type BlazeDocs = Docs BH.Html
 
-newHtmlDocPure :: FR.Member HtmlDocs effs => T.Text -> H.Html () -> FR.Eff effs ()
-newHtmlDocPure = newDoc  
+--newHtmlDocPure :: FR.Member HtmlDocs effs => T.Text -> H.Html () -> FR.Eff effs ()
+--newHtmlDocPure = newDoc  
 
-newHtmlDoc :: FR.Member HtmlDocs effs => T.Text -> FR.Eff (Html ': effs) () -> FR.Eff effs ()
-newHtmlDoc n l = (fmap snd $ FR.runWriter $ toWriter l) >>= newHtmlDocPure n 
+newLucidDoc :: FR.Member LucidDocs effs => T.Text -> FR.Eff (Lucid ': effs) () -> FR.Eff effs ()
+newLucidDoc n l = (fmap snd $ FR.runWriter l) >>= newDoc n
 
-htmlToNamedText :: FR.Eff (HtmlDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
-htmlToNamedText = fmap (fmap (fmap H.renderText)) . toNamedDocList -- monad, list, NamedDoc itself
-               
-htmlToText :: FR.Eff (Html ': effs) () -> FR.Eff effs TL.Text
-htmlToText = fmap (H.renderText . snd) . FR.runWriter . toWriter
+newBlazeDoc :: FR.Member BlazeDocs effs => T.Text -> FR.Eff (Blaze ': effs) () -> FR.Eff effs ()
+newBlazeDoc n l = (fmap snd $ FR.runWriter l) >>= newDoc n 
+
+lucidToNamedText :: FR.Eff (LucidDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
+lucidToNamedText = fmap (fmap (fmap LH.renderText)) . toNamedDocList -- monad, list, NamedDoc itself
+
+blazeToNamedText :: FR.Eff (BlazeDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
+blazeToNamedText = fmap (fmap (fmap BH.renderHtml)) . toNamedDocList -- monad, list, NamedDoc itself
+                   
+lucidToText :: FR.Eff (Lucid ': effs) () -> FR.Eff effs TL.Text
+lucidToText = fmap (LH.renderText . snd) . FR.runWriter
+
+blazeToText :: FR.Eff (Blaze ': effs) () -> FR.Eff effs TL.Text
+blazeToText = fmap (BH.renderHtml . snd) . FR.runWriter 
 

@@ -29,9 +29,9 @@ import qualified Numeric.LinearAlgebra.Data   as LA
 
 import qualified Frames.Regression            as FR
 import qualified Frames.VegaLiteTemplates     as FV
-import qualified Html.Report                  as H
-import qualified Pandoc.Report                as P
+import qualified Html.Lucid.Report            as H
 import qualified Lucid                        as H
+import qualified Text.Pandoc.Report           as P
 import qualified Math.Regression.LeastSquares as LS
 import qualified Math.Regression.Regression   as RE
 import qualified Statistics.Types             as S
@@ -41,18 +41,18 @@ import qualified Control.Monad.Freer.Logger   as Log
 import qualified Control.Monad.Freer          as FR
 import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc as P
-import           Control.Monad.Freer.Html     (Html, html, htmlToText)
+import           Control.Monad.Freer.Html     (Lucid, lucid, lucidToText)
 import Data.Default (def)
 
 --import Text.Pandoc.Class as P
 
 main :: IO ()
 main = do
-  let runAll = FR.runM . Log.logToStdout Log.logAll . Log.wrapPrefix "Main". htmlToText
+  let runAll = FR.runM . Log.logToStdout Log.logAll . Log.wrapPrefix "Main". lucidToText
       runAllP = FR.runPandocAndLoggingToIO Log.logAll . Log.wrapPrefix "Main" -- . htmlToText 
   htmlAsTextE <- runAllP $ do
-    htmlTextHeader <- htmlToText $ html $ H.makeReportHtml "Frame Regression Examples" $ return ()
-    htmlTextNotes  <- htmlToText $ html $ do
+    htmlTextHeader <- lucidToText $ lucid $ H.makeReportHtml "Frame Regression Examples" $ return ()
+    htmlTextNotes  <- lucidToText $ lucid $ do
       H.placeTextSection $ do
         H.h2_ "Regression Algorithm Comparison"
         H.ul_ $ do
@@ -62,7 +62,7 @@ main = do
           H.li_ "Both TLS and WTLS are computed via the Singular Value Decomposition."
           H.li_ "For each comparison we vary the level of noise on the ys and/or xs, regress, then show the results of each regression in tabular form, a plot of the fits and prediction intervals together with a scatter of the noisy data, and a plot of the coefficients and confidence intervals. The shaded regions in each plot are the \"prediction intervals\" which take into account the uncertainty of the coefficients as well as the remainining noise in the data."
           H.li_ "The F-stat is computed for each fit via comparision to the model of intercept-only.  So the p-value of the overall fit is the probability that the data are better explained as noise around their (weighted) mean value than by the fit."
-    htmlTextPlots <- htmlToText $ testMany
+    htmlTextPlots <- lucidToText $ testMany
     htmlTextBody <- P.fromPandocE P.WriteHtml5String P.htmlWriterOptions $ do
       P.addFrom P.ReadHtml P.htmlReaderOptionsWithHeader (TL.toStrict htmlTextNotes)
       P.addFrom P.ReadHtml P.htmlReaderOptions (TL.toStrict htmlTextPlots)
@@ -136,7 +136,7 @@ wgts = varListToWeights vars
 
 testRegression :: ( F.ColumnHeaders '[w]
                   , V.KnownField w
-                  , FR.Members '[Log.Logger, Html] effs
+                  , FR.Members '[Log.Logger, Lucid] effs
                   , MonadIO (FR.Eff effs))
                => Double
                -> Double
@@ -155,8 +155,8 @@ testRegression yNoise xNoise weighted offset vizId f = do
   frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
   result <- f frame
   let header _ _ = scopeT
-  html $ FR.prettyPrintRegressionResultHtml header result S.cl95
-  html $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result S.cl95 frame
+  lucid $ FR.prettyPrintRegressionResultLucid header result S.cl95
+  lucid $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result S.cl95 frame
   Log.log Log.Info $ FR.prettyPrintRegressionResult header result S.cl95
   return ()
 
@@ -167,7 +167,7 @@ testRegressions :: ( F.ColumnHeaders '[w]
                    , V.KnownField w
                    , Traversable f
                    , Foldable f
-                   , FR.Members '[Log.Logger, Html] effs
+                   , FR.Members '[Log.Logger, Lucid] effs
                    , MonadIO (FR.Eff effs))
                 => Double
                 -> Double
@@ -189,15 +189,15 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
   results <- traverse (doOne frame) keyedFs
   let header _ _ = title
-  html $ H.div_ [H.style_ "display: block-inline"] $ do
-    FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultHtml mempty
+  lucid $ H.div_ [H.style_ "display: block-inline"] $ do
+    FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultLucid mempty
     H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
     H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
   return ()
 
 
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
-testMany :: ( FR.Members '[Log.Logger, Html] effs
+testMany :: ( FR.Members '[Log.Logger, Lucid] effs
             , MonadIO (FR.Eff effs)) =>  FR.Eff effs ()
 testMany = Log.wrapPrefix "Many" $ do
   let toTestUW  =

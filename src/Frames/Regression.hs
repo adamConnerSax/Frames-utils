@@ -29,7 +29,8 @@ import qualified Math.Regression.LeastSquares as MR
 import qualified Control.Monad.Freer.Logger as Log
 import qualified Control.Monad.Freer as FR
 
-import qualified Lucid as H
+import qualified Lucid as LH
+import qualified Text.Blaze.Html as BH 
 import qualified Colonnade                      as C
 import qualified Control.Foldl        as FL
 import           Control.Lens         ((^.))
@@ -189,17 +190,30 @@ prettyPrintRegressionResult headerF res cl =
       xNames = if withConstant res then "intercept" : xNames' else xNames'
   in MR.prettyPrintRegressionResult (headerF yName wName) xNames (regressionResult res) cl
 
-prettyPrintRegressionResultHtml :: forall y wc as w rs. ( F.ColumnHeaders '[y]
+prettyPrintRegressionResultLucid :: forall y wc as w rs. ( F.ColumnHeaders '[y]
                                                         , F.ColumnHeaders '[w]
                                                         , F.ColumnHeaders as
                                                         , BoolVal wc)
-  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> S.CL Double -> H.Html ()
-prettyPrintRegressionResultHtml headerF res cl = 
+  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> S.CL Double -> LH.Html ()
+prettyPrintRegressionResultLucid headerF res cl = 
   let yName = FV.colName @y
       wName = FV.colName @w
       xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
       xNames = if withConstant res then "intercept" : xNames' else xNames'
-  in MR.prettyPrintRegressionResultHtml (headerF yName wName) xNames (regressionResult res) cl
+  in MR.prettyPrintRegressionResultLucid (headerF yName wName) xNames (regressionResult res) cl
+
+prettyPrintRegressionResultBlaze :: forall y wc as w rs. ( F.ColumnHeaders '[y]
+                                                        , F.ColumnHeaders '[w]
+                                                        , F.ColumnHeaders as
+                                                        , BoolVal wc)
+  => (T.Text -> T.Text -> T.Text) -> FrameRegressionResult y wc as w rs -> S.CL Double -> BH.Html
+prettyPrintRegressionResultBlaze headerF res cl = 
+  let yName = FV.colName @y
+      wName = FV.colName @w
+      xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
+      xNames = if withConstant res then "intercept" : xNames' else xNames'
+  in MR.prettyPrintRegressionResultBlaze (headerF yName wName) xNames (regressionResult res) cl
+
 
 keyRecordText :: (V.ReifyConstraint Show F.ElField ks
                  , V.RecordToList ks

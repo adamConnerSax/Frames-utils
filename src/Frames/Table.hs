@@ -10,17 +10,19 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Frames.Table where
 
-import qualified Colonnade       as C
-import qualified Lucid.Colonnade as C
-import qualified Lucid as H
-import           Data.Monoid     (mempty, mconcat, (<>))
-import           Data.Profunctor (lmap)
-import           Data.Proxy      (Proxy (..))
-import qualified Data.Text       as T
-import qualified Data.Vinyl      as V
-import qualified Data.Vinyl.TypeLevel      as V
-import qualified Frames          as F
-import qualified Frames.Melt     as F
+import qualified Colonnade            as C
+import qualified Lucid.Colonnade      as LC
+import qualified Text.Blaze.Colonnade as BC
+import qualified Lucid                as LH
+import qualified Text.Blaze.Html      as BH
+import           Data.Monoid          (mempty, mconcat, (<>))
+import           Data.Profunctor      (lmap)
+import           Data.Proxy           (Proxy (..))
+import qualified Data.Text            as T
+import qualified Data.Vinyl           as V
+import qualified Data.Vinyl.TypeLevel as V
+import qualified Frames               as F
+import qualified Frames.Melt          as F
 import           GHC.TypeLits    (KnownSymbol, symbolVal)
 
 
@@ -29,9 +31,6 @@ recordFieldToColonnadeG valTo headerTo = C.headed (headerTo $ symbolVal (Proxy @
 
 recordFieldToColonnade :: forall x rs. (V.KnownField x, F.ElemOf rs x, Show (V.Snd x)) => C.Colonnade C.Headed (F.Record rs) T.Text
 recordFieldToColonnade = recordFieldToColonnadeG @x @rs (T.pack . show) T.pack
-
---frameColToColonnade :: forall x rs. (F.ElemOf rs x) => F.Record rs -> C.Colonnade C.Headed (F.Record rs) T.Text
---frameColToColonnade = lmap (F.rgetField @x) . elFieldToColonnade . F.rcast @'[x]
 
 class RecordColonnade rs where
   recColonnade :: C.Colonnade C.Headed (F.Record rs) T.Text
@@ -46,8 +45,12 @@ instance (V.KnownField r, rs F.⊆ (r : rs), Show (V.Snd r), RecordColonnade rs)
 textTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> T.Text
 textTable = T.pack . C.ascii (fmap T.unpack recColonnade)
 
-lucidTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> H.Html ()
-lucidTable = C.encodeCellTable [] (fmap C.textCell recColonnade)  
+lucidTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> LH.Html ()
+lucidTable = LC.encodeCellTable [] (fmap LC.textCell recColonnade)  
+
+blazeTable :: (RecordColonnade rs, Foldable f) => f (F.Record rs) -> BH.Html
+blazeTable = BC.encodeCellTable mempty (fmap BC.textCell recColonnade)  
+
 
 
 
