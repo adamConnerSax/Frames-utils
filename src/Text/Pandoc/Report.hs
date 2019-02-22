@@ -24,4 +24,22 @@ htmlReaderOptions = P.def { P.readerExtensions = P.extensionsFromList [P.Ext_raw
 
 htmlReaderOptionsWithHeader = htmlReaderOptions { P.readerStandalone = True }
 
-htmlWriterOptions = P.def { P.writerExtensions = P.extensionsFromList [P.Ext_raw_html], P.writerHTMLMathMethod = P.MathJax "" }
+htmlWriterOptions = P.def
+                    {
+                      P.writerExtensions = P.extensionsFromList [P.Ext_raw_html]
+                    , P.writerHTMLMathMethod = P.MathJax ""
+                    }
+
+markdownReaderOptions =
+  P.def {
+     P.readerStandalone = True
+  ,  P.readerExtensions= P.extensionsFromList
+                      [
+                        P.Ext_backtick_code_blocks
+                      , P.Ext_fancy_lists
+                      , P.Ext_footnotes
+                      , P.Ext_simple_tables
+                      , P.Ext_multiline_tables
+                      , P.Ext_tex_math_dollars
+                      ]
+  }

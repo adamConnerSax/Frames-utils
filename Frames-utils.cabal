@@ -90,16 +90,15 @@ executable FrameRegressions
                , Frames
                , hmatrix
                , lucid
---               , lucid-colonnade
                , mmorph
                , mtl
+               , raw-strings-qq
                , text
                , vector
                , vinyl 
   hs-source-dirs: examples
   main-is: FrameRegressions.hs
           
-  
 test-suite test-frames-utils
     import: deps       
     type: exitcode-stdio-1.0

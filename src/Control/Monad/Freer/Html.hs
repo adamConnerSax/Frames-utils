@@ -20,17 +20,19 @@ module Control.Monad.Freer.Html
   , blaze
   , lucidToNamedText
   , blazeToNamedText
+  , lucidHtml
   , lucidToText
+  , blazeHtml
   , blazeToText
   ) where
 
-import qualified Lucid                         as LH
-import qualified Text.Blaze.Html               as BH
-import qualified Text.Blaze.Html.Renderer.Text as BH
-import qualified Data.Text.Lazy                as TL
-import qualified Data.Text                     as T
-import qualified Control.Monad.Freer           as FR
-import qualified Control.Monad.Freer.Writer    as FR
+import qualified Lucid                           as LH
+import qualified Text.Blaze.Html                 as BH
+import qualified Text.Blaze.Html.Renderer.Pretty as BH
+import qualified Data.Text.Lazy                  as TL
+import qualified Data.Text                       as T
+import qualified Control.Monad.Freer             as FR
+import qualified Control.Monad.Freer.Writer      as FR
 import           Control.Monad.Freer.Docs    (Docs, NamedDoc(..), newDoc, toNamedDocList)
 
 -- For now, just handle the Html () case since then it's monoidal and we can interpret via writer
@@ -61,11 +63,17 @@ lucidToNamedText :: FR.Eff (LucidDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Te
 lucidToNamedText = fmap (fmap (fmap LH.renderText)) . toNamedDocList -- monad, list, NamedDoc itself
 
 blazeToNamedText :: FR.Eff (BlazeDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
-blazeToNamedText = fmap (fmap (fmap BH.renderHtml)) . toNamedDocList -- monad, list, NamedDoc itself
+blazeToNamedText = fmap (fmap (fmap (TL.pack . BH.renderHtml))) . toNamedDocList -- monad, list, NamedDoc itself
+
+lucidHtml :: FR.Eff (Lucid ': effs) () -> FR.Eff effs (LH.Html ())
+lucidHtml = fmap snd . FR.runWriter
                    
 lucidToText :: FR.Eff (Lucid ': effs) () -> FR.Eff effs TL.Text
-lucidToText = fmap (LH.renderText . snd) . FR.runWriter
+lucidToText = fmap LH.renderText . lucidHtml
+
+blazeHtml :: FR.Eff (Blaze ': effs) () -> FR.Eff effs BH.Html
+blazeHtml = fmap snd . FR.runWriter
 
 blazeToText :: FR.Eff (Blaze ': effs) () -> FR.Eff effs TL.Text
-blazeToText = fmap (BH.renderHtml . snd) . FR.runWriter 
+blazeToText = fmap (TL.pack . BH.renderHtml) . blazeHtml
 
