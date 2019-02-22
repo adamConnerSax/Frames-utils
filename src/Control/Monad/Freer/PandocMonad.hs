@@ -75,7 +75,7 @@ logPandocMessage lm =
         P.INFO -> Log.Info
   in FR.send $ Log.LogText ls (T.pack $ P.showLogMessage lm)
 
-type PandocEffects effs = (FR.Members '[Pandoc, FR.Error P.PandocError, Log.Logger] effs, MonadError P.PandocError (FR.Eff effs))
+type PandocEffects effs = (FR.Members '[Pandoc, FR.Error P.PandocError, Log.Logger] effs {-*, MonadError P.PandocError (FR.Eff effs)-})
 
 instance PandocEffects effs => P.PandocMonad (FR.Eff effs) where
   lookupEnv = lookupEnv

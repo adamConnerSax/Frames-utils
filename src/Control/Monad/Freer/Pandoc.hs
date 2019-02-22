@@ -17,12 +17,15 @@ module Control.Monad.Freer.Pandoc
   , PandocReadFormat(..)
   , PandocWriteFormat(..)
   , addFrom
+  , runPandocWriter
   , writeTo
   , Pandocs
   , NamedDoc(..)
   , newPandoc
   , pandocsToNamed
   , fromPandocE
+  , toPandoc
+  , fromPandoc
   ) where
 
 import qualified Text.Pandoc                     as P
@@ -96,6 +99,9 @@ fromPandoc pwf pwo pdoc = write pwo pdoc where
       
 toWriter :: FR.PandocEffects effs => FR.Eff (ToPandoc ': effs) a -> FR.Eff (FR.Writer (P.Pandoc) ': effs) a
 toWriter = FR.reinterpret (\(AddFrom rf ro x) -> (FR.raise $ toPandoc rf ro x) >>= FR.tell)
+
+runPandocWriter :: FR.PandocEffects effs => FR.Eff (ToPandoc ': effs) () -> FR.Eff effs P.Pandoc
+runPandocWriter = fmap snd . FR.runWriter . toWriter
 
 type Pandocs = Docs (P.Pandoc)
 

@@ -17,6 +17,7 @@ Build-type: Simple
 common deps
   build-depends: base >= 4.11.1.0
                , blaze-html
+               , containers
                , Frames
                , foldl
                , hmatrix
@@ -58,7 +59,6 @@ library
   build-depends:    aeson-pretty
                   , blaze-colonnade
                   , bytestring
-                  , containers
                   , colonnade
                   , discrimination
                   , foldl-statistics
@@ -92,7 +92,7 @@ executable FrameRegressions
                , lucid
                , mmorph
                , mtl
-               , raw-strings-qq
+               , here
                , text
                , vector
                , vinyl 

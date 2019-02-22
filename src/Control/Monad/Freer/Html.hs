@@ -28,7 +28,8 @@ module Control.Monad.Freer.Html
 
 import qualified Lucid                           as LH
 import qualified Text.Blaze.Html                 as BH
-import qualified Text.Blaze.Html.Renderer.Pretty as BH
+--import qualified Text.Blaze.Html.Renderer.Pretty as BH
+import qualified Text.Blaze.Html.Renderer.Text as BH
 import qualified Data.Text.Lazy                  as TL
 import qualified Data.Text                       as T
 import qualified Control.Monad.Freer             as FR
@@ -63,7 +64,7 @@ lucidToNamedText :: FR.Eff (LucidDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Te
 lucidToNamedText = fmap (fmap (fmap LH.renderText)) . toNamedDocList -- monad, list, NamedDoc itself
 
 blazeToNamedText :: FR.Eff (BlazeDocs ': effs) () -> FR.Eff effs [NamedDoc TL.Text]
-blazeToNamedText = fmap (fmap (fmap (TL.pack . BH.renderHtml))) . toNamedDocList -- monad, list, NamedDoc itself
+blazeToNamedText = fmap (fmap (fmap BH.renderHtml)) . toNamedDocList -- monad, list, NamedDoc itself
 
 lucidHtml :: FR.Eff (Lucid ': effs) () -> FR.Eff effs (LH.Html ())
 lucidHtml = fmap snd . FR.runWriter
@@ -75,5 +76,5 @@ blazeHtml :: FR.Eff (Blaze ': effs) () -> FR.Eff effs BH.Html
 blazeHtml = fmap snd . FR.runWriter
 
 blazeToText :: FR.Eff (Blaze ': effs) () -> FR.Eff effs TL.Text
-blazeToText = fmap (TL.pack . BH.renderHtml) . blazeHtml
+blazeToText = fmap BH.renderHtml . blazeHtml
 
