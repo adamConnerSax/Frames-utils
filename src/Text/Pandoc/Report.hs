@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DataKinds     #-}
+{-# LANGUAGE GADTs         #-}
 module Text.Pandoc.Report where
 
 import           Control.Monad.Trans           (liftIO)
@@ -49,6 +50,7 @@ htmlFullDocWriterOptions pathM templateVars = do
     {
       P.writerTemplate = Just template
     , P.writerVariables = M.toList templateVars
+    , P.writerSetextHeaders = True
     }
 
 markdownReaderOptions =
@@ -56,12 +58,15 @@ markdownReaderOptions =
      P.readerStandalone = True
   ,  P.readerExtensions= P.extensionsFromList
                       [
-                        P.Ext_backtick_code_blocks
+                        P.Ext_auto_identifiers
+                      , P.Ext_backtick_code_blocks
                       , P.Ext_fancy_lists
                       , P.Ext_footnotes
                       , P.Ext_simple_tables
                       , P.Ext_multiline_tables
                       , P.Ext_tex_math_dollars
+                      , P.Ext_header_attributes
+                      , P.Ext_implicit_header_references
                       ]
   }
 
@@ -80,10 +85,14 @@ addLucid = addHtml . LT.toStrict . LH.renderText
 markDownTextToBlazeFragment :: PM.PandocEffects effs => T.Text -> FR.Eff effs BH.Html 
 markDownTextToBlazeFragment = P.fromPandocE P.WriteHtml5 htmlWriterOptions . P.addFrom P.ReadMarkDown markdownReaderOptions 
 
-toBlazeDocument :: PM.PandocEffects effs => Maybe FilePath -> M.Map String String -> P.Pandoc -> FR.Eff effs BH.Html 
-toBlazeDocument templatePathM templateVars pdoc = do
+toBlazeDocument :: PM.PandocEffects effs => Maybe FilePath -> M.Map String String -> (P.WriterOptions -> P.WriterOptions) -> P.Pandoc -> FR.Eff effs BH.Html 
+toBlazeDocument templatePathM templateVars optionsF pdoc = do
   writerOptions <- htmlFullDocWriterOptions templatePathM templateVars
-  P.fromPandoc P.WriteHtml5 writerOptions pdoc
+  P.fromPandoc P.WriteHtml5 (optionsF writerOptions) pdoc
 
-pandocWriterToBlazeDocument ::  PM.PandocEffects effs => Maybe FilePath -> M.Map String String -> FR.Eff (P.ToPandoc ': effs) () -> FR.Eff effs BH.Html
-pandocWriterToBlazeDocument templatePathM templateVars pw = P.runPandocWriter pw >>= toBlazeDocument templatePathM templateVars
+pandocWriterToBlazeDocument ::  PM.PandocEffects effs
+  => Maybe FilePath -> M.Map String String -> (P.WriterOptions -> P.WriterOptions) -> FR.Eff (P.ToPandoc ': effs) () -> FR.Eff effs BH.Html
+pandocWriterToBlazeDocument templatePathM templateVars optionsF pw = P.runPandocWriter pw >>= toBlazeDocument templatePathM templateVars optionsF
+
+
+mindocOptionsF op = op { P.writerSectionDivs = True }

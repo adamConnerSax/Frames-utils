@@ -78,14 +78,15 @@ main = asPandoc
   
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = FR.runPandocAndLoggingToIO Log.logAll . Log.wrapPrefix "Main" . fmap BH.renderHtml  
-  htmlAsTextE <- runAllP $ P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars $ do
+  let runAllP = FR.runPandocAndLoggingToIO Log.logAll . Log.wrapPrefix "Main" . fmap BH.renderHtml
+  htmlAsTextE <- runAllP $ P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF $ do
     P.addMarkDown regressionNotesMD
-    blazeHtml testMany >>= P.addBlaze
+    testMany
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/FrameRegressions.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
+{-
 asBlaze :: IO ()
 asBlaze = do
   let runAllP = FR.runPandocAndLoggingToIO Log.logAll . Log.wrapPrefix "Main" . blazeToText 
@@ -97,7 +98,7 @@ asBlaze = do
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/FrameRegressions.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
-
+-}
 
 -- regression tests
 
@@ -161,7 +162,8 @@ testRegressions :: ( F.ColumnHeaders '[w]
                    , V.KnownField w
                    , Traversable f
                    , Foldable f
-                   , FR.Members '[Log.Logger, Blaze] effs
+                   , FR.Members '[Log.Logger, P.ToPandoc] effs
+                   , FR.PandocEffects effs
                    , MonadIO (FR.Eff effs))
                 => Double
                 -> Double
@@ -183,15 +185,18 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
   results <- traverse (doOne frame) keyedFs
   let header _ _ = title
-  blaze $ H.div ! HA.style "display: block-inline" $ do
+  P.addMarkDown $ "\n## " <> title 
+  P.addBlaze $ do
+    H.div ! HA.style "display: block-inline" $ do
     FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultBlaze mempty
     H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
     H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
-  return ()
+--  return ()
 
 
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
-testMany :: ( FR.Members '[Log.Logger, Blaze] effs
+testMany :: ( FR.Members '[Log.Logger, P.ToPandoc] effs
+            , FR.PandocEffects effs
             , MonadIO (FR.Eff effs)) =>  FR.Eff effs ()
 testMany = Log.wrapPrefix "Many" $ do
   let toTestUW  =
