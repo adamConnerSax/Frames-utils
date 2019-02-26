@@ -10,9 +10,7 @@ module Frames.ParseableTypes
   )
 where
 
-import           Control.Monad         (MonadPlus, msum)
-import           Control.Monad.Fail    (MonadFail)
-import qualified Data.Readable         as R
+import           Control.Monad         (msum)
 import qualified Data.Text             as T
 import qualified Data.Time.Calendar    as Time
 import qualified Data.Time.Format      as Time
@@ -21,6 +19,7 @@ import qualified Data.Vector           as V
 import qualified Frames                as F
 import qualified Frames.ColumnTypeable as F
 import qualified Frames.InCore         as F
+
 type instance F.VectorFor Time.Day = V.Vector
 
 instance F.Parseable Time.Day where

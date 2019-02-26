@@ -74,7 +74,6 @@ library
                   , pipes
                   , profunctors
                   , random
-                  , readable
                   , time
                   , text
                   , hvega
@@ -85,6 +84,7 @@ library
 
 executable FrameRegressions
   import: deps
+  ghc-options: -O0
   build-depends: base
                , data-default
                , foldl
