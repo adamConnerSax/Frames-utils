@@ -41,6 +41,7 @@ library
                  , Frames.VegaLite
                  , Frames.VegaLiteTemplates
                  , Frames.Table
+                 , Frames.ParseableTypes
                  , Math.Rescale
                  , Math.HMatrixUtils
                  , Math.Regression.Regression
@@ -73,6 +74,7 @@ library
                   , pipes
                   , profunctors
                   , random
+                  , readable
                   , time
                   , text
                   , hvega
