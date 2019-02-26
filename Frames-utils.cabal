@@ -74,6 +74,7 @@ library
                   , pipes
                   , profunctors
                   , random
+                  , readable
                   , time
                   , text
                   , hvega
