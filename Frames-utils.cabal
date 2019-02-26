@@ -64,6 +64,7 @@ library
                   , discrimination
                   , foldl-statistics
                   , groups
+                  , histogram-fill
                   , hmatrix-gsl
                   , lens
                   , lucid-colonnade
