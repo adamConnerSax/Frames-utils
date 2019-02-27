@@ -23,6 +23,8 @@ module Frames.VegaLiteTemplates
   , regressionCoefficientPlot
   , regressionCoefficientPlotMany
   , singleHistogram
+  , multiHistogram
+  , MultiHistogramStyle (..)
   ) where
 
 import qualified Frames.VegaLite as FV
@@ -61,7 +63,7 @@ import qualified Data.Histogram as H
 import qualified Data.Histogram.Fill as H
 -- | Histograms
 -- | Single, stacked, side-by-side, and faceted
-data MultiHistogramStyle = StackedBar | AdjacentBar | Faceted
+data MultiHistogramStyle = StackedBar | AdjacentBar
 
 singleHistogram :: forall x rs f. ( FA.RealFieldOf rs x
                                   , Foldable f)
@@ -75,7 +77,7 @@ singleHistogram title yLabelM nBins minM maxM addOutOfRange rows =
       minVal = fromMaybe (VU.minimum vecX) (fmap realToFrac minM)
       maxVal = fromMaybe (VU.maximum vecX) (fmap realToFrac maxM)
       bins = H.binD minVal nBins maxVal
-      hVec = makeHistogram @x addOutOfRange bins vecX
+      hVec = makeHistogram addOutOfRange bins vecX
       toVLRow (bv, ct) = GV.dataRow [(xLabel, GV.Number bv),("count", GV.Number ct)] []
       dat = GV.dataFromRows [] $ List.concat $ VB.toList $ fmap toVLRow $ VB.convert hVec
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative, GV.PAxis [GV.AxFormat ".0f"]]
@@ -96,11 +98,11 @@ singleHistogram title yLabelM nBins minM maxM addOutOfRange rows =
 
 
 multiHistogram :: forall x c rs f. (FA.RealFieldOf rs x
+                                   , V.KnownField c
                                    , F.ElemOf rs c
                                    , FV.ToVLDataValue (F.ElField c)
                                    , V.KnownField c
                                    , Ord (V.Snd c)
-                                   , Ord (F.Record '[c])
                                    , Foldable f)
                => Text
                -> Maybe T.Text
@@ -115,26 +117,31 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows =
   let yLabel = fromMaybe "count" yLabelM
       xLabel = FV.colName @x
       width = 800 -- I need to make this settable, obv
-      bandSize = (realToFrac width/realToFrac nBins) - 1
       allXF = FL.premap (realToFrac . F.rgetField @x) (FL.vector @VB.Vector)
       uniqueCF = FL.premap (F.rgetField @c) FL.set
       mapByCF =
-        let ff m r = M.insertWith (\xs ys -> xs ++ ys) (F.rcast @'[c] r) (pure $ realToFrac $ F.rgetField @x r) m -- FIX ++.  Ugh.
+        let ff m r = M.insertWith (\xs ys -> xs ++ ys) (F.rgetField @c r) (pure $ realToFrac $ F.rgetField @x r) m -- FIX ++.  Ugh.
         in FL.Fold ff M.empty (fmap VU.fromList)
       (vecAllX, uniqueC, mapByC) = FL.fold ((,,) <$> allXF <*> uniqueCF <*> mapByCF) rows
       minVal = fromMaybe (VB.minimum vecAllX) (fmap realToFrac minM)
       maxVal = fromMaybe (VB.maximum vecAllX) (fmap realToFrac maxM)
       bins = H.binD minVal nBins maxVal
-      makeRow c (bv, ct) = GV.dataRow [(xLabel, GV.Number bv),("count", GV.Number ct), FV.toVLDataValue c] []
+      makeRow k (bv, ct) = GV.dataRow [(xLabel, GV.Number bv),("count", GV.Number ct), FV.toVLDataValue (V.Field @(V.Fst c) k)] []
       makeRowsForOne (c, v) =
         let binned = makeHistogram addOutOfRange bins v
         in List.concat $ VB.toList $ fmap (makeRow c) $ VB.convert binned
-      dat = GV.dataFromRows [] $ List.concat $ fmap makeRowsForOne $ M.toList mapByC 
-      encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative, GV.PAxis [GV.AxFormat ".0f"]]
+      dat = GV.dataFromRows [] $ List.concat $ fmap makeRowsForOne $ M.toList mapByC
       encY = GV.position GV.Y [GV.PName "count", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle yLabel]]
       encC = GV.color [FV.mName @c, GV.MmType GV.Nominal]
-      hBar = GV.mark GV.Bar [GV.MBinSpacing 0, GV.MSize bandSize]
-      hEnc = encX . encY . encC
+      (hEnc, bandSize) = case mhStyle of
+        StackedBar -> 
+          let encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]              
+              in (encX . encY . encC, (realToFrac width/realToFrac nBins) - 1)
+        AdjacentBar ->
+          let encX = GV.position GV.X [FV.pName @c, GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""] ]
+              encF = GV.column [FV.fName @x, GV.FmType GV.Quantitative] 
+          in  (encX . encY . encC . encF, (realToFrac width/(realToFrac nBins * realToFrac (M.size mapByC))-1))
+      hBar = GV.mark GV.Bar [GV.MBinSpacing 1{-, GV.MSize bandSize-}]
       configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 800]) . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
@@ -148,11 +155,9 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows =
   in vl
       
                     
-makeHistogram :: forall x rs f. (FA.RealFieldOf rs x
-                                        , Foldable f)
-              =>  Bool -> H.BinD -> VU.Vector Double -> VU.Vector (H.BinValue H.BinD, Double) 
+makeHistogram :: Bool -> H.BinD -> VU.Vector Double -> VU.Vector (H.BinValue H.BinD, Double) 
 makeHistogram addOutOfRange bins vecX =  
-  let histo = H.fillBuilder (H.mkSimple bins) vecX
+  let histo = H.fillBuilder (H.mkSimple bins) $ ((VB.convert vecX) :: VB.Vector Double)
       hVec = H.asVector histo
       minIndex = 0
       maxIndex = VU.length hVec - 1
