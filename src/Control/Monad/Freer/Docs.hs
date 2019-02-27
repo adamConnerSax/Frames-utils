@@ -16,13 +16,17 @@ module Control.Monad.Freer.Docs
   , NamedDoc(..)
   , newDoc
   , toNamedDocList
+  , mapNamedDocs
+  , toNamedDocListWith
+  , toNamedDocListWithM
+  , mapNamedDocsM
   ) where
 
-import qualified Lucid                       as H
-import qualified Data.Text.Lazy              as TL
-import qualified Data.Text                   as T
-import qualified Control.Monad.Freer         as FR
-import qualified Control.Monad.Freer.State  as FR
+import qualified Data.Text                  as T
+import           Control.Monad              (join) 
+import qualified Control.Monad.Freer        as FR
+--import qualified Control.Monad.Freer.State  as FR
+import qualified Control.Monad.Freer.Writer  as FR
 
 -- small effect for gathering up named documents into a list in order to handle output at one place
 
@@ -35,20 +39,34 @@ newDoc name doc = FR.send $ NewDoc name doc
 -- interpret in State
 
 data NamedDoc a = NamedDoc { ndName :: T.Text, ndDoc :: a } deriving (Functor, Foldable, Traversable)
+
+toWriter :: FR.Eff ((Docs a) ': effs) () -> FR.Eff (FR.Writer [NamedDoc a]  ': effs) ()
+toWriter = FR.translate f where
+  f :: Docs a x -> FR.Writer [NamedDoc a] x
+  f r = case r of
+    NewDoc n d -> FR.Tell [NamedDoc n d]
+    
+toNamedDocList :: FR.Eff ((Docs a) ': effs) () -> FR.Eff effs [NamedDoc a]
+toNamedDocList = fmap snd . FR.runWriter . toWriter
+
+--  FR.execState [] . toState
+
+mapNamedDocs :: Monad m => (a -> b) -> m [NamedDoc a] -> m [NamedDoc b]
+mapNamedDocs f = fmap (fmap (fmap f))
+
+toNamedDocListWith :: (a -> b) -> FR.Eff ((Docs a) ': effs) () -> FR.Eff effs [NamedDoc b]
+toNamedDocListWith f = mapNamedDocs f . toNamedDocList
+
+mapNamedDocsM :: Monad m => (a -> m b) -> m [NamedDoc a] -> m [NamedDoc b]
+mapNamedDocsM f = join . fmap (traverse (traverse f))
+                 
+toNamedDocListWithM :: (a -> FR.Eff effs b) -> FR.Eff ((Docs a) ': effs) () -> FR.Eff effs [NamedDoc b]
+toNamedDocListWithM f = mapNamedDocsM f . toNamedDocList
+
 {-
-data MultiDocState a = MultiDocState { mdsCurrentName :: T.Text, mdsDocs :: [NamedDoc a] }
-
-mdsNewDoc :: T.Text -> a -> MultiDocState a -> MultiDocState a
-mdsNewDoc n d (MultiDocState cn docList) = MultiDocState n ((NamedDoc cn d) : docList)
--}
-
 toState :: FR.Eff ((Docs a) ': effs) () -> FR.Eff (FR.State [NamedDoc a]  ': effs) ()
 toState = FR.reinterpret f where
   f :: FR.Member (FR.State [NamedDoc a]) effs => Docs a x -> FR.Eff effs x
   f r = case r of
     NewDoc n d -> FR.modify (\l -> (NamedDoc n d) : l)
-
-toNamedDocList :: FR.Eff ((Docs a) ': effs) () -> FR.Eff effs [NamedDoc a]
-toNamedDocList = FR.execState [] . toState
-      
-
+-}

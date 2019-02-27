@@ -19,11 +19,15 @@ module Control.Monad.Freer.Random
   , sampleRVar
   , sampleDist
 --  , Control.Monad.Freer.Random.rvar
-  , runRandomInIO
+  , runRandomIOSimple
+  , runRandomIOPureMT
+  , runRandomFromSource
   ) where
-
+import           Data.IORef (newIORef)
 import qualified Data.Random as R
+import qualified Data.Random.Source as R
 import qualified Data.Random.Internal.Source as R
+import qualified Data.Random.Source.PureMT  as R
 import qualified Control.Monad.Freer         as FR
 
 import           Control.Monad.IO.Class (MonadIO(..))
@@ -41,51 +45,29 @@ sampleDist = sampleRVar . R.rvar
 getRandomPrim :: FR.Member Random effs => R.Prim t -> FR.Eff effs t
 getRandomPrim = FR.send . GetRandomPrim
 
-runRandomInIO :: forall effs a. MonadIO (FR.Eff effs) => FR.Eff (Random ': effs) a -> FR.Eff effs a
-runRandomInIO = FR.interpret f where
+runRandomIOSimple :: forall effs a. MonadIO (FR.Eff effs) => FR.Eff (Random ': effs) a -> FR.Eff effs a
+runRandomIOSimple = FR.interpret f where
   f :: forall x. (Random x -> FR.Eff effs x)
   f r = case r of
-    SampleRVar dt -> liftIO $ R.sample dt
-    GetRandomPrim pt -> liftIO $ R.getRandomPrim pt 
+    SampleRVar rv -> liftIO $ R.sample rv
+    GetRandomPrim pt -> liftIO $ R.getRandomPrim pt
 
-
-
-{-
-runRandomInState :: forall s m effs a. s -> FR.Eff (Random s ': effs) a -> FR.Eff effs a
-runRandomInState source =  
-
-instance (FR.Member (Random s) effs) => R.RandomSource (FR.Eff effs) s where
-  getRandomPrimFrom = getRandPrim
-
--}
-
-instance FR.Member Random effs => R.MonadRandom (FR.Eff effs) where
-  getRandomPrim = getRandomPrim
-
-
-{-
-data Random r where
-  GetRandomPrim   :: R.Prim t -> Random t
-  
-getRandom :: FR.Member Random effs => FR.Eff effs a
-getRandom = FR.send GetRandom
-
-getRandoms :: FR.Member Random effs => FR.Eff effs [a]
-getRandoms = FR.send GetRandoms
-
-getRandomR :: FR.Member Random effs => (a,a) -> FR.Eff effs a
-getRandomR = FR.send . GetRandomR
-
-getRandomRs :: FR.Member Random effs => (a,a) -> FR.Eff effs [a]
-getRandomRs = FR.send . GetRandomRs
-
-runRandomBase :: (R.MonadRandom m, FR.Lastmember m effs) => FR.Eff (Random ': effs) a -> FR.Eff effs a
-runRandomBase = interpretM f where
+runRandomFromSource :: forall s effs a. R.RandomSource (FR.Eff effs) s => s -> FR.Eff (Random ': effs) a -> FR.Eff effs a
+runRandomFromSource source = FR.interpret f where
+  f :: forall x. (Random x -> FR.Eff effs x)
   f r = case r of
-    GetRandom -> R.getRandom
-    GetRanoms -> R.getRandoms
-    GetRandomR -> R.getRandomR
-    GetRandomRs -> R.getRandomRs
+    SampleRVar rv -> R.runRVar (R.sample rv) source 
+    GetRandomPrim pt -> R.runRVar (R.getRandomPrim pt) source
 
+runRandomIOPureMT :: MonadIO (FR.Eff effs) => R.PureMT -> FR.Eff (Random ': effs) a -> FR.Eff effs a
+runRandomIOPureMT source re = liftIO (newIORef source) >>= flip runRandomFromSource re
+
+$(R.monadRandom [d|
+        instance FR.Member Random effs => R.MonadRandom (FR.Eff effs) where
+            getRandomPrim = getRandomPrim
+    |])
+
+{-
+instance FR.Member Random effs => R.MonadRandom (FR.Eff effs) where
+  getRandomPrim = getRandomPrim -- this is confusing.  LHS is class member, RHS is function above
 -}
-    
