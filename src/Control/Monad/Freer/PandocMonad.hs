@@ -19,6 +19,8 @@ module Control.Monad.Freer.PandocMonad
   , PandocEffects
   , runPandoc
   , runPandocAndLoggingToIO
+  -- * re-exports
+  , P.PandocError
   ) where
 
 import qualified Text.Pandoc                 as P
