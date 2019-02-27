@@ -10,34 +10,57 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.Monad.Freer.Random
   (
     Random
-  , Control.Monad.Freer.Random.rvar
-  , runRandomInBase
+  , sampleRVar
+  , sampleDist
+--  , Control.Monad.Freer.Random.rvar
+  , runRandomInIO
   ) where
 
-import Data.Random as R
-import Data.Random.Internal.Source as R
+import qualified Data.Random as R
+import qualified Data.Random.Internal.Source as R
 import qualified Control.Monad.Freer         as FR
-import qualified Control.Monad.Freer.Writer  as FR
+
+import           Control.Monad.IO.Class (MonadIO(..))
 
 data Random r where
-  RVar :: R.RVar a -> Random a
+  SampleRVar ::  R.RVar t -> Random t 
+  GetRandomPrim :: R.Prim t -> Random t 
 
-rvar :: FR.Member Random effs => R.RVar a -> FR.Eff effs a
-rvar = FR.send . RVar
+sampleRVar :: (FR.Member Random effs) => R.RVar t -> FR.Eff effs t
+sampleRVar = FR.send . SampleRVar
 
-runRandomInBase :: forall m s effs a. (R.RandomSource m s, FR.LastMember m effs)
-  => s -> FR.Eff (Random ': effs) a -> FR.Eff effs a
-runRandomInBase s = FR.interpretM f where
-  f :: forall x. (Random x -> m x)
+sampleDist :: (FR.Member Random effs, R.Distribution d t) => d t -> FR.Eff effs t
+sampleDist = sampleRVar . R.rvar
+
+getRandomPrim :: FR.Member Random effs => R.Prim t -> FR.Eff effs t
+getRandomPrim = FR.send . GetRandomPrim
+
+runRandomInIO :: forall effs a. MonadIO (FR.Eff effs) => FR.Eff (Random ': effs) a -> FR.Eff effs a
+runRandomInIO = FR.interpret f where
+  f :: forall x. (Random x -> FR.Eff effs x)
   f r = case r of
-    RVar rv -> runRVar rv s
+    SampleRVar dt -> liftIO $ R.sample dt
+    GetRandomPrim pt -> liftIO $ R.getRandomPrim pt 
 
-instance (R.MonadRandom m, FR.LastMember m effs) => R.MonadRandom (FR.Eff effs) where
-  getRandomPrim = FR.sendM . R.getRandomPrim
+
+
+{-
+runRandomInState :: forall s m effs a. s -> FR.Eff (Random s ': effs) a -> FR.Eff effs a
+runRandomInState source =  
+
+instance (FR.Member (Random s) effs) => R.RandomSource (FR.Eff effs) s where
+  getRandomPrimFrom = getRandPrim
+
+-}
+
+instance FR.Member Random effs => R.MonadRandom (FR.Eff effs) where
+  getRandomPrim = getRandomPrim
 
 
 {-
