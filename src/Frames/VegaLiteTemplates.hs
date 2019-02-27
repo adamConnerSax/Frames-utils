@@ -133,15 +133,17 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows =
       dat = GV.dataFromRows [] $ List.concat $ fmap makeRowsForOne $ M.toList mapByC
       encY = GV.position GV.Y [GV.PName "count", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle yLabel]]
       encC = GV.color [FV.mName @c, GV.MmType GV.Nominal]
-      (hEnc, bandSize) = case mhStyle of
+      (hEnc, hBar) = case mhStyle of
         StackedBar -> 
-          let encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]              
-              in (encX . encY . encC, (realToFrac width/realToFrac nBins) - 1)
+          let encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
+              bandSize = (realToFrac width/realToFrac nBins) - 2
+              hBar = GV.mark GV.Bar [GV.MBinSpacing 1, GV.MSize bandSize]
+          in (encX . encY . encC, hBar)
         AdjacentBar ->
           let encX = GV.position GV.X [FV.pName @c, GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""] ]
-              encF = GV.column [FV.fName @x, GV.FmType GV.Quantitative] 
-          in  (encX . encY . encC . encF, (realToFrac width/(realToFrac nBins * realToFrac (M.size mapByC))-1))
-      hBar = GV.mark GV.Bar [GV.MBinSpacing 1{-, GV.MSize bandSize-}]
+              encF = GV.column [FV.fName @x, GV.FmType GV.Quantitative]
+              hBar = GV.mark GV.Bar [GV.MBinSpacing 1]
+          in  (encX . encY . encC . encF, hBar)
       configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 800]) . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
