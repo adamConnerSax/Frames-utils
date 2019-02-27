@@ -21,9 +21,7 @@
 module Frames.Regression where
 
 import qualified Frames.Aggregations as FA
-import qualified Frames.Transform as FT
-import qualified Frames.VegaLite as FV
-import qualified Math.Rescale as MR
+import qualified Frames.VegaLite.Utils as FV
 import qualified Math.Regression.Regression as MR
 import qualified Math.Regression.LeastSquares as MR
 import qualified Control.Monad.Freer.Logger as Log
@@ -31,47 +29,23 @@ import qualified Control.Monad.Freer as FR
 
 import qualified Lucid as LH
 import qualified Text.Blaze.Html as BH 
-import qualified Colonnade                      as C
 import qualified Control.Foldl        as FL
-import           Control.Lens         ((^.))
-import qualified Control.Lens         as L
-import           Data.Traversable    (sequenceA)
-import           Control.Monad.State (evalState)
-import           Data.Functor.Identity (Identity (Identity), runIdentity)
-import qualified Data.Foldable     as Foldable
 import qualified Data.List            as List
-import qualified Data.Map             as M
-import           Data.Maybe           (fromMaybe, isJust, catMaybes, fromJust)
-import           Data.Text            (Text)
 import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
-import qualified Data.Vinyl.Curry     as V
 import qualified Data.Vinyl.Functor   as V
 import qualified Data.Vinyl.TypeLevel as V
-import qualified Data.Vinyl.XRec as V
-import qualified Data.Vinyl.Class.Method as V
-import qualified Data.Vinyl.Core      as V
-import           Data.Vinyl.Lens      (type (∈))
-import           Data.Kind            (Type,Constraint)
 import           Data.Profunctor      as PF
-import           Frames               ((:.), (&:))
 import qualified Frames               as F
 import qualified Frames.Melt           as F
-import qualified Pipes                as P
-import qualified Pipes.Prelude        as P
-import           Control.Arrow (second)
 import           Data.Proxy (Proxy(..))
-import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 --import qualified Data.Vector.Unboxed as U
-import           Data.Random.Source.PureMT as R
-import           Data.Random as R
 import           Data.Void (Void)
 
 import qualified MachineLearning            as ML
 import qualified MachineLearning.Regression as ML
 import qualified Numeric.LinearAlgebra      as LA
-import qualified Numeric.LinearAlgebra.Data as LA
 import           Numeric.LinearAlgebra.Data (R)
 import qualified Statistics.Types               as S
 
@@ -82,8 +56,8 @@ import Data.Kind (Type)
 type Unweighted = "unweighted" F.:-> Void
 
 type family NonVoidField (f :: (Symbol, Type)) :: Bool where
-  NonVoidField '(a,Void) = False
-  NonVoidField _         = True
+  NonVoidField '(a,Void) = 'False
+  NonVoidField _         = 'True
 
 class BoolVal (w :: Bool) where
   asBool :: Bool
@@ -253,9 +227,9 @@ leastSquaresByMinimization :: forall y as rs f. (Foldable f
                                                 , V.ReifyConstraint Real F.ElField as
                                                 , V.NatToInt (V.RLength as))
                            => Bool -> [R] -> f (F.Record rs) -> [R]
-leastSquaresByMinimization withConstant guess dat =
+leastSquaresByMinimization wc guess dat =
   let (mX,y) = prepRegression @y @as dat
-      mX1 = if withConstant then ML.addBiasDimension mX else mX
+      mX1 = if wc then ML.addBiasDimension mX else mX
       (solution, _) = ML.minimize (ML.ConjugateGradientFR 0.1 0.1) ML.LeastSquares (0.001) 20 ML.RegNone mX1 y (LA.fromList guess)
   in LA.toList solution
 
@@ -274,8 +248,8 @@ ordinaryLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
                      =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as Unweighted rs)
 ordinaryLeastSquares dat = do
   let (mA, vB) = prepRegression @y @as dat
-      withConstant = asBool @wc
-  FrameUnweightedRegressionResult <$> MR.ordinaryLS withConstant mA vB
+      withConst = asBool @wc
+  FrameUnweightedRegressionResult <$> MR.ordinaryLS withConst mA vB
 
 weightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                                                     , Foldable f
@@ -293,8 +267,8 @@ weightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                      =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 weightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc
-  FrameWeightedRegressionResult realToFrac <$> MR.weightedLS withConstant mA vB vW  
+      withConst = asBool @wc
+  FrameWeightedRegressionResult realToFrac <$> MR.weightedLS withConst mA vB vW  
 
 -- special case when weights come from observations being population averages of different populations
 popWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
@@ -313,9 +287,9 @@ popWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger ef
                         =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 popWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc
+      withConst = asBool @wc
       vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
-  FrameWeightedRegressionResult (sqrt . realToFrac) <$> MR.weightedLS withConstant mA vB vWpop  
+  FrameWeightedRegressionResult (sqrt . realToFrac) <$> MR.weightedLS withConst mA vB vWpop  
 
 
 -- special case when we know residuals are heteroscedastic with variances proportional to given numbers
@@ -335,9 +309,9 @@ varWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger ef
                         =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc
+      withConst = asBool @wc
       vWvar = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
-  FrameWeightedRegressionResult (\x -> 1/(sqrt $ realToFrac x)) <$> MR.weightedLS withConstant mA vB vWvar  
+  FrameWeightedRegressionResult (\x -> 1/(sqrt $ realToFrac x)) <$> MR.weightedLS withConst mA vB vWvar  
 
 totalLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
                                                , Foldable f
@@ -353,8 +327,8 @@ totalLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
                      =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as Unweighted rs)
 totalLeastSquares dat = do
   let (mA, vB) = prepRegression @y @as dat
-      withConstant = asBool @wc
-  FrameUnweightedRegressionResult <$> MR.totalLS withConstant mA vB
+      withConst = asBool @wc
+  FrameUnweightedRegressionResult <$> MR.totalLS withConst mA vB
 
 
 weightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
@@ -373,8 +347,8 @@ weightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
             =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 weightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc  
-  FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConstant mA vB vW
+      withConst = asBool @wc  
+  FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConst mA vB vW
 
 popWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                                               , Foldable f
@@ -392,9 +366,9 @@ popWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 popWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc  
+      withConst = asBool @wc  
       vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
-  FrameWeightedRegressionResult (sqrt . realToFrac) <$> MR.weightedTLS withConstant mA vB vWpop
+  FrameWeightedRegressionResult (sqrt . realToFrac) <$> MR.weightedTLS withConst mA vB vWpop
 
 varWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
                                               , Foldable f
@@ -412,9 +386,9 @@ varWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
             =>  f (F.Record rs) -> FR.Eff effs (FrameRegressionResult y wc as w rs)
 varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
-      withConstant = asBool @wc    
+      withConst = asBool @wc    
       vWvar = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
-  FrameWeightedRegressionResult (\x -> 1/(sqrt $ realToFrac x)) <$> MR.weightedTLS withConstant mA vB vWvar
+  FrameWeightedRegressionResult (\x -> 1/(sqrt $ realToFrac x)) <$> MR.weightedTLS withConst mA vB vWvar
 
   
 {-

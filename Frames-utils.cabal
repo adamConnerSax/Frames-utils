@@ -32,16 +32,20 @@ common deps
 
 library
   import: deps
+  ghc-options: -Wall
   exposed-modules: Frames.Aggregations
                  , Frames.Transform
                  , Frames.ScatterMerge
                  , Frames.KMeans
                  , Frames.Regression
                  , Frames.MaybeUtils
-                 , Frames.VegaLite
-                 , Frames.VegaLiteTemplates
                  , Frames.Table
                  , Frames.ParseableTypes
+                 , Frames.VegaLite
+                 , Frames.VegaLite.Utils
+                 , Frames.VegaLite.Histogram
+                 , Frames.VegaLite.Regression
+                 , Frames.VegaLite.Clusters
                  , Math.Rescale
                  , Math.HMatrixUtils
                  , Math.Regression.Regression
@@ -86,7 +90,7 @@ library
 
 executable FrameRegressions
   import: deps
-  ghc-options: -O0
+  ghc-options: -O0 -Wall
   build-depends: base
                , data-default
                , foldl

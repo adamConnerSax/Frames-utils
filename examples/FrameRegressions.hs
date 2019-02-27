@@ -11,9 +11,7 @@
 module Main where
 
 import qualified Control.Foldl                as FL
---import           Control.Monad.Trans          (lift)
 import           Control.Monad.IO.Class (MonadIO (..))
-import           Control.Monad.Morph          (generalize, hoist, lift)
 import qualified Data.List                    as List
 import           Data.Maybe                   (fromMaybe)
 import qualified Data.Map                     as M
@@ -24,13 +22,11 @@ import qualified Data.Vector.Storable         as V
 import qualified Data.Vinyl                   as V
 import qualified Frames                       as F
 
-import           Numeric.LinearAlgebra        (( #> ), (<#), (<.>), (<\>))
 import qualified Numeric.LinearAlgebra        as LA
-import           Numeric.LinearAlgebra.Data   (Matrix, R, Vector)
-import qualified Numeric.LinearAlgebra.Data   as LA
+import           Numeric.LinearAlgebra        (R, Matrix)
 
 import qualified Frames.Regression            as FR
-import qualified Frames.VegaLiteTemplates     as FV
+import qualified Frames.VegaLite               as FV
 --import qualified Html.Lucid.Report            as H
 --import qualified Lucid                        as H
 import qualified Html.Blaze.Report            as H
@@ -39,18 +35,14 @@ import qualified Text.Blaze.Html5.Attributes   as HA
 import           Text.Blaze.Html              ((!))
 import qualified Text.Blaze.Html.Renderer.Text as BH
 import qualified Text.Pandoc.Report           as P
-import qualified Math.Regression.LeastSquares as LS
-import qualified Math.Regression.Regression   as RE
 import qualified Statistics.Types             as S
-import           System.IO                    (BufferMode (..), hSetBuffering,
-                                               stdout)
+
 import qualified Control.Monad.Freer.Logger   as Log
 import qualified Control.Monad.Freer          as FR
 import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc as P
 --import           Control.Monad.Freer.Html     (Lucid, lucid, lucidToText)
-import           Control.Monad.Freer.Html     (Blaze, blaze, blazeToText, blazeHtml)
-import Data.Default (def)
+--import           Control.Monad.Freer.Html     (Blaze, blaze, blazeToText, blazeHtml)
 import Data.String.Here
 --import Text.Pandoc.Class as P
 
