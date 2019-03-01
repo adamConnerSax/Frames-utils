@@ -27,8 +27,6 @@ import           Numeric.LinearAlgebra        (R, Matrix)
 
 import qualified Frames.Regression            as FR
 import qualified Frames.VegaLite               as FV
---import qualified Html.Lucid.Report            as H
---import qualified Lucid                        as H
 import qualified Html.Blaze.Report            as H
 import qualified Text.Blaze.Html5              as H
 import qualified Text.Blaze.Html5.Attributes   as HA
@@ -41,10 +39,7 @@ import qualified Control.Monad.Freer.Logger   as Log
 import qualified Control.Monad.Freer          as FR
 import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc as P
---import           Control.Monad.Freer.Html     (Lucid, lucid, lucidToText)
---import           Control.Monad.Freer.Html     (Blaze, blaze, blazeToText, blazeHtml)
 import Data.String.Here
---import Text.Pandoc.Class as P
 
 templateVars = M.fromList
   [
@@ -70,7 +65,9 @@ main = asPandoc
   
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = FR.runPandocAndLoggingToIO Log.logAll . Log.wrapPrefix "Main" . fmap BH.renderHtml
+  let runAllP = FR.runPandocAndLoggingToIO Log.logAll
+                . Log.wrapPrefix "Main"
+                . fmap BH.renderHtml
   htmlAsTextE <- runAllP $ P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF $ do
     P.addMarkDown regressionNotesMD
     testMany

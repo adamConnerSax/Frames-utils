@@ -16,6 +16,8 @@ import qualified Math.HMatrixUtils                     as HU
 import qualified Colonnade                             as C
 import qualified Control.Foldl                         as FL
 import qualified Control.Foldl.Statistics              as FS
+import qualified Control.Monad.Freer                   as FR
+import qualified Control.Monad.Freer.Logger            as Log
 import qualified Data.Foldable                         as Foldable
 import           Data.Function                         (on)
 import qualified Data.List                             as List
@@ -26,16 +28,14 @@ import qualified Data.Vector.Storable                  as V
 import qualified Lucid                                 as LH
 import qualified Lucid.Colonnade                       as LC
 import qualified Lucid.Html5                           as LH
-import qualified Text.Blaze.Html5                      as BH
-import qualified Text.Blaze.Html5.Attributes           as BHA
-import qualified Text.Blaze.Colonnade                  as BC
 import qualified Statistics.Distribution               as S
 import qualified Statistics.Distribution.FDistribution as S
 import qualified Statistics.Distribution.Normal        as S
 import qualified Statistics.Distribution.StudentT      as S
 import qualified Statistics.Types                      as S
-import qualified Control.Monad.Freer                   as FR
-import qualified Control.Monad.Freer.Logger            as Log
+import qualified Text.Blaze.Colonnade                  as BC
+import qualified Text.Blaze.Html5                      as BH
+import qualified Text.Blaze.Html5.Attributes           as BHA
 import qualified Text.Printf                           as TP
 
 
@@ -144,7 +144,7 @@ prettyPrintRegressionResultBlaze header xNames r cl = do
   BH.div BH.! BHA.style "display: inline-block; padding: 7px; border-collapse: collapse" $ do
     BH.span (BH.toHtml header)
     BC.encodeCellTable (BHA.style "border: 1px solid black; border-collapse: collapse") (fmap toCell $ namedEstimatesColonnade cl) nEsts
-    BC.encodeCellTable (BHA.style "border: 1px solid black; border-collapse: collapse") (fmap toCell $ namedSummaryStatsColonnade) nSS    
+    BC.encodeCellTable (BHA.style "border: 1px solid black; border-collapse: collapse") (fmap toCell $ namedSummaryStatsColonnade) nSS
 
 
 data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: Maybe a}
@@ -166,7 +166,7 @@ goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
       fStatM = if (pInt > 1) then Just (((ssTot - ssRes)/ (p - 1.0)) / (ssRes / (effN - p))) else Nothing
   Log.log Log.Diagnostic $ "n=" <> (T.pack $ show n)
   Log.log Log.Diagnostic $ "p=" <> (T.pack $ show p)
-  Log.log Log.Diagnostic $ "vW=" <> (T.pack $ show vW)
+--  Log.log Log.Diagnostic $ "vW=" <> (T.pack $ show vW)
   Log.log Log.Diagnostic $ "effN=" <> (T.pack $ show effN)
   Log.log Log.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
   Log.log Log.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)

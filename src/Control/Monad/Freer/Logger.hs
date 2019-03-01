@@ -14,32 +14,37 @@ module Control.Monad.Freer.Logger
   , Logger(..)
   , logAll
   , nonDiagnostic
+  , logMessage
   , log
   , wrapPrefix
   , logToStdout
+  , logToFileAsync
   -- re-exports
   , Eff
   , Member
   ) where
 
 
-import           Prelude hiding (log)
-import           Control.Monad.IO.Class (MonadIO (..))
-import           Control.Monad.State    (MonadState, State, evalState, StateT, evalStateT, get,
-                                         modify)
-import           Control.Monad.Morph (lift, hoist, generalize, MonadTrans, MFunctor)
-import           Data.Functor.Identity (Identity)
-import qualified Data.List              as List
-import           Data.Monoid            ((<>))
-import qualified Data.Text              as T
-import qualified Pipes                  as P
-import qualified Control.Monad.Freer    as FR
-import           Control.Monad.Freer    (Eff, Member)
-import qualified Control.Monad.Freer.State   as FR
-import qualified Control.Monad.Freer.Writer   as FR
-
+import           Prelude                    hiding (log)
+import           Control.Monad.IO.Class     (MonadIO (..))
+import           Control.Monad.State        (MonadState, State, evalState, StateT, evalStateT, get,
+                                            modify)
+import           Control.Monad.Morph        (lift, hoist, generalize, MonadTrans, MFunctor)
+import           Data.Functor.Identity      (Identity)
+import qualified Data.List                  as List
+import           Data.Monoid                ((<>))
+import qualified Data.Text                  as T
+import qualified Data.Text.IO               as T
+import qualified Pipes                      as P
+import qualified Control.Monad.Freer        as FR
+import           Control.Monad.Freer        (Eff, Member)
+import qualified Control.Monad.Freer.State  as FR
+import qualified Control.Monad.Freer.Writer as FR
+import qualified System.IO                  as Sys
 
 data LogSeverity = Diagnostic | Info | Warning | Error deriving (Show, Eq, Ord, Enum, Bounded)
+
+
 data LogEntry = LogEntry { severity :: LogSeverity, message :: T.Text }
 
 logEntryPretty :: LogEntry -> T.Text
@@ -72,40 +77,23 @@ data LogWriter r where
 writeToLog :: FR.Member LogWriter effs => T.Text -> FR.Eff effs ()
 writeToLog = FR.send . WriteToLog 
 
+-- NB: First one is more complex than it has to be but that allows us to defer unwrapping the message until it's logged
 data Logger r where
-  LogText :: LogSeverity -> T.Text -> Logger ()
+  LogMessage :: (a -> LogSeverity) -> (a -> T.Text) -> a -> Logger ()
   AddPrefix :: T.Text -> Logger ()
   RemovePrefix :: Logger ()
 
+logMessage :: FR.Member Logger effs => (a -> LogSeverity) -> (a -> T.Text) -> a -> FR.Eff effs ()
+logMessage toS toT lm = FR.send $ LogMessage toS toT lm
+
 log :: FR.Member Logger effs => LogSeverity -> T.Text -> FR.Eff effs ()
-log ls t = FR.send $ LogText ls t
+log ls lm = logMessage severity message (LogEntry ls lm)
 
 addPrefix :: FR.Member Logger effs => T.Text -> FR.Eff effs ()
 addPrefix = FR.send . AddPrefix
 
 removePrefix :: FR.Member Logger effs => FR.Eff effs ()
 removePrefix = FR.send RemovePrefix
-
--- interpret in State (for prefixes) and WriteToLog
-runLogger :: forall effs a. [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff (LogWriter ': effs) a
-runLogger lss = FR.evalState [] . loggerToStateLogWriter where
-  loggerToStateLogWriter :: forall x. FR.Eff (Logger ': effs) x -> FR.Eff (FR.State [T.Text] ': (LogWriter ': effs)) x
-  loggerToStateLogWriter = FR.reinterpret2 $ \case
-    LogText ls t -> do
-      case filterLogEntry lss (LogEntry ls t) of
-        Nothing -> return ()
-        Just le -> do
-          ps <- FR.get
-          let prefixText = T.intercalate "." (List.reverse ps)
-          writeToLog $ prefixText <> ": " <> (logEntryPretty le)
-    AddPrefix t -> FR.modify (\ps -> t : ps)  
-    RemovePrefix -> FR.modify @[T.Text] tail -- type application required here since tail is polymorphic
-
-writeLogStdout :: MonadIO (FR.Eff effs) => FR.Eff (LogWriter ': effs) a -> FR.Eff effs a
-writeLogStdout = FR.interpret (\(WriteToLog t) -> liftIO $ putStrLn (T.unpack t))
-
-logToStdout :: MonadIO (FR.Eff effs) => [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff effs a
-logToStdout lss = writeLogStdout . runLogger lss
 
 wrapPrefix :: FR.Member Logger effs => T.Text -> FR.Eff effs a -> FR.Eff effs a
 wrapPrefix p l = do
@@ -114,41 +102,35 @@ wrapPrefix p l = do
   removePrefix
   return res
 
+
+-- interpret in State (for prefixes) and WriteToLog
+runLogger :: forall effs a. [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff (LogWriter ': effs) a
+runLogger lss = FR.evalState [] . loggerToStateLogWriter where
+  loggerToStateLogWriter :: forall x. FR.Eff (Logger ': effs) x -> FR.Eff (FR.State [T.Text] ': (LogWriter ': effs)) x
+  loggerToStateLogWriter = FR.reinterpret2 $ \case
+    LogMessage toS toT lm -> do
+      let severity = toS lm
+      case severity `elem` lss of
+        False -> return ()
+        True -> do
+          ps <- FR.get
+          let prefixText = T.intercalate "." (List.reverse ps)
+          writeToLog $ prefixText <> ": " <> (logEntryPretty (LogEntry severity (toT lm))) -- we only convert to Text if we have to
+    AddPrefix t -> FR.modify (\ps -> t : ps)  
+    RemovePrefix -> FR.modify @[T.Text] tail -- type application required here since tail is polymorphic
+
+writeLogStdout :: MonadIO (FR.Eff effs) => FR.Eff (LogWriter ': effs) a -> FR.Eff effs a
+writeLogStdout = FR.interpret (\(WriteToLog t) -> liftIO $ T.putStrLn t)
+
+writeLogToFileAsync :: MonadIO (FR.Eff effs) => Sys.Handle -> FR.Eff (LogWriter ': effs) a -> FR.Eff effs a
+writeLogToFileAsync h = FR.interpret (\(WriteToLog t) -> liftIO $ T.hPutStrLn h t)
+
+logToFileAsync :: MonadIO (FR.Eff effs) => Sys.Handle -> [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff effs a
+logToFileAsync h lss = writeLogToFileAsync h . runLogger lss 
+
+logToStdout :: MonadIO (FR.Eff effs) => [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff effs a
+logToStdout lss = writeLogStdout . runLogger lss
+
+
   
-{-
-type Logger m = P.Producer LogEntry (StateT LoggerPrefix m)
-
-log :: Monad m => LogSeverity -> T.Text -> Logger m ()
-log s msg = P.yield (LogEntry s msg)
-
-addPrefix :: Monad m => T.Text -> Logger m ()
-addPrefix t = modify (\ps -> t : ps)
-
-removePrefix :: Monad m => Logger m ()
-removePrefix = modify tail
-
-
-  
-doLogOutput :: (MonadState LoggerPrefix m, MonadIO m) => [LogSeverity] -> LogEntry -> m ()
-doLogOutput ls le = case filterLogEntry ls le of
-  Nothing -> return ()
-  Just x -> do
-    ps <- get
-    liftIO $ putStrLn $ T.unpack $ {- T.replicate (List.length ps) " " <> -} T.intercalate "." (List.reverse ps) <> " " <> logEntryPretty x
-
-runLogger :: MonadIO m => [LogSeverity] -> Logger m () -> StateT LoggerPrefix m ()
-runLogger ls logged = P.runEffect $ P.for logged (doLogOutput ls)
-
-runLoggerIO :: MonadIO m => [LogSeverity] -> Logger m () -> m ()
-runLoggerIO ls logged = flip evalStateT [] $ runLogger ls logged
-
-liftAction :: Monad m => m a -> Logger m a
-liftAction = lift . lift
-
-liftPureAction :: (MonadTrans t, Monad (t IO), MFunctor t) => t Identity a -> Logger (t IO) a
-liftPureAction a = liftAction $ hoist generalize a
-
-liftFunction :: forall m b. Monad m => (forall a. m a -> m a) -> Logger m b -> Logger m b
-liftFunction f = hoist (hoist f)
--}
 

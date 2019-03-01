@@ -15,6 +15,9 @@ module Frames.Transform
   , transform
   , fieldEndo
   , recordSingleton
+  , dropColumn
+  , dropColumns
+  , retypeColumn
   , BinaryFunction(..)
   , bfApply
   , bfPlus
@@ -23,14 +26,14 @@ module Frames.Transform
   ) where
 
 import qualified Data.Vinyl           as V
-import qualified Data.Vinyl.Derived as V
-import Data.Vinyl.TypeLevel (type (++), Snd)
-import Data.Vinyl.Functor (Lift(..), Identity(..))
+--import qualified Data.Vinyl.Derived   as V
+import           Data.Vinyl.TypeLevel (type (++), Snd)
+import           Data.Vinyl.Functor   (Lift(..), Identity(..))
 import qualified Frames               as F
-import Frames.Melt (RDeleteAll, ElemOf)
-import           Data.Vinyl.Lens            (type (∈))
+import           Frames.Melt          (RDeleteAll, ElemOf)
+--import           Data.Vinyl.Lens      (type (∈))
 
-import GHC.TypeLits (KnownSymbol, Symbol)
+import           GHC.TypeLits         (KnownSymbol, Symbol)
 
 -- |  mutation functions
 
@@ -49,6 +52,21 @@ mutate f xs = xs `F.rappend` f xs
 
 recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
 recordSingleton a = a F.&: V.RNil
+
+dropColumn :: forall x rs. (F.RDelete x rs F.⊆ rs) => F.Record rs -> F.Record (F.RDelete x rs)
+dropColumn = F.rcast
+
+dropColumns :: forall xs rs. (RDeleteAll xs rs F.⊆ rs) => F.Record rs -> F.Record (RDeleteAll xs rs)
+dropColumns = F.rcast
+
+-- change a column "name" at the type level
+retypeColumn :: forall x y rs. ( V.KnownField x
+                               , V.KnownField y
+                               , Snd x ~ Snd y
+                               , ElemOf rs x
+                               , F.RDelete x rs F.⊆ rs)
+  => F.Record rs -> F.Record (F.RDelete x rs ++ '[y])
+retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
 
 --
 --newtype RecFunction as bs = RecFunction { recFunction :: F.Record as -> F.Record bs }

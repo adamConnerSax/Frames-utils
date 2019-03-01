@@ -1,32 +1,33 @@
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE AllowAmbiguousTypes   #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE ConstraintKinds       #-}
-module Frames.VegaLite.Histogram 
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
+module Frames.VegaLite.Histogram
   (
     singleHistogram
   , multiHistogram
   , MultiHistogramStyle (..)
   ) where
 
-import qualified Frames.VegaLite.Utils as FV
-import qualified Frames.Aggregations as FA
+import qualified Frames.Aggregations    as FA
+import qualified Frames.VegaLite.Utils  as FV
 
-import qualified Control.Foldl              as FL
-import qualified Data.Map                   as M
-import           Data.Maybe                 (fromMaybe)
-import           Data.Text                  (Text)
-import qualified Data.Text                  as T
+import qualified Control.Foldl          as FL
+import qualified Data.List              as List
+import qualified Data.Map               as M
+import           Data.Maybe             (fromMaybe)
+import           Data.Text              (Text)
+import qualified Data.Text              as T
 import qualified Data.Vector            as VB
 import qualified Data.Vector.Unboxed    as VU
 import qualified Data.Vinyl             as V
@@ -34,10 +35,9 @@ import qualified Data.Vinyl.TypeLevel   as V
 import qualified Frames                 as F
 import qualified Frames.Melt            as F
 import qualified Graphics.Vega.VegaLite as GV
-import qualified Data.List              as List
 
-import qualified Data.Histogram as H
-import qualified Data.Histogram.Fill as H
+import qualified Data.Histogram         as H
+import qualified Data.Histogram.Fill    as H
 
 -- | Histograms
 -- | Single, stacked, side-by-side, and faceted
@@ -54,11 +54,11 @@ singleHistogram :: forall x rs f. ( FA.RealFieldOf rs x
                 -> Bool
                 -> f (F.Record rs)
                 -> GV.VegaLite
-singleHistogram title yLabelM nBins minM maxM addOutOfRange rows =                   
+singleHistogram title yLabelM nBins minM maxM addOutOfRange rows =
   let yLabel = fromMaybe "count" yLabelM
       xLabel = FV.colName @x
-      width :: Int = 800 -- I need to make this settable, obv
-      bandSize = (realToFrac width/realToFrac nBins) - 1
+      width :: Double = 800 -- I need to make this settable, obv
+      bandSize = (width/realToFrac nBins) - 10.0
       vecX = FL.fold (FL.premap (realToFrac . F.rgetField @x) (FL.vector @VU.Vector)) rows
       minVal = fromMaybe (VU.minimum vecX) (fmap realToFrac minM)
       maxVal = fromMaybe (VU.maximum vecX) (fmap realToFrac maxM)
@@ -66,12 +66,12 @@ singleHistogram title yLabelM nBins minM maxM addOutOfRange rows =
       hVec = makeHistogram addOutOfRange bins vecX
       toVLRow (bv, ct) = GV.dataRow [(xLabel, GV.Number bv),("count", GV.Number ct)] []
       dat = GV.dataFromRows [] $ List.concat $ VB.toList $ fmap toVLRow $ VB.convert hVec
-      encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative, GV.PAxis [GV.AxFormat ".0f"]]
+      encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [GV.PName "count", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle yLabel]]
-      hBar = GV.mark GV.Bar [GV.MBinSpacing 0, GV.MSize bandSize]
+      hBar = GV.mark GV.Bar [GV.MBinSpacing 1, GV.MSize bandSize]
       hEnc = encX . encY
       configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 800]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.View [GV.ViewWidth width, GV.ViewHeight 800]) . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
         [
           GV.title title
@@ -96,9 +96,9 @@ multiHistogram :: forall x c rs f. (FA.RealFieldOf rs x
                -> Maybe (V.Snd x)
                -> Maybe (V.Snd x)
                -> Bool
-               -> MultiHistogramStyle 
+               -> MultiHistogramStyle
                -> f (F.Record rs)
-               -> GV.VegaLite                                                  
+               -> GV.VegaLite
 multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows =
   let yLabel = fromMaybe "count" yLabelM
       xLabel = FV.colName @x
@@ -119,7 +119,7 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows =
       encY = GV.position GV.Y [GV.PName "count", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle yLabel]]
       encC = GV.color [FV.mName @c, GV.MmType GV.Nominal]
       (hEnc, hBar) = case mhStyle of
-        StackedBar -> 
+        StackedBar ->
           let encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
               bandSize = (realToFrac width/realToFrac nBins) - 2
               hBar' = GV.mark GV.Bar [GV.MBinSpacing 1, GV.MSize bandSize]
@@ -140,10 +140,10 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows =
         , configuration []
         ]
   in vl
-      
-                    
-makeHistogram :: Bool -> H.BinD -> VU.Vector Double -> VU.Vector (H.BinValue H.BinD, Double) 
-makeHistogram addOutOfRange bins vecX =  
+
+
+makeHistogram :: Bool -> H.BinD -> VU.Vector Double -> VU.Vector (H.BinValue H.BinD, Double)
+makeHistogram addOutOfRange bins vecX =
   let histo = H.fillBuilder (H.mkSimple bins) $ ((VB.convert vecX) :: VB.Vector Double)
       hVec = H.asVector histo
       minIndex = 0
@@ -153,7 +153,7 @@ makeHistogram addOutOfRange bins vecX =
       newMin = (minBV, minCount + (fromMaybe 0 $ H.underflows histo))
       newMax = (maxBV, maxCount + (fromMaybe 0 $ H.overflows histo))
   in if addOutOfRange then hVec VU.// [(minIndex,newMin),(maxIndex,newMax)] else hVec
-  
-  
 
-  
+
+
+
