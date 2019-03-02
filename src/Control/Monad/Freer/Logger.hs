@@ -42,6 +42,9 @@ import qualified Control.Monad.Freer.State  as FR
 import qualified Control.Monad.Freer.Writer as FR
 import qualified System.IO                  as Sys
 
+-- TODO: rewrite to use logging-effect ??
+-- http://hackage.haskell.org/package/logging-effect
+
 data LogSeverity = Diagnostic | Info | Warning | Error deriving (Show, Eq, Ord, Enum, Bounded)
 
 
