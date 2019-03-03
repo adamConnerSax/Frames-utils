@@ -40,15 +40,24 @@ import qualified Control.Monad.Freer        as FR
 import           Control.Monad.Freer        (Eff, Member)
 import qualified Control.Monad.Freer.State  as FR
 import qualified Control.Monad.Freer.Writer as FR
+import qualified Control.Monad.Log          as ML
 import qualified System.IO                  as Sys
 
--- TODO: rewrite to use logging-effect ??
+-- TODO: add a runner to run in MonadLogger
 -- http://hackage.haskell.org/package/logging-effect
 
 data LogSeverity = Diagnostic | Info | Warning | Error deriving (Show, Eq, Ord, Enum, Bounded)
 
+logSeverityToSeverity :: LogSeverity -> ML.Severity
+logSeverityToSeverity Diagnostic = ML.Debug
+logSeverityToSeverity Info = ML.Informational
+logSeverityToSeverity Warning = ML.Warning
+logSeverityToSeverity Error = ML.Error
 
 data LogEntry = LogEntry { severity :: LogSeverity, message :: T.Text }
+
+logEntryToWithSeverity :: LogEntry -> ML.WithSeverity Text
+logEntryToWithSeverity (LogEntry s t) = ML.WithSeverity (logSeverityToMLSeverity s) m
 
 logEntryPretty :: LogEntry -> T.Text
 logEntryPretty (LogEntry Diagnostic  d)  = "(Diagnostic): " <> d
@@ -67,17 +76,11 @@ nonDiagnostic = List.tail logAll
 
 type LoggerPrefix = [T.Text]
 
--- NB: This will cause a problem if the underlying monad has State in it.  So this works for this project but not in general.  And I had
--- to fiddle with the random source (put it in an IORef rather than State) to get it to work.  Would likely be better re-designed via
--- a lensed state so that all we need is state with the LoggerPrefix present.
-
--- Also, just Haskell confusing me:  how does this log in real time before things are finished now that it needs the state?  Pipes are confusing magic.
-
 -- output
-data LogWriter r where
-  WriteToLog :: T.Text -> LogWriter ()
+data LogWriter a r where
+  WriteToLog :: a -> LogWriter ()
 
-writeToLog :: FR.Member LogWriter effs => T.Text -> FR.Eff effs ()
+writeToLog :: FR.Member LogWriter effs => a -> FR.Eff effs ()
 writeToLog = FR.send . WriteToLog 
 
 -- NB: First one is more complex than it has to be but that allows us to defer unwrapping the message until it's logged
@@ -104,8 +107,7 @@ wrapPrefix p l = do
   res <- l
   removePrefix
   return res
-
-
+  
 -- interpret in State (for prefixes) and WriteToLog
 runLogger :: forall effs a. [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff (LogWriter ': effs) a
 runLogger lss = FR.evalState [] . loggerToStateLogWriter where

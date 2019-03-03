@@ -71,6 +71,7 @@ library
                   , histogram-fill
                   , hmatrix-gsl
                   , lens
+                  , logging-effect
                   , lucid-colonnade
                   , mltool
                   , mmorph
