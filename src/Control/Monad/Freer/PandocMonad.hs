@@ -76,10 +76,10 @@ pandocSeverity lm =
     P.WARNING -> Log.Warning
     P.INFO    -> Log.Info
 
-logPandocMessage :: FR.Member Log.Logger effs => P.LogMessage -> FR.Eff effs ()
-logPandocMessage lm = FR.send $ Log.LogMessage pandocSeverity (T.pack . P.showLogMessage) lm
+logPandocMessage :: FR.Member (Log.Logger Log.LogEntry) effs => P.LogMessage -> FR.Eff effs ()
+logPandocMessage lm = FR.send $ Log.Log $ Log.LogEntry (pandocSeverity lm) (T.pack . P.showLogMessage $ lm)
 
-type PandocEffects effs = (FR.Members '[Pandoc, FR.Error P.PandocError, Log.Logger] effs {-*, MonadError P.PandocError (FR.Eff effs)-})
+type PandocEffects effs = (FR.Members '[Pandoc, FR.Error P.PandocError, Log.PrefixLog, (Log.Logger Log.LogEntry)] effs {-*, MonadError P.PandocError (FR.Eff effs)-})
 
 instance PandocEffects effs => P.PandocMonad (FR.Eff effs) where
   lookupEnv = lookupEnv
@@ -103,7 +103,7 @@ instance PandocEffects effs => P.PandocMonad (FR.Eff effs) where
 -- for now.  But we can split this up into IO
 -- must run before logger, right?
 
-runPandoc :: (P.PandocMonad m, FR.LastMember m effs, FR.Member Log.Logger effs) => FR.Eff (Pandoc ': effs) a -> FR.Eff effs a
+runPandoc :: (P.PandocMonad m, FR.LastMember m effs, FR.Member (Log.Logger Log.LogEntry) effs) => FR.Eff (Pandoc ': effs) a -> FR.Eff effs a
 runPandoc = FR.interpretM (\case
   LookupEnv s -> P.lookupEnv s
   GetCurrentTime -> P.getCurrentTime
@@ -128,5 +128,7 @@ mergeEithers (Left x)          = Left x
 mergeEithers (Right (Left x))  = Left x
 mergeEithers (Right (Right x)) = Right x
 
-runPandocAndLoggingToIO :: [Log.LogSeverity] ->  FR.Eff '[Pandoc, Log.Logger, FR.Error P.PandocError, P.PandocIO] a -> IO (Either P.PandocError a)
-runPandocAndLoggingToIO lss = fmap mergeEithers . P.runIO . FR.runM . FR.runError . Log.logToStdout lss . runPandoc
+runPandocAndLoggingToIO :: [Log.LogSeverity]
+                        ->  FR.Eff '[Pandoc, (Log.Logger Log.LogEntry), Log.PrefixLog, FR.Error P.PandocError, P.PandocIO] a
+                        -> IO (Either P.PandocError a)
+runPandocAndLoggingToIO lss = fmap mergeEithers . P.runIO . FR.runM . FR.runError . Log.logToStdoutLE lss . runPandoc

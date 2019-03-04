@@ -149,7 +149,7 @@ prettyPrintRegressionResultBlaze header xNames r cl = do
 
 data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: Maybe a}
 
-goodnessOfFit :: FR.Member Log.Logger effs => Int -> Vector R -> Maybe (Vector R) -> Vector R -> FR.Eff effs (FitStatistics R)
+goodnessOfFit :: Log.LogWithPrefixes effs => Int -> Vector R -> Maybe (Vector R) -> Vector R -> FR.Eff effs (FitStatistics R)
 goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
   let n = LA.size vB
       p = realToFrac pInt
@@ -164,12 +164,12 @@ goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
       rSq = 1 - (ssRes/ssTot)
       arSq = 1 - (1 - rSq)*(realToFrac $ (effN - 1))/(realToFrac $ (effN - p - 1))
       fStatM = if (pInt > 1) then Just (((ssTot - ssRes)/ (p - 1.0)) / (ssRes / (effN - p))) else Nothing
-  Log.log Log.Diagnostic $ "n=" <> (T.pack $ show n)
-  Log.log Log.Diagnostic $ "p=" <> (T.pack $ show p)
+  Log.logLE Log.Diagnostic $ "n=" <> (T.pack $ show n)
+  Log.logLE Log.Diagnostic $ "p=" <> (T.pack $ show p)
 --  Log.log Log.Diagnostic $ "vW=" <> (T.pack $ show vW)
-  Log.log Log.Diagnostic $ "effN=" <> (T.pack $ show effN)
-  Log.log Log.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
-  Log.log Log.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
+  Log.logLE Log.Diagnostic $ "effN=" <> (T.pack $ show effN)
+  Log.logLE Log.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
+  Log.logLE Log.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
   return $ FitStatistics rSq arSq fStatM
 
 estimates :: Matrix R -> Vector R -> [S.Estimate S.NormalErr R]
@@ -177,7 +177,7 @@ estimates cov means =
   let sigmas = LA.cmap sqrt (LA.takeDiag cov)
   in List.zipWith (\m s -> S.estimateNormErr m s) (LA.toList means) (LA.toList sigmas)
 
-eickerHeteroscedasticityEstimator :: FR.Member Log.Logger effs => Matrix R -> Vector R -> Vector R -> FR.Eff effs (Matrix R)
+eickerHeteroscedasticityEstimator :: FR.Member (Log.Logger Log.LogEntry) effs => Matrix R -> Vector R -> Vector R -> FR.Eff effs (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
   HU.checkVectorMatrix "b" "A" vB mA
   HU.checkVectorMatrix "b'" "A" vB' mA

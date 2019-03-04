@@ -220,7 +220,7 @@ kMeans :: forall rs ks x y w effs f. ( FA.ThreeDTransformable rs ks x y w
                                      , F.ElemOf (WithScaledCols rs) FA.DblY
                                      , Show (FA.FType w)
                                      , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY]))
-                                     , FR.Member Log.Logger effs)
+                                     , Log.LogWithPrefixes effs)
        => Proxy ks
        -> Proxy '[x,y,w]
        -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
@@ -238,7 +238,7 @@ kMeans proxy_ks _ sunXF sunYF numClusters makeInitial distance =
 kMeansOne :: forall x y w f effs. ( FA.ThreeColData x y w
                                   , Foldable f
                                   , Functor f
-                                  , FR.Member Log.Logger effs
+                                  , Log.LogWithPrefixes effs
                                   , Show (FA.FType w))
           => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
           -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
@@ -270,7 +270,7 @@ kMeansWithClusters :: forall ks effs rs x y w f. ( FA.ThreeDTransformable rs ks 
                                                  , V.RMap (rs V.++ '[FA.DblX, FA.DblY])
                                                  , V.ReifyConstraint Show F.ElField (rs V.++ '[FA.DblX, FA.DblY])
                                                  , V.RecordToList (rs V.++ '[FA.DblX, FA.DblY])
-                                                 , FR.Member Log.Logger effs
+                                                 , Log.LogWithPrefixes effs
                                                  , Show (FA.FType w)
                                                  , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
                    => Proxy '[x,y,w]
@@ -300,7 +300,7 @@ kMeansOneWithClusters :: forall rs x y w f effs. ( FA.ThreeColData x y w
                                                  , V.ReifyConstraint Show F.ElField (rs V.++ '[FA.DblX, FA.DblY])
                                                  , V.RecordToList (rs V.++ '[FA.DblX, FA.DblY])
                                                  , Show (FA.FType w)
-                                                 , FR.Member Log.Logger effs)
+                                                 , Log.LogWithPrefixes effs)
                       => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
                       -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                       -> Int
@@ -320,7 +320,7 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
 --  let initialCentroids = Centroids $ V.fromList $ initial
   tries <- mapM (\cs -> weightedKMeans cs weighted distance plusScaled) initials -- here we can't
   let costs = fmap (kMeansCostWeighted distance weighted . fst) tries
-  Log.log Log.Diagnostic $ "Costs: " <> (T.pack $ show costs)
+  Log.logLE Log.Diagnostic $ "Costs: " <> (T.pack $ show costs)
   let (Clusters clusters, iters) = tries V.! (V.minIndex costs)
       fix :: (U.Vector Double, FA.FType w) -> (FA.FType x, FA.FType y, FA.FType w)
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
@@ -330,10 +330,10 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
       allClusters = V.toList $ fmap clusterOut clusters 
   let result = catMaybes allClusters
       nullClusters = List.length allClusters - List.length result
-  Log.log Log.Diagnostic $ "Required " <> (T.pack $ show iters) <> " iterations to converge."
+  Log.logLE Log.Diagnostic $ "Required " <> (T.pack $ show iters) <> " iterations to converge."
   if (nullClusters > 0)
-    then Log.log Log.Warning $ (T.pack $ show nullClusters) <> " null clusters dropped."
-    else Log.log Log.Diagnostic "All clusters have at least one member."
+    then Log.logLE Log.Warning $ (T.pack $ show nullClusters) <> " null clusters dropped."
+    else Log.logLE Log.Diagnostic "All clusters have at least one member."
   return result
 
 type IsCentroid = "is_centroid" F.:-> Bool
@@ -367,7 +367,7 @@ clusteredRows _ labelF m =
   in List.concat $ fmap (\(k,loc) -> doListOfClusters k loc) $ M.toList m
 
     
-weightedKMeans :: forall a w f effs. (Show a, FR.Member Log.Logger effs, Foldable f, Real w, Eq a, Show w)
+weightedKMeans :: forall a w f effs. (Show a, Log.LogWithPrefixes effs, Foldable f, Real w, Eq a, Show w)
                => Centroids -- initial guesses at centers 
                -> Weighted a w -- location/weight from data
                -> Distance

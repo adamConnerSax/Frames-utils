@@ -234,7 +234,7 @@ leastSquaresByMinimization wc guess dat =
   in LA.toList solution
 
 
-ordinaryLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
+ordinaryLeastSquares :: forall y wc as rs f effs. ( Log.LogWithPrefixes effs
                                                   , Foldable f
                                                   , as F.⊆ rs
                                                   , F.ElemOf rs y
@@ -251,7 +251,7 @@ ordinaryLeastSquares dat = do
       withConst = asBool @wc
   FrameUnweightedRegressionResult <$> MR.ordinaryLS withConst mA vB
 
-weightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+weightedLeastSquares :: forall y wc as w rs f effs. ( Log.LogWithPrefixes effs
                                                     , Foldable f
                                                     , as F.⊆ rs
                                                     , F.ElemOf rs y
@@ -271,7 +271,7 @@ weightedLeastSquares dat = do
   FrameWeightedRegressionResult realToFrac <$> MR.weightedLS withConst mA vB vW  
 
 -- special case when weights come from observations being population averages of different populations
-popWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+popWeightedLeastSquares :: forall y wc as w rs f effs. ( Log.LogWithPrefixes effs
                                                        , Foldable f
                                                        , as F.⊆ rs
                                                        , F.ElemOf rs y
@@ -293,7 +293,7 @@ popWeightedLeastSquares dat = do
 
 
 -- special case when we know residuals are heteroscedastic with variances proportional to given numbers
-varWeightedLeastSquares :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+varWeightedLeastSquares :: forall y wc as w rs f effs. ( Log.LogWithPrefixes effs
                                                        , Foldable f
                                                        , as F.⊆ rs
                                                        , F.ElemOf rs y
@@ -313,7 +313,7 @@ varWeightedLeastSquares dat = do
       vWvar = LA.cmap (\x -> 1/sqrt x) vW -- this is the correct weight for given variance
   FrameWeightedRegressionResult (\x -> 1/(sqrt $ realToFrac x)) <$> MR.weightedLS withConst mA vB vWvar  
 
-totalLeastSquares :: forall y wc as rs f effs. ( FR.Member Log.Logger effs
+totalLeastSquares :: forall y wc as rs f effs. ( Log.LogWithPrefixes effs
                                                , Foldable f
                                                , as F.⊆ rs
                                                , F.ElemOf rs y
@@ -331,7 +331,7 @@ totalLeastSquares dat = do
   FrameUnweightedRegressionResult <$> MR.totalLS withConst mA vB
 
 
-weightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+weightedTLS :: forall y wc as w rs f effs. ( Log.LogWithPrefixes effs
                                            , Foldable f
                                            , as F.⊆ rs
                                            , F.ElemOf rs y
@@ -350,7 +350,7 @@ weightedTLS dat = do
       withConst = asBool @wc  
   FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConst mA vB vW
 
-popWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+popWeightedTLS :: forall y wc as w rs f effs. ( Log.LogWithPrefixes effs
                                               , Foldable f
                                               , as F.⊆ rs
                                               , F.ElemOf rs y
@@ -370,7 +370,7 @@ popWeightedTLS dat = do
       vWpop = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
   FrameWeightedRegressionResult (sqrt . realToFrac) <$> MR.weightedTLS withConst mA vB vWpop
 
-varWeightedTLS :: forall y wc as w rs f effs. ( FR.Member Log.Logger effs
+varWeightedTLS :: forall y wc as w rs f effs. ( Log.LogWithPrefixes effs
                                               , Foldable f
                                               , as F.⊆ rs
                                               , F.ElemOf rs y

@@ -78,6 +78,7 @@ library
                   , mtl
                   , pandoc
                   , pipes
+                  , prettyprinter
                   , profunctors
                   , random
                   , readable

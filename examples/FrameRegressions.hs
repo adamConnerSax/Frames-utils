@@ -151,7 +151,8 @@ testRegressions :: ( F.ColumnHeaders '[w]
                    , V.KnownField w
                    , Traversable f
                    , Foldable f
-                   , FR.Members '[Log.Logger, P.ToPandoc] effs
+                   , FR.Member P.ToPandoc effs
+                   , Log.LogWithPrefixes effs
                    , FR.PandocEffects effs
                    , MonadIO (FR.Eff effs))
                 => Double
@@ -184,7 +185,8 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
 
 
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
-testMany :: ( FR.Members '[Log.Logger, P.ToPandoc] effs
+testMany :: ( FR.Member P.ToPandoc effs
+            , Log.LogWithPrefixes effs
             , FR.PandocEffects effs
             , MonadIO (FR.Eff effs)) =>  FR.Eff effs ()
 testMany = Log.wrapPrefix "Many" $ do
