@@ -24,12 +24,16 @@ module Control.Monad.Freer.Logger
   , log
   , logLE
   , wrapPrefix
+  , filteredLogEntriesToIO
+{-
   , logToStdoutSimple
   , logPrefixedToStdout
   , logToStdoutLE
+  , renderWithPrefix
   , logToMonadLog
   , logPrefixedToMonadLog
   , logToMonadLogLE
+-}
   , PrefixedLogEffs
   , LogWithPrefixes
 
@@ -37,6 +41,7 @@ module Control.Monad.Freer.Logger
   -- re-exports
   , Eff
   , Member
+  , Handler
   ) where
 
 
@@ -45,6 +50,7 @@ import qualified Control.Monad.Freer                   as FR
 import qualified Control.Monad.Freer.State             as FR
 import qualified Control.Monad.Freer.Writer            as FR
 import           Control.Monad.IO.Class                (MonadIO (..))
+import           Control.Monad.Log                     (Handler)
 import qualified Control.Monad.Log                     as ML
 import           Control.Monad.Morph                   (MFunctor, MonadTrans,
                                                         generalize, hoist, lift)
@@ -63,8 +69,7 @@ import           Prelude                               hiding (log)
 import qualified System.IO                             as Sys
 
 
--- TODO: add a runner to run in MonadLogger
--- http://hackage.haskell.org/package/logging-effect
+-- TODO: consider a more interesting Handler type.  As in co-log, where you newtype it and then can exploit its profunctoriality.
 
 -- a simple type for logging text with a subset of severities
 
@@ -108,9 +113,8 @@ log = FR.send . Log
 logLE :: FR.Member (Logger LogEntry) effs => LogSeverity -> T.Text -> FR.Eff effs ()
 logLE ls lm = log (LogEntry ls lm)
 
-logToStdoutSimple :: MonadIO (FR.Eff effs) => (a -> T.Text) -> FR.Eff (Logger a ': effs) x -> FR.Eff effs x
-logToStdoutSimple toText = FR.interpret (\(Log a) -> liftIO $ T.putStrLn $ toText a)
-
+logWithHandler :: Handler (FR.Eff effs) a -> FR.Eff (Logger a ': effs) x -> FR.Eff effs x
+logWithHandler handler = FR.interpret (\(Log a) -> handler a)
 
 -- Add a prefix system for wrapping logging
 data PrefixLog r where
@@ -141,59 +145,44 @@ prefixInState = FR.reinterpret $ \case
     RemovePrefix -> FR.modify @[T.Text] tail -- type application required here since tail is polymorphic
     GetPrefix -> (FR.get >>= (return . T.intercalate "." . List.reverse))
 
-
-logPrefixedToStdout :: MonadIO (FR.Eff effs) => (a -> Maybe T.Text) -> FR.Eff (Logger a ': (PrefixLog ': effs)) x -> FR.Eff effs x
-logPrefixedToStdout toTextM = FR.evalState []
-                              . prefixInState
-                              . FR.interpret (\(Log a) -> case toTextM a of
-                                                 Nothing -> return ()
-                                                 Just msg -> do
-                                                   p <- getPrefix
-                                                   FR.raise $ liftIO $ T.putStrLn $ p <> ": " <> msg)
-
--- just for LogEntry
-logToStdoutLE :: MonadIO (FR.Eff effs) => [LogSeverity] -> FR.Eff (Logger LogEntry ': (PrefixLog ': effs)) x -> FR.Eff effs x
-logToStdoutLE lss = logPrefixedToStdout (\(LogEntry ls lm) -> if ls `List.elem` lss then Just lm else Nothing)
-
+runPrefix :: FR.Eff (PrefixLog ': effs) a -> FR.Eff effs a
+runPrefix = FR.evalState [] . prefixInState
 
 -- add a prefix to the log message and render
 data WithPrefix a = WithPrefix { msgPrefix :: T.Text, discardPrefix :: a }
 renderWithPrefix :: (a -> PP.Doc ann) -> WithPrefix a -> PP.Doc ann
-renderWithPrefix k (WithPrefix pr a) = PP.pretty pr PP.<+> PP.pretty (": " :: T.Text) PP.<+> PP.align (k a)
+renderWithPrefix k (WithPrefix pr a) = PP.pretty pr PP.<+> PP.align (k a)
 
-logToMonadLog :: ML.MonadLog a (FR.Eff effs) => (a -> Bool) -> FR.Eff (Logger a ': effs) x -> FR.Eff effs x
-logToMonadLog filterLog = FR.interpret (\(Log a) -> if filterLog a then ML.logMessage a else return ())
+logPrefixed :: FR.Member PrefixLog effs => FR.Eff (Logger a ': effs) x -> FR.Eff (Logger (WithPrefix a) ': effs) x
+logPrefixed = FR.reinterpret (\(Log a) -> getPrefix >>= (\p -> log (WithPrefix p a)))
 
-logPrefixedToMonadLog :: ML.MonadLog (WithPrefix a) (FR.Eff effs) => (a -> Bool) -> FR.Eff (Logger a ': (PrefixLog ': effs)) x -> FR.Eff effs x
-logPrefixedToMonadLog filterLog = FR.evalState []
-                        . prefixInState
-                        . FR.interpret (\(Log a) -> case filterLog a of
-                                           False -> return ()
-                                           True -> do
-                                             p <- getPrefix
-                                             FR.raise $ ML.logMessage (WithPrefix p a))
+-- the use of "raise" below is there since we are running the handler in the stack that still has the LogPrefix effect.
+-- I couldn't figure out how to write this the other way.
+logAndHandlePrefixed :: forall effs a x. Handler (FR.Eff effs) (WithPrefix a) -> FR.Eff (Logger a ': (PrefixLog ': effs)) x -> FR.Eff effs x
+logAndHandlePrefixed handler =  runPrefix . logWithHandler (FR.raise . handler) . logPrefixed @(PrefixLog ': effs)
 
-logToMonadLogLE :: ML.MonadLog (WithPrefix LogEntry) (FR.Eff effs) => [LogSeverity] -> FR.Eff (Logger LogEntry ': (PrefixLog ': effs)) x -> FR.Eff effs x
-logToMonadLogLE lss = logPrefixedToMonadLog (\(LogEntry ls _) -> ls `List.elem` lss)
+filterLog :: Monad m => ([LogSeverity] -> a -> Bool) -> [LogSeverity] -> Handler m a -> Handler m a
+filterLog filterF lss h a = if filterF lss a  then h a else return ()
+
+logToIO :: MonadIO m => (a -> T.Text) -> Handler m a
+logToIO toText = liftIO . T.putStrLn . toText
+
+prefixedLogEntryToIO :: MonadIO m => Handler m (WithPrefix LogEntry)
+prefixedLogEntryToIO = logToIO (PP.renderStrict
+                                . PP.layoutPretty PP.defaultLayoutOptions
+                                . renderWithPrefix (ML.renderWithSeverity PP.pretty . logEntryToWithSeverity))
+
+
+filteredLogEntriesToIO :: MonadIO (FR.Eff effs) => [LogSeverity] ->  FR.Eff (Logger LogEntry ': (PrefixLog ': effs)) x -> FR.Eff effs x
+filteredLogEntriesToIO lss = logAndHandlePrefixed (filterLog f lss $ prefixedLogEntryToIO) where
+  f lss a = (severity $ discardPrefix a) `List.elem` lss
+
 
 type PrefixedLogEffs a = '[PrefixLog, Logger a]
 type LogWithPrefixes effs = FR.Members (PrefixedLogEffs LogEntry) effs
 
+-- not sure how to use this in practice but we might need it if we call a function with a MonadLog constraint.
 instance (ML.MonadLog a m, FR.LastMember m effs) => ML.MonadLog a (FR.Eff effs) where
   logMessageFree inj = FR.sendM $ ML.logMessageFree inj
-
-
-
-{-
-writeLogStdout :: MonadIO (FR.Eff effs) => FR.Eff (LogWriter ': effs) a -> FR.Eff effs a
-writeLogStdout = FR.interpret (\(WriteToLog t) -> liftIO $ T.putStrLn t)
-
-writeLogToFileAsync :: MonadIO (FR.Eff effs) => Sys.Handle -> FR.Eff (LogWriter ': effs) a -> FR.Eff effs a
-writeLogToFileAsync h = FR.interpret (\(WriteToLog t) -> liftIO $ T.hPutStrLn h t)
-
-logToFileAsync :: MonadIO (FR.Eff effs) => Sys.Handle -> [LogSeverity] -> FR.Eff (Logger ': effs) a -> FR.Eff effs a
-logToFileAsync h lss = writeLogToFileAsync h . runLogger lss
--}
-
 
 

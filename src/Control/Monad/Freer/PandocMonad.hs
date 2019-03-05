@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -31,14 +32,15 @@ import qualified Text.Pandoc.MIME           as P
 import qualified Control.Monad.Freer        as FR
 import qualified Control.Monad.Freer.Error  as FR
 import qualified Control.Monad.Freer.TH     as FR
+import           Control.Monad.Trans        (lift)
 import           Data.ByteString            as BS
 import           Data.ByteString.Lazy       as LBS
 import qualified Data.Text                  as T
 import qualified Text.Blaze.Html            as Blaze
 --import qualified Control.Monad.Freer.Writer  as FR
-import qualified Control.Monad.Freer.Logger as Log
-
 import           Control.Monad.Except       (MonadError (..))
+import qualified Control.Monad.Freer.Logger as Log
+import qualified Control.Monad.Log          as ML
 import           Data.Time.Clock            (UTCTime)
 import           Data.Time.LocalTime        (TimeZone)
 import           System.Random              (StdGen)
@@ -131,4 +133,26 @@ mergeEithers (Right (Right x)) = Right x
 runPandocAndLoggingToIO :: [Log.LogSeverity]
                         ->  FR.Eff '[Pandoc, (Log.Logger Log.LogEntry), Log.PrefixLog, FR.Error P.PandocError, P.PandocIO] a
                         -> IO (Either P.PandocError a)
-runPandocAndLoggingToIO lss = fmap mergeEithers . P.runIO . FR.runM . FR.runError . Log.logToStdoutLE lss . runPandoc
+runPandocAndLoggingToIO lss = fmap mergeEithers
+                              . P.runIO
+                              . FR.runM
+                              . FR.runError
+                              . Log.filteredLogEntriesToIO lss
+                              . runPandoc
+
+
+{-
+runPandocAndLogViaLoggingT :: [Log.LogSeverity]
+                        ->  FR.Eff '[Pandoc, (Log.Logger Log.LogEntry), Log.PrefixLog, FR.Error P.PandocError, P.PandocIO] a
+                        -> IO (Either P.PandocError a)
+runPandocAndLogViaLoggingT lss = fmap mergeEithers
+                                 . P.runIO
+                                 . FR.runM
+                                 . FR.runError
+                                 . (flip ML.runLoggingT handler . lift) . Log.logToMonadLogLE lss
+                                 . runPandoc where
+  handler = FR.raise . liftIO . print . Log.renderWithPrefix id
+
+-}
+
+
