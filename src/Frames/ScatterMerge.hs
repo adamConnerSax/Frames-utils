@@ -228,7 +228,7 @@ scatterMerge' _ _ toX toY xBins yBins =
         in  V.runcurryX (\x y w -> let w' = realToFrac w in (wX + (w' * x), wY + (w' * y), totW + w)) xyw
       extract :: [F.Record (BinnedDblCols ks w)] -> F.Record '[x,y,w]  
       extract = FL.fold (FL.Fold wgtdSum (0, 0, 0) (\(wX, wY, totW) -> let totW' = realToFrac totW in toX (wX/totW') &:  toY (wY/totW') &: totW &: V.RNil))
-  in fmap (fmap (F.rcast @(UseCols ks x y w))) $ FA.aggregateF (Proxy @(OutKeyCols ks)) (V.Identity . binRow . (F.rcast @(UseCols ks x y w))) (\l a -> a : l) [] extract     
+  in fmap (fmap (F.rcast @(UseCols ks x y w))) $ FA.aggregateF @(OutKeyCols ks) (V.Identity . binRow . (F.rcast @(UseCols ks x y w))) (\l a -> a : l) [] extract     
 
 
 type BinMap ks x = M.Map (F.Record ks) (BinsWithRescale (FA.FType x))

@@ -69,7 +69,15 @@ import           Prelude                               hiding (log)
 import qualified System.IO                             as Sys
 
 
--- TODO: consider a more interesting Handler type.  As in co-log, where you newtype it and then can exploit its profunctoriality.
+-- TODO: consider a more interesting Handler type.  As in co-log (https://hackage.haskell.org/package/co-log-core)
+-- where you newtype it and then can exploit its profunctoriality.
+-- I got lost here.  Was trying to be compatible with logging-effect but I'm not sure why
+-- the idea that the runner takes a function to handle the logging in the rest of the stack seems okay.  Though why not be more direct
+-- once we are using effects in the first place?  Isn't that handler a mix of pretty-printing and interpreting and we would
+-- rather separate those concerns?  So we should have an (a -> Text) and then interpreters in whatever?  I guess we merge them because
+-- conversion is uneccessary if we throw a message away?  But still, the interpreters could take the pretty-printers as arguments?
+-- Parking this for now, since it has absorbed outsize time for no benefit except some understanding.
+
 
 -- a simple type for logging text with a subset of severities
 

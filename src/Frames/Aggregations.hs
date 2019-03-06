@@ -15,6 +15,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Aggregations
   (
@@ -41,7 +42,6 @@ module Frames.Aggregations
   , ThreeColData
   , ThreeDTransformable
   , KeyedRecord
-  , reshapeRowSimple
   ) where
 
 import qualified Control.Foldl        as FL
@@ -53,7 +53,9 @@ import           Data.Functor.Identity (Identity (Identity), runIdentity)
 import qualified Data.Foldable     as Foldable
 import qualified Data.List            as List
 import qualified Data.Map             as M
+import qualified Data.Map.Monoidal    as MM
 import           Data.Maybe           (fromMaybe, isJust, catMaybes, fromJust)
+import           Data.Monoid         ((<>), Monoid(..))
 import           Data.Text            (Text)
 import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
@@ -83,23 +85,25 @@ import           Data.Random.Source.PureMT as R
 import           Data.Random as R
 import           Data.Function (on)
 
-goodDataByKey :: forall ks rs. (ks F.⊆ rs, Ord (F.Record ks)) => Proxy ks ->  FL.Fold (F.Rec (Maybe F.:. F.ElField) rs) (M.Map (F.Record ks) (Int, Int))
-goodDataByKey _ =
+-- THe functions below shoudl move.  To MaybeUtils?  What about filterField?
+-- returns a map, keyed by F.Record ks, of (number of rows, number of rows with all cols parsed)
+-- required TypeApplications for ks
+goodDataByKey :: forall ks rs. (ks F.⊆ rs, Ord (F.Record ks))
+  => FL.Fold (F.Rec (Maybe F.:. F.ElField) rs) (M.Map (F.Record ks) (Int, Int))
+goodDataByKey =
   let getKey = F.recMaybe . F.rcast @ks
   in FL.prefilter (isJust . getKey) $ FL.Fold (aggregateToMap (fromJust . getKey) (flip (:)) []) M.empty (fmap $ FL.fold goodDataCount)   
 
 goodDataCount :: FL.Fold (F.Rec (Maybe F.:. F.ElField) rs) (Int, Int)
 goodDataCount = (,) <$> FL.length <*> FL.prefilter (isJust . F.recMaybe) FL.length
 
-filterMaybeField :: forall k rs. (F.ElemOf rs k, Eq (V.HKD F.ElField k), (V.IsoHKD F.ElField k))
-                 => Proxy k -> V.HKD F.ElField k -> F.Rec (Maybe :. F.ElField) rs -> Bool
-filterMaybeField _ kv =
-  let maybeTest t = maybe False t
-  in maybeTest (== kv) . V.toHKD . F.rget @k
+filterField :: forall k rs. (V.KnownField k, F.ElemOf rs k) => (V.Snd k -> Bool) -> F.Record rs -> Bool
+filterField test = test . F.rgetField @k
 
-filterField :: forall k rs. (F.ElemOf rs k, Eq (V.HKD F.ElField k), (V.IsoHKD F.ElField k))
-                 => Proxy k -> V.HKD F.ElField k -> F.Record rs -> Bool
-filterField _ kv = (== kv) . V.toHKD . F.rget @k
+filterMaybeField :: forall k rs. (F.ElemOf rs k, V.IsoHKD F.ElField k)
+                 => (V.HKD F.ElField k -> Bool) -> F.Rec (Maybe :. F.ElField) rs -> Bool
+filterMaybeField test = maybe False test . V.toHKD . F.rget @k
+
 
 aggregateToMap :: Ord k => (a -> k) -> (b -> a -> b) -> b -> M.Map k b -> a -> M.Map k b
 aggregateToMap getKey combine initial m r =
@@ -107,77 +111,124 @@ aggregateToMap getKey combine initial m r =
       newVal = Just . flip combine r . fromMaybe initial 
   in M.alter newVal key m --M.insert key newVal m 
 
+aggregateToMonoidalMap :: (Ord k, Monoid b) => (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> a -> MM.MonoidalMap k b
+aggregateToMonoidalMap getKey getB m r =
+  let key = getKey r
+      newVal = Just .  (<> getB r) . fromMaybe mempty 
+  in MM.alter newVal key m --M.insert key newVal m 
+
 -- fold over c.  But c may become zero or many a (bad data, or melting rows). So we process c, then fold over the result.
 aggregateGeneral :: (Ord k, Foldable f) => (c -> f a) -> (a -> k) -> (b -> a -> b) -> b -> M.Map k b -> c -> M.Map k b
 aggregateGeneral unpack getKey combine initial m x =
   let aggregate = FL.Fold (aggregateToMap getKey combine initial) m id
   in FL.fold aggregate (unpack x)
 
+aggregateGeneralMonoidal :: (Ord k, Foldable f, Monoid b) => (c -> f a) -> (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> c -> MM.MonoidalMap k b
+aggregateGeneralMonoidal unpack getKey getB m x =
+  let aggregate = FL.Fold (aggregateToMonoidalMap getKey getB) m id
+  in FL.fold aggregate (unpack x)
+
 -- Maybe is delightfully foldable!  
 aggregateFiltered :: Ord k => (c -> Maybe a) -> (a -> k) -> (b -> a -> b) -> b -> M.Map k b -> c -> M.Map k b
 aggregateFiltered = aggregateGeneral
 
+-- Maybe is delightfully foldable!  
+aggregateFilteredMonoidal :: (Ord k, Monoid b) => (c -> Maybe a) -> (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> c -> MM.MonoidalMap k b
+aggregateFilteredMonoidal = aggregateGeneralMonoidal
+
+
 liftCombine :: Applicative m => (a -> b -> a) -> (a -> b -> m a)
-liftCombine f a b = pure $ f a b 
+liftCombine f a  = pure . f a  
 
 -- specific version for our record folds via Control.Foldl
 -- extract--the processing of one aggregate's data--may be monadic 
-aggregateFsM :: forall rs ks as b cs f g h m. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs),
+aggregateFsM :: forall ks rs as b cs f g h m. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs),
                                                Foldable f, Foldable h, Functor h, Applicative m)
-  => Proxy ks
-  -> (F.Rec g rs -> f (F.Record as))
+  => (F.Rec g rs -> f (F.Record as))
   -> (b -> F.Record as -> b)
   -> b
   -> (b -> m (h (F.Record cs)))
   -> FL.FoldM m (F.Rec g rs) (F.FrameRec (ks V.++ cs))
-aggregateFsM _ unpack process initial extract =
+aggregateFsM unpack process initial extract =
   let addKey :: (F.Record ks, m (h (F.Record cs))) -> m (h (F.Record (ks V.++ cs)))
       addKey (k, mhcs) = fmap (fmap (V.rappend k)) mhcs
   in FL.FoldM (liftCombine $ aggregateGeneral unpack (F.rcast @ks) process initial)
      (pure M.empty)
      (fmap (F.toFrame . List.concat) . sequenceA . fmap ((fmap Foldable.toList) .addKey . second extract) . M.toList) 
 
-aggregateFs :: (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f, Foldable h, Functor h)
-            => Proxy ks
-            -> (F.Rec g rs -> f (F.Record as))
+aggregateMonoidalFsM :: forall ks rs as b cs f g h m. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Monoid b,
+                                                       Foldable f, Foldable h, Functor h, Applicative m)
+  => (F.Rec g rs -> f (F.Record as))
+  -> (F.Record as -> b)
+  -> (b -> m (h (F.Record cs)))
+  -> FL.FoldM m (F.Rec g rs) (F.FrameRec (ks V.++ cs))
+aggregateMonoidalFsM unpack toMonoid extract =
+  let addKey :: (F.Record ks, m (h (F.Record cs))) -> m (h (F.Record (ks V.++ cs)))
+      addKey (k, mhcs) = fmap (fmap (V.rappend k)) mhcs
+  in FL.FoldM (liftCombine $ aggregateGeneralMonoidal unpack (F.rcast @ks) toMonoid)
+     (pure MM.empty)
+     (fmap (F.toFrame . List.concat) . sequenceA . fmap ((fmap Foldable.toList) . addKey . second extract) . MM.toList) 
+
+
+aggregateFs :: forall ks rs as cs b f g h. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f, Foldable h, Functor h)
+            => (F.Rec g rs -> f (F.Record as))
             -> (b -> F.Record as -> b)
             -> b
             -> (b -> h (F.Record cs))
             -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
-aggregateFs proxy_ks unpack process initial extract =
-  FL.simplify $ aggregateFsM proxy_ks unpack process initial (return . extract)
-                   
+aggregateFs unpack process initial extract =
+  FL.simplify $ aggregateFsM @ks unpack process initial (return . extract)
 
-aggregateFM :: forall rs ks as b cs f g m. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f, Applicative m)
-            => Proxy ks
-            -> (F.Rec g rs -> f (F.Record as))
+aggregateMonoidalFs :: forall ks rs as cs b f g h. (ks F.⊆ as
+                                                   , Monoid b
+                                                   , Ord (F.Record ks)
+                                                   , FI.RecVec (ks V.++ cs)
+                                                   , Foldable f
+                                                   , Foldable h
+                                                   , Functor h)
+            => (F.Rec g rs -> f (F.Record as))
+            -> (F.Record as -> b)
+            -> (b -> h (F.Record cs))
+            -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
+aggregateMonoidalFs unpack toMonoid extract =
+  FL.simplify $ aggregateMonoidalFsM @ks unpack toMonoid (return . extract)
+
+  
+aggregateFM :: forall ks rs as b cs f g m. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f, Applicative m)
+            => (F.Rec g rs -> f (F.Record as))
             -> (b -> F.Record as -> b)
             -> b
             -> (b -> m (F.Record cs))
             -> FL.FoldM m (F.Rec g rs) (F.FrameRec (ks V.++ cs))
-aggregateFM pks unpack process initial extract = aggregateFsM pks unpack process initial (fmap V.Identity . extract)
+aggregateFM unpack process initial extract = aggregateFsM @ks unpack process initial (fmap V.Identity . extract)
 
+aggregateMonoidalFM :: forall ks rs as b cs f g m. (ks F.⊆ as
+                                                   , Monoid b
+                                                   , Ord (F.Record ks)
+                                                   , FI.RecVec (ks V.++ cs)
+                                                   , Foldable f
+                                                   , Applicative m)
+            => (F.Rec g rs -> f (F.Record as))
+            -> (F.Record as -> b)
+            -> (b -> m (F.Record cs))
+            -> FL.FoldM m (F.Rec g rs) (F.FrameRec (ks V.++ cs))
+aggregateMonoidalFM unpack toMonoid extract = aggregateMonoidalFsM @ks unpack toMonoid (fmap V.Identity . extract)
 
-aggregateF :: forall rs ks as b cs f g. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f)
-           => Proxy ks
-           -> (F.Rec g rs -> f (F.Record as))
+aggregateF :: forall ks rs as b cs f g. (ks F.⊆ as, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f)
+           => (F.Rec g rs -> f (F.Record as))
            -> (b -> F.Record as -> b)
            -> b
            -> (b -> F.Record cs)
            -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
-aggregateF pks unpack process initial extract = aggregateFs pks unpack process initial (V.Identity . extract)
+aggregateF unpack process initial extract = aggregateFs @ks unpack process initial (V.Identity . extract)
 
--- This is the anamorphic step.  Is it a co-algebra of []?
--- You could also use meltRow here.  That is also (Record as -> [Record bs])
-reshapeRowSimple :: forall ss ts cs ds. (ss F.⊆ ts)
-                 => Proxy ss -- id columns
-                 -> [F.Record cs] -- list of classifier values
-                 -> (F.Record cs -> F.Record ts -> F.Record ds)
-                 -> F.Record ts
-                 -> [F.Record (ss V.++ cs V.++ ds)]                
-reshapeRowSimple _ classifiers newDataF r = 
-  let ids = F.rcast r :: F.Record ss
-  in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
+aggregateMonoidalF :: forall ks rs as b cs f g. (ks F.⊆ as, Monoid b, Ord (F.Record ks), FI.RecVec (ks V.++ cs), Foldable f)
+           => (F.Rec g rs -> f (F.Record as))
+           -> (F.Record as -> b)
+           -> (b -> F.Record cs)
+           -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
+aggregateMonoidalF unpack toMonoid extract = aggregateMonoidalFs @ks unpack toMonoid (V.Identity . extract)
+
 
 
 type FType x = V.Snd x
@@ -209,7 +260,7 @@ aggregateAndAnalyzeEachM :: forall rs ks x y w m. (ThreeDTransformable rs ks x y
                -> FL.FoldM m (F.Record rs) (F.FrameRec (UseCols ks x y w))
 aggregateAndAnalyzeEachM proxy_ks _ doOne =
   let combine l r = F.rcast @[x,y,w] r : l
-  in aggregateFsM proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
+  in aggregateFsM @ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
 aggregateAndAnalyzeEach :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w)
                   => Proxy ks
@@ -227,5 +278,5 @@ aggregateAndAnalyzeEachM' :: forall rs ks as m. (KeyedRecord ks rs, FI.RecVec (k
                -> FL.FoldM m (F.Record rs) (F.FrameRec (ks V.++ as))
 aggregateAndAnalyzeEachM' proxy_ks doOne =
   let combine l r = r : l
-  in aggregateFsM proxy_ks V.Identity combine [] doOne
+  in aggregateFsM @ks V.Identity combine [] doOne
 

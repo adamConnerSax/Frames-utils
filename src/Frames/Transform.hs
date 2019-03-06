@@ -18,6 +18,7 @@ module Frames.Transform
   , dropColumn
   , dropColumns
   , retypeColumn
+  , reshapeRowSimple
   , BinaryFunction(..)
   , bfApply
   , bfPlus
@@ -67,6 +68,21 @@ retypeColumn :: forall x y rs. ( V.KnownField x
                                , F.RDelete x rs F.⊆ rs)
   => F.Record rs -> F.Record (F.RDelete x rs ++ '[y])
 retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
+
+
+
+-- This is an anamorphic step.
+-- You could also use meltRow here.  That is also (Record as -> [Record bs])
+-- requires typeApplications for ss
+reshapeRowSimple :: forall ss ts cs ds. (ss F.⊆ ts)
+                 => [F.Record cs] -- list of classifier values
+                 -> (F.Record cs -> F.Record ts -> F.Record ds)
+                 -> F.Record ts
+                 -> [F.Record (ss ++ cs ++ ds)]                
+reshapeRowSimple classifiers newDataF r = 
+  let ids = F.rcast r :: F.Record ss
+  in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
+
 
 --
 --newtype RecFunction as bs = RecFunction { recFunction :: F.Record as -> F.Record bs }
