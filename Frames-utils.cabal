@@ -47,8 +47,9 @@ library
                  , Frames.VegaLite.Histogram
                  , Frames.VegaLite.Regression
                  , Frames.VegaLite.Clusters
-                 , Math.Rescale
                  , Math.HMatrixUtils
+                 , Math.KMeans
+                 , Math.Rescale
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
                  , Control.Monad.Freer.Logger
