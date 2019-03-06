@@ -239,25 +239,21 @@ type ThreeDTransformable rs ks x y w = (ThreeColData x y w, FI.RecVec (ks V.++ [
                                         ks F.⊆ (ks V.++ [x,y,w]), (ks V.++ [x,y,w]) F.⊆ rs,
                                         F.ElemOf (ks V.++ [x,y,w]) x, F.ElemOf (ks V.++ [x,y,w]) y, F.ElemOf (ks V.++ [x,y,w]) w)
 
+-- These use the monoid instance of [], since the first argument is ([F.Record '[x,y,w]] -> ...)
+-- could we use a smarter structure here?  Sequence? The frame itself?
 aggregateAndAnalyzeEachM :: forall ks x y w rs m. (ThreeDTransformable rs ks x y w, Applicative m)
                => ([F.Record '[x,y,w]] -> m [F.Record '[x,y,w]])
                -> FL.FoldM m (F.Record rs) (F.FrameRec (UseCols ks x y w))
-aggregateAndAnalyzeEachM doOne =
-  let combine l r = F.rcast @[x,y,w] r : l
-  in aggregateFsM @ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
+aggregateAndAnalyzeEachM doOne = aggregateMonoidalFsM @ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) (pure . F.rcast @[x,y,w]) doOne
 
 aggregateAndAnalyzeEach :: forall ks x y w rs. (ThreeDTransformable rs ks x y w)
                   => ([F.Record '[x,y,w]] -> [F.Record '[x,y,w]])
                   -> FL.Fold (F.Record rs) (F.FrameRec (UseCols ks x y w))
 aggregateAndAnalyzeEach doOne = FL.simplify $ aggregateAndAnalyzeEachM @ks (Identity . doOne)
---  let combine l r = F.rcast @[x,y,w] r : l
---  in aggregateFs proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
-type UnKeyed rs ks = F.Record (F.RDeleteAll ks rs)
 aggregateAndAnalyzeEachM' :: forall ks rs as m. (KeyedRecord ks rs, FI.RecVec (ks V.++ as), Applicative m)
                => ([F.Record rs] -> m [F.Record as])
                -> FL.FoldM m (F.Record rs) (F.FrameRec (ks V.++ as))
-aggregateAndAnalyzeEachM' doOne =
-  let combine l r = r : l
-  in aggregateFsM @ks V.Identity combine [] doOne
+aggregateAndAnalyzeEachM' doOne = aggregateMonoidalFsM @ks V.Identity pure doOne
+
 

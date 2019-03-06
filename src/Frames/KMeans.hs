@@ -237,7 +237,7 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = Log.w
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
   return $ catMaybes $ V.toList $ fmap (fmap fix . centroid weighted . members) clusters -- we drop empty clusters ??
 
-kMeansWithClusters :: forall x y w ks effs rs. ( FA.ThreeDTransformable rs ks x y w
+kMeansWithClusters :: forall ks x y w effs rs. ( FA.ThreeDTransformable rs ks x y w
                                                , F.ElemOf [FA.DblX,FA.DblY,w] w
                                                , F.ElemOf rs x
                                                , F.ElemOf rs y
