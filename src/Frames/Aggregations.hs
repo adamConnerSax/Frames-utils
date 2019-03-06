@@ -36,6 +36,13 @@ module Frames.Aggregations
   , aggregateAndAnalyzeEachM
   , aggregateAndAnalyzeEachM'
   , aggregateAndAnalyzeEach
+  , aggregateToMonoidalMap
+  , aggregateMonoidalGeneral
+  , aggregateMonoidalFiltered
+  , aggregateMonoidalFM
+  , aggregateMonoidalF
+  , aggregateMonoidalFsM
+  , aggregateMonoidalFs
   , RealField
   , RealFieldOf
   , TwoColData
@@ -45,45 +52,24 @@ module Frames.Aggregations
   ) where
 
 import qualified Control.Foldl        as FL
-import           Control.Lens         ((^.))
-import qualified Control.Lens         as L
 import           Data.Traversable    (sequenceA)
-import           Control.Monad.State (evalState)
-import           Data.Functor.Identity (Identity (Identity), runIdentity)
+import           Data.Functor.Identity (Identity (Identity))
 import qualified Data.Foldable     as Foldable
 import qualified Data.List            as List
 import qualified Data.Map             as M
 import qualified Data.Map.Monoidal    as MM
-import           Data.Maybe           (fromMaybe, isJust, catMaybes, fromJust)
+import           Data.Maybe           (fromMaybe, isJust, fromJust)
 import           Data.Monoid         ((<>), Monoid(..))
-import           Data.Text            (Text)
-import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
-import qualified Data.Vinyl.Curry     as V
 import qualified Data.Vinyl.Functor   as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl.XRec as V
-import qualified Data.Vinyl.Class.Method as V
-import qualified Data.Vinyl.Core      as V
 import           Data.Vinyl.Lens      (type (∈))
-import           Data.Kind            (Type,Constraint)
-import           Data.Profunctor      as PF
-import           Frames               ((:.), (&:))
+import           Frames               ((:.))
 import qualified Frames               as F
-import qualified Frames.CSV           as F
-import qualified Frames.ShowCSV           as F
 import qualified Frames.Melt           as F
 import qualified Frames.InCore        as FI
-import qualified Pipes                as P
-import qualified Pipes.Prelude        as P
 import           Control.Arrow (second)
-import           Data.Proxy (Proxy(..))
-import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as U
-import           GHC.TypeLits (Symbol,KnownSymbol)
-import           Data.Random.Source.PureMT as R
-import           Data.Random as R
-import           Data.Function (on)
 
 -- THe functions below shoudl move.  To MaybeUtils?  What about filterField?
 -- returns a map, keyed by F.Record ks, of (number of rows, number of rows with all cols parsed)
@@ -123,8 +109,8 @@ aggregateGeneral unpack getKey combine initial m x =
   let aggregate = FL.Fold (aggregateToMap getKey combine initial) m id
   in FL.fold aggregate (unpack x)
 
-aggregateGeneralMonoidal :: (Ord k, Foldable f, Monoid b) => (c -> f a) -> (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> c -> MM.MonoidalMap k b
-aggregateGeneralMonoidal unpack getKey getB m x =
+aggregateMonoidalGeneral :: (Ord k, Foldable f, Monoid b) => (c -> f a) -> (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> c -> MM.MonoidalMap k b
+aggregateMonoidalGeneral unpack getKey getB m x =
   let aggregate = FL.Fold (aggregateToMonoidalMap getKey getB) m id
   in FL.fold aggregate (unpack x)
 
@@ -133,8 +119,8 @@ aggregateFiltered :: Ord k => (c -> Maybe a) -> (a -> k) -> (b -> a -> b) -> b -
 aggregateFiltered = aggregateGeneral
 
 -- Maybe is delightfully foldable!  
-aggregateFilteredMonoidal :: (Ord k, Monoid b) => (c -> Maybe a) -> (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> c -> MM.MonoidalMap k b
-aggregateFilteredMonoidal = aggregateGeneralMonoidal
+aggregateMonoidalFiltered :: (Ord k, Monoid b) => (c -> Maybe a) -> (a -> k) -> (a -> b) -> MM.MonoidalMap k b -> c -> MM.MonoidalMap k b
+aggregateMonoidalFiltered = aggregateMonoidalGeneral
 
 
 liftCombine :: Applicative m => (a -> b -> a) -> (a -> b -> m a)
@@ -165,7 +151,7 @@ aggregateMonoidalFsM :: forall ks rs as b cs f g h m. (ks F.⊆ as, Ord (F.Recor
 aggregateMonoidalFsM unpack toMonoid extract =
   let addKey :: (F.Record ks, m (h (F.Record cs))) -> m (h (F.Record (ks V.++ cs)))
       addKey (k, mhcs) = fmap (fmap (V.rappend k)) mhcs
-  in FL.FoldM (liftCombine $ aggregateGeneralMonoidal unpack (F.rcast @ks) toMonoid)
+  in FL.FoldM (liftCombine $ aggregateMonoidalGeneral unpack (F.rcast @ks) toMonoid)
      (pure MM.empty)
      (fmap (F.toFrame . List.concat) . sequenceA . fmap ((fmap Foldable.toList) . addKey . second extract) . MM.toList) 
 
@@ -253,30 +239,25 @@ type ThreeDTransformable rs ks x y w = (ThreeColData x y w, FI.RecVec (ks V.++ [
                                         ks F.⊆ (ks V.++ [x,y,w]), (ks V.++ [x,y,w]) F.⊆ rs,
                                         F.ElemOf (ks V.++ [x,y,w]) x, F.ElemOf (ks V.++ [x,y,w]) y, F.ElemOf (ks V.++ [x,y,w]) w)
 
-aggregateAndAnalyzeEachM :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w, Applicative m)
-               => Proxy ks
-               -> Proxy [x,y,w]
-               -> ([F.Record '[x,y,w]] -> m [F.Record '[x,y,w]])
+aggregateAndAnalyzeEachM :: forall ks x y w rs m. (ThreeDTransformable rs ks x y w, Applicative m)
+               => ([F.Record '[x,y,w]] -> m [F.Record '[x,y,w]])
                -> FL.FoldM m (F.Record rs) (F.FrameRec (UseCols ks x y w))
-aggregateAndAnalyzeEachM proxy_ks _ doOne =
+aggregateAndAnalyzeEachM doOne =
   let combine l r = F.rcast @[x,y,w] r : l
   in aggregateFsM @ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
-aggregateAndAnalyzeEach :: forall rs ks x y w m. (ThreeDTransformable rs ks x y w)
-                  => Proxy ks
-                  -> Proxy [x,y,w]
-                  -> ([F.Record '[x,y,w]] -> [F.Record '[x,y,w]])
+aggregateAndAnalyzeEach :: forall ks x y w rs. (ThreeDTransformable rs ks x y w)
+                  => ([F.Record '[x,y,w]] -> [F.Record '[x,y,w]])
                   -> FL.Fold (F.Record rs) (F.FrameRec (UseCols ks x y w))
-aggregateAndAnalyzeEach proxy_ks proxy_xyw doOne = FL.simplify $ aggregateAndAnalyzeEachM proxy_ks proxy_xyw (Identity . doOne)
+aggregateAndAnalyzeEach doOne = FL.simplify $ aggregateAndAnalyzeEachM @ks (Identity . doOne)
 --  let combine l r = F.rcast @[x,y,w] r : l
 --  in aggregateFs proxy_ks (V.Identity . (F.rcast @(ks V.++ [x,y,w]))) combine [] doOne
 
 type UnKeyed rs ks = F.Record (F.RDeleteAll ks rs)
-aggregateAndAnalyzeEachM' :: forall rs ks as m. (KeyedRecord ks rs, FI.RecVec (ks V.++ as), Applicative m)
-               => Proxy ks
-               -> ([F.Record rs] -> m [F.Record as])
+aggregateAndAnalyzeEachM' :: forall ks rs as m. (KeyedRecord ks rs, FI.RecVec (ks V.++ as), Applicative m)
+               => ([F.Record rs] -> m [F.Record as])
                -> FL.FoldM m (F.Record rs) (F.FrameRec (ks V.++ as))
-aggregateAndAnalyzeEachM' proxy_ks doOne =
+aggregateAndAnalyzeEachM' doOne =
   let combine l r = r : l
   in aggregateFsM @ks V.Identity combine [] doOne
 

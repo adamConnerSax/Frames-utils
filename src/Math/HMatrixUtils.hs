@@ -14,10 +14,8 @@ module Math.HMatrixUtils where
 import qualified Control.Monad.Freer.Logger as FL
 import qualified Data.Text                  as T
 
-import           Numeric.LinearAlgebra      (( #> ), (<#), (<.>), (<\>))
 import qualified Numeric.LinearAlgebra      as LA
 import           Numeric.LinearAlgebra.Data (Matrix, R, Vector)
-import qualified Numeric.LinearAlgebra.Data as LA
 
 
 textSize :: (LA.Container c e, Show (LA.IndexOf c)) => c e -> T.Text

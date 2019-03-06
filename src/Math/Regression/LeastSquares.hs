@@ -14,22 +14,14 @@ module Math.Regression.LeastSquares where
 import qualified Math.HMatrixUtils          as HU
 import qualified Math.Regression.Regression as RE
 
-import qualified Control.Foldl              as FL
-import qualified Control.Foldl.Statistics   as FS
 import qualified Control.Monad.Freer        as FR
 import qualified Control.Monad.Freer.Logger as Log
-import qualified Data.Foldable              as Foldable
-import           Data.Function              (on)
 import qualified Data.List                  as List
-import qualified Data.Profunctor            as PF
 import qualified Data.Text                  as T
-import qualified Data.Vector.Storable       as V
-import qualified Statistics.Types           as S
 
 import           Numeric.LinearAlgebra      (( #> ), (<#), (<.>), (<\>))
 import qualified Numeric.LinearAlgebra      as LA
 import           Numeric.LinearAlgebra.Data (Matrix, R, Vector)
-import qualified Numeric.LinearAlgebra.Data as LA
 
 -- matrix dimensions given in (row x column) form
 -- if A is (m x n), its transpose, A' is (n x m)
@@ -62,7 +54,7 @@ weightedLS withConstant mA vB vW = do
   let mW = LA.diag vW
       vWB = mW #> vB
       mAwc = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
-      (n,p) = LA.size mAwc
+      (_,p) = LA.size mAwc
   HU.checkVectorMatrix "b" "A" vB mAwc
   let mWA = mW LA.<> mAwc
       vX = mWA <\> vWB
@@ -70,7 +62,6 @@ weightedLS withConstant mA vB vW = do
       vWU = mW #> vU
       sumW = LA.sumElements vW
       effN = (sumW * sumW) / (vW <.> vW)
---      (rSq, aRSq) = RE.goodnessOfFit (snd $ LA.size mA) vWB vWU
       mse = effN /(effN - realToFrac p) * (vWU <.> vWU) / sumW
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB (Just vW) vU
@@ -84,7 +75,7 @@ totalLS withConstant mA vB = do
       dof = realToFrac (n - p)
   HU.checkVectorMatrix "b" "Awc" vB mAwc
   let mAB = (mAwc LA.||| LA.asColumn vB)
-      (sv, mV') = LA.rightSV mAB
+      (_, mV') = LA.rightSV mAB
 --      gSV = sv V.! 0
 --      tol = gSV * LA.eps
       sV22 = mV' LA.! p LA.! p
@@ -108,11 +99,11 @@ weightedTLS withConstant mA vB vW = do
   let mW = LA.diag vW
       vWB = mW #> vB
       mAwc = if withConstant then addBiasCol (LA.size vB) mA  else mA -- add a constant, e.g., the b in y = mx + b
-      (n,p) = LA.size mAwc
+      (_,p) = LA.size mAwc
   HU.checkVectorMatrix "b" "Awc" vB mAwc
   let mWA = mW LA.<> mAwc
       mWAB = (mWA LA.||| LA.asColumn vWB)
-      (sv, mV') = LA.rightSV mWAB
+      (_, mV') = LA.rightSV mWAB
 --      gSV = sv V.! 0
 --      tol = gSV * LA.eps
       sV22 = mV' LA.! p LA.! p

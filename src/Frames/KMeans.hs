@@ -39,41 +39,22 @@ import qualified Control.Monad.Freer as FR
 import qualified Control.Monad.Freer.Logger as Log
 
 import qualified Control.Foldl        as FL
-import           Control.Lens         ((^.))
-import qualified Control.Lens         as L
-import           Data.Traversable    (sequenceA)
-import           Control.Monad.State (evalState)
-import           Data.Functor.Identity (Identity (Identity), runIdentity)
 import qualified Data.Foldable     as Foldable
 import qualified Data.List            as List
 import qualified Data.Map             as M
-import           Data.Maybe           (fromMaybe, isJust, catMaybes, fromJust)
+import           Data.Maybe           (catMaybes)
 import           Data.Text            (Text)
 import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
 import qualified Data.Vinyl.Curry     as V
 import qualified Data.Vinyl.Functor   as V
 import qualified Data.Vinyl.TypeLevel as V
-import qualified Data.Vinyl.XRec as V
-import qualified Data.Vinyl.Class.Method as V
-import qualified Data.Vinyl.Core      as V
-import           Data.Vinyl.Lens      (type (∈))
-import           Data.Kind            (Type,Constraint)
 import           Data.Profunctor      as PF
-import           Frames               ((:.), (&:))
+import           Frames               ((&:))
 import qualified Frames               as F
-import qualified Frames.CSV           as F
-import qualified Frames.ShowCSV           as F
 import qualified Frames.Melt           as F
-import qualified Frames.InCore        as FI
-import qualified Pipes                as P
-import qualified Pipes.Prelude        as P
-import           Control.Arrow (second)
-import           Data.Proxy (Proxy(..))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
-import           GHC.TypeLits (KnownSymbol)
-import           Data.Random.Source.PureMT as R
 import           Data.Random as R
 import qualified Data.Random.Distribution.Categorical as R
 import           Data.Function (on)
@@ -115,7 +96,7 @@ partitionCentroids :: forall x y w f. (F.AllConstrained (FA.RealFieldOf [x,y,w])
                    => Int
                    -> f (F.Record '[x,y,w])
                    -> [U.Vector Double]
-partitionCentroids k dataRows = catMaybes $ fmap (fmap fst . centroid (weighted2DRecord (Proxy @[x,y,w]))) $ go vs
+partitionCentroids k dataRows = catMaybes $ fmap (fmap fst . centroid (weighted2DRecord @x @y @w)) $ go vs
   where go l = case List.splitAt n l of
           (vs', []) -> [vs']
           (vs', vss) -> vs' : go vss
@@ -158,8 +139,8 @@ kMeansPPCentroids distF k dataRows = R.sample $ do
         
 weighted2DRecord :: forall x y w rs. ( FA.RealField x, FA.RealField y, FA.RealField w
                                      , F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w)
-                 => Proxy '[x,y,w] -> Weighted (F.Record rs) (FA.FType w)
-weighted2DRecord _ =
+                 => Weighted (F.Record rs) (FA.FType w)
+weighted2DRecord =
   let getX = realToFrac . F.rgetField @x
       getY = realToFrac . F.rgetField @y
       makeV r = U.fromList [getX r, getY r]
@@ -210,30 +191,28 @@ linfdist v1 v2 = U.maximum $ U.zipWith diffabs v1 v2
 type WithScaledCols rs = rs V.++ [FA.DblX, FA.DblY]
 type WithScaled rs = F.Record (WithScaledCols rs)
 
-kMeans :: forall rs ks x y w effs f. ( FA.ThreeDTransformable rs ks x y w
-                                     , F.ElemOf [FA.DblX,FA.DblY,w] w
-                                     , F.ElemOf rs x
-                                     , F.ElemOf rs y
-                                     , F.ElemOf rs w
-                                     , F.ElemOf (WithScaledCols rs) w
-                                     , F.ElemOf (WithScaledCols rs) FA.DblX
-                                     , F.ElemOf (WithScaledCols rs) FA.DblY
-                                     , Show (FA.FType w)
-                                     , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY]))
-                                     , Log.LogWithPrefixes effs)
-       => Proxy ks
-       -> Proxy '[x,y,w]
-       -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
+kMeans :: forall ks x y w rs effs. ( FA.ThreeDTransformable rs ks x y w
+                                   , F.ElemOf [FA.DblX,FA.DblY,w] w
+                                   , F.ElemOf rs x
+                                   , F.ElemOf rs y
+                                   , F.ElemOf rs w
+                                   , F.ElemOf (WithScaledCols rs) w
+                                   , F.ElemOf (WithScaledCols rs) FA.DblX
+                                   , F.ElemOf (WithScaledCols rs) FA.DblY
+                                   , Show (FA.FType w)
+                                   , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY]))
+                                   , Log.LogWithPrefixes effs)
+       => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
        -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
        -> Int
        -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> FR.Eff effs [U.Vector Double])  -- initial centroids
        -> Distance
        -> FL.FoldM (FR.Eff effs) (F.Record rs) (F.FrameRec (ks V.++ [x,y,w]))
-kMeans proxy_ks _ sunXF sunYF numClusters makeInitial distance =
+kMeans sunXF sunYF numClusters makeInitial distance =
   let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
       toRecord (x, y, w) = x &: y &: w &: V.RNil 
-      computeOne = kMeansOne sunXF sunYF numClusters makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance . fmap (F.rcast @[x,y,w])
-  in FA.aggregateAndAnalyzeEachM' proxy_ks (fmap (fmap toRecord) . computeOne)
+      computeOne = kMeansOne sunXF sunYF numClusters makeInitial (weighted2DRecord @FA.DblX @FA.DblY @w) distance . fmap (F.rcast @[x,y,w])
+  in FA.aggregateAndAnalyzeEachM' @ks (fmap (fmap toRecord) . computeOne)
 
 kMeansOne :: forall x y w f effs. ( FA.ThreeColData x y w
                                   , Foldable f
@@ -258,33 +237,30 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows = Log.w
       fix (v, wgt) = ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
   return $ catMaybes $ V.toList $ fmap (fmap fix . centroid weighted . members) clusters -- we drop empty clusters ??
 
-kMeansWithClusters :: forall ks effs rs x y w f. ( FA.ThreeDTransformable rs ks x y w
-                                                 , F.ElemOf [FA.DblX,FA.DblY,w] w
-                                                 , F.ElemOf rs x
-                                                 , F.ElemOf rs y
-                                                 , F.ElemOf rs w
-                                                 , F.ElemOf (WithScaledCols rs) w
-                                                 , F.ElemOf (WithScaledCols rs) FA.DblX
-                                                 , F.ElemOf (WithScaledCols rs) FA.DblY
-                                                 , rs F.⊆ (WithScaledCols rs)
-                                                 , V.RMap (rs V.++ '[FA.DblX, FA.DblY])
-                                                 , V.ReifyConstraint Show F.ElField (rs V.++ '[FA.DblX, FA.DblY])
-                                                 , V.RecordToList (rs V.++ '[FA.DblX, FA.DblY])
-                                                 , Log.LogWithPrefixes effs
-                                                 , Show (FA.FType w)
-                                                 , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
-                   => Proxy '[x,y,w]
-                   -> FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
+kMeansWithClusters :: forall x y w ks effs rs. ( FA.ThreeDTransformable rs ks x y w
+                                               , F.ElemOf [FA.DblX,FA.DblY,w] w
+                                               , F.ElemOf rs x
+                                               , F.ElemOf rs y
+                                               , F.ElemOf rs w
+                                               , F.ElemOf (WithScaledCols rs) w
+                                               , F.ElemOf (WithScaledCols rs) FA.DblX
+                                               , F.ElemOf (WithScaledCols rs) FA.DblY
+                                               , rs F.⊆ (WithScaledCols rs)
+                                               , V.RMap (rs V.++ '[FA.DblX, FA.DblY])
+                                               , V.ReifyConstraint Show F.ElField (rs V.++ '[FA.DblX, FA.DblY])
+                                               , V.RecordToList (rs V.++ '[FA.DblX, FA.DblY])
+                                               , Log.LogWithPrefixes effs
+                                               , Show (FA.FType w)
+                                               , Eq (F.Record (rs V.++ [FA.DblX, FA.DblY])))
+                   => FL.Fold (F.Record [x,w]) (MR.ScaleAndUnscale (FA.FType x))
                    -> FL.Fold (F.Record [y,w]) (MR.ScaleAndUnscale (FA.FType y))
                    -> Int
                    -> Int
                    -> (Int -> [F.Record [FA.DblX, FA.DblY, w]] -> FR.Eff effs [U.Vector Double])  -- initial centroids
                    -> Distance
                    -> FL.FoldM (FR.Eff effs) (F.Record rs) (M.Map (F.Record ks) [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])])
-kMeansWithClusters _ sunXF sunYF numClusters numTries makeInitial distance =
-  let toRecord :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w] 
-      toRecord (x, y, w) = x &: y &: w &: V.RNil 
-      computeOne = kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial (weighted2DRecord (Proxy @[FA.DblX, FA.DblY, w])) distance 
+kMeansWithClusters sunXF sunYF numClusters numTries makeInitial distance =
+  let computeOne = kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial (weighted2DRecord @FA.DblX @FA.DblY @w) distance 
   in FL.FoldM (\m -> return . FA.aggregateGeneral V.Identity (F.rcast @ks) (flip (:)) [] m) (return M.empty) (traverse computeOne)
 
 kMeansOneWithClusters :: forall rs x y w f effs. ( FA.ThreeColData x y w
@@ -342,16 +318,15 @@ type MarkLabel = "mark_label" F.:-> Text
 
 type ClusteredRow ks x y w = F.Record (ks V.++ [IsCentroid, ClusterId, MarkLabel] V.++ [x,y,w])
 
-clusteredRows :: forall ks rs x y w. (FA.RealField x, FA.RealField y, FA.RealField w
+clusteredRows :: forall x y w ks rs. (FA.RealField x, FA.RealField y, FA.RealField w
                                      , ClusteredRow ks x y w ~ F.Record (ks V.++ [IsCentroid, ClusterId, MarkLabel, x ,y ,w])
                                      , F.ElemOf rs x
                                      , F.ElemOf rs y
                                      , F.ElemOf rs w)
-              => Proxy '[x,y,w]
-              -> (F.Record rs -> Text) -- label for each row
+              => (F.Record rs -> Text) -- label for each row
               -> M.Map (F.Record ks) [((FA.FType x, FA.FType y, FA.FType w), [F.Record rs])]
               -> [ClusteredRow ks x y w]
-clusteredRows _ labelF m =
+clusteredRows labelF m =
   let makeXYW :: (FA.FType x, FA.FType y, FA.FType w) -> F.Record [x,y,w]
       makeXYW (x,y,w) = x &: y &: w &: V.RNil
       idAndLabel :: Bool -> Int -> Text -> F.Record [IsCentroid,ClusterId, MarkLabel]
@@ -361,7 +336,7 @@ clusteredRows _ labelF m =
       doClusteredRow :: F.Record ks -> Int -> F.Record rs -> ClusteredRow ks x y w
       doClusteredRow k cId xs = k F.<+> (idAndLabel False cId (labelF xs)) F.<+> (F.rcast @[x,y,w] xs)
       doCluster :: Int -> F.Record ks -> ((FA.FType x, FA.FType y, FA.FType w),[F.Record rs]) -> [ClusteredRow ks x y w]
-      doCluster cId k (centroid, rows) = doCentroid k cId centroid : (fmap (doClusteredRow k cId) rows)
+      doCluster cId k (ctrd, rows) = doCentroid k cId ctrd : (fmap (doClusteredRow k cId) rows)
       doListOfClusters :: F.Record ks -> [((FA.FType x, FA.FType y, FA.FType w),[F.Record rs])] -> [ClusteredRow ks x y w]
       doListOfClusters k l = List.concat $ fmap (\(cId,cluster) -> doCluster cId k cluster) $ List.zip [1..] l
   in List.concat $ fmap (\(k,loc) -> doListOfClusters k loc) $ M.toList m
@@ -376,7 +351,6 @@ weightedKMeans :: forall a w f effs. (Show a, Log.LogWithPrefixes effs, Foldable
 weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
   -- put them all in one cluster just to start.  Doesn't matter since we have initial centroids
   let k = V.length (centers initial) -- number of clusters
-      d = U.length (V.head $ centers initial) -- number of dimensions
       clusters0 = Clusters (V.fromList $ Cluster (Foldable.toList as) : (List.replicate (k - 1) emptyCluster))
       nearest :: Centroids -> a -> Int -- compute the nearest centroid to a and return the index to it in the Vector (centers cs)
       nearest cs a = V.minIndexBy (compare `on` distF (location weighted a)) (centers cs)
@@ -384,7 +358,7 @@ weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
       updateClusters centroids (Clusters oldCs) =
         -- Given a list [(closestIndex, pt)], a vector of centroids, a Cluster of pts, compute the closest centroid for each pt and add them each to the list 
         let doOneCluster :: [(Int, a)] -> Cluster a -> [(Int, a)] 
-            doOneCluster soFar (Cluster as) = FL.fold (FL.Fold (\l x -> (nearest centroids x, x) : l) soFar id) as
+            doOneCluster soFar (Cluster as') = FL.fold (FL.Fold (\l x -> (nearest centroids x, x) : l) soFar id) as'
             repackage :: [(Int, a)] -> Clusters a -- put things into clusters by index
             repackage = Clusters . V.accum (\(Cluster l) x -> Cluster (x : l)) (V.replicate k emptyCluster) -- x ~ a
         in FL.fold (FL.Fold doOneCluster [] repackage) oldCs

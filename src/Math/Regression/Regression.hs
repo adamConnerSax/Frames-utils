@@ -14,23 +14,16 @@ module Math.Regression.Regression where
 import qualified Math.HMatrixUtils                     as HU
 
 import qualified Colonnade                             as C
-import qualified Control.Foldl                         as FL
-import qualified Control.Foldl.Statistics              as FS
 import qualified Control.Monad.Freer                   as FR
 import qualified Control.Monad.Freer.Logger            as Log
-import qualified Data.Foldable                         as Foldable
-import           Data.Function                         (on)
 import qualified Data.List                             as List
 import           Data.Maybe                            (fromMaybe)
-import qualified Data.Profunctor                       as PF
 import qualified Data.Text                             as T
 import qualified Data.Vector.Storable                  as V
 import qualified Lucid                                 as LH
 import qualified Lucid.Colonnade                       as LC
-import qualified Lucid.Html5                           as LH
 import qualified Statistics.Distribution               as S
 import qualified Statistics.Distribution.FDistribution as S
-import qualified Statistics.Distribution.Normal        as S
 import qualified Statistics.Distribution.StudentT      as S
 import qualified Statistics.Types                      as S
 import qualified Text.Blaze.Colonnade                  as BC
@@ -39,13 +32,9 @@ import qualified Text.Blaze.Html5.Attributes           as BHA
 import qualified Text.Printf                           as TP
 
 
-import           Numeric.LinearAlgebra                 (( #> ), (<#), (<.>),
-                                                        (<\>))
+import           Numeric.LinearAlgebra                 (( #> ), (<.>))
 import qualified Numeric.LinearAlgebra                 as LA
 import           Numeric.LinearAlgebra.Data            (Matrix, R, Vector)
-import qualified Numeric.LinearAlgebra.Data            as LA
-
-import           Data.Kind                             (Type)
 
 -- NB: for normal errors, we will request the ci and get it.  For interval errors, we may request it but we can't produce
 -- what we request, we can only produce what we have.  So we make an interface for both.  We take CL as input to predict
@@ -76,8 +65,8 @@ instance (LA.Element a, LA.Numeric a, RealFloat a) => Predictor S.NormalErr a (V
   predict rr va =
     let mse = meanSquaredError rr
         sigmaPred = sqrt (mse + va <.> ((LA.cmap realToFrac $ covariances rr) #> va))
-        pred = va LA.<.> (V.fromList $ fmap S.estPoint $ parameterEstimates rr)
-    in S.estimateNormErr pred sigmaPred
+        prediction = va LA.<.> (V.fromList $ fmap S.estPoint $ parameterEstimates rr)
+    in S.estimateNormErr prediction sigmaPred
 
 data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a, regressorPValue :: a }
 
