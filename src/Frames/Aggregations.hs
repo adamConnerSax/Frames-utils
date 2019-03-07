@@ -375,22 +375,21 @@ aggregateAndFoldSubsetF f = aggregateAndFoldF @ks
   (FL.premap (F.rcast @cs) f)
 
 
--- let's try to get there via folds!  Then we can use that in the code above
--- given a c a => FL.Fold a a
--- we want a
--- ReifyConstraint c ElField rs => FL.Fold (R.Record rs) (R.Record rs)
-
+-- | Folding tools
+-- Given a foldable h, `Fold a b` represents a fold over `(h a)` producing a `b` 
+-- If we have an endo-fold, `Fold a a`, we can get a `Fold (ElField '(s, a)) (ElField '(s,a))`
 fieldFold
   :: V.KnownField t
   => FL.Fold (V.Snd t) (V.Snd t)
   -> FL.Fold (F.ElField t) (F.ElField t)
 fieldFold = P.dimap (\(V.Field x) -> x) V.Field
 
-
---newtype RecFold f a = RecFold { unRF :: FL.Fold (V.PayloadType f a) (V.PayloadType f a) }
+-- | We need types to act as "intepretation functors" for records of endo-folds
+-- One for an endo-fold on one field and one for a fold over a record to one field
 newtype FoldEndo f a = FoldEndo { unFoldEndo :: FL.Fold (f a) (f a) }
 newtype FoldInRecord f rs a = FoldInRecord { unFoldInRecord :: FL.Fold (F.Record rs) (f a) }
 
+-- | Given a record of folds over one list of fields, we can fold over a larger list of fields via rcast
 expandFoldInRecord
   :: forall rs as
    . (as F.⊆ rs, V.RMap as)
@@ -398,6 +397,7 @@ expandFoldInRecord
   -> F.Rec (FoldInRecord F.ElField rs) as
 expandFoldInRecord = V.rmap (FoldInRecord . FL.premap F.rcast . unFoldInRecord)
 
+-- | Change a record of single field folds to a record of folds from the entire record to each field
 class EndoFoldsToRecordFolds rs where
   endoFoldsToRecordFolds :: F.Rec (FoldEndo F.ElField) rs -> F.Rec (FoldInRecord F.ElField rs) rs
 
@@ -407,12 +407,27 @@ instance EndoFoldsToRecordFolds '[] where
 instance (EndoFoldsToRecordFolds rs, rs F.⊆ (r ': rs), V.RMap rs) => EndoFoldsToRecordFolds (r ': rs) where
   endoFoldsToRecordFolds (fe V.:& fes) = FoldInRecord (FL.premap (V.rget @r) (unFoldEndo fe)) V.:& expandFoldInRecord @(r ': rs) (endoFoldsToRecordFolds fes)
 
+-- | turn a record of folds over each field, into a fold over records 
 recordFold
   :: EndoFoldsToRecordFolds rs
   => F.Rec (FoldEndo F.ElField) rs
   -> FL.Fold (F.Record rs) (F.Record rs)
-recordFold = V.rtraverse (unFoldInRecord) . endoFoldsToRecordFolds
+recordFold = V.rtraverse unFoldInRecord . endoFoldsToRecordFolds
 
+{-
+-- | With simpler initial types
+newtype FoldEndoT t = FoldEndoT { unFoldEndoT :: FL.Fold (V.Snd t) (V.Snd t) }
+-- | turn a record of folds over each field, into a fold over records 
+recordFoldT
+  :: forall rs
+   . (V.RMap rs, EndoFoldsToRecordFolds rs, V.AllConstrained V.KnownField rs)
+  => F.Rec FoldEndoT rs
+  -> FL.Fold (F.Record rs) (F.Record rs)
+recordFoldT = V.rtraverse unFoldInRecord . endoFoldsToRecordFolds . V.rmap
+  (FoldEndo . fieldFold . unFoldEndoT)
+-}
+
+-- | apply an unconstrained endo-fold, e.g., a fold which takes the last item in a container, to every field in a record
 foldAll
   :: (V.RPureConstrained V.KnownField rs, EndoFoldsToRecordFolds rs)
   => (forall a . FL.Fold a a)
@@ -423,7 +438,8 @@ foldAll f =
 class (c (V.Snd t), V.KnownField t) => ConstrainedField c t
 instance (c (V.Snd t), V.KnownField t) => ConstrainedField c t
 
-
+-- | Apply a constrained endo-fold to all fields of a record.
+-- May require a use of TypeApplications, e.g., foldAllConstrained @Num FL.sum
 foldAllConstrained
   :: forall c rs
    . (V.RPureConstrained (ConstrainedField c) rs, EndoFoldsToRecordFolds rs)
@@ -432,13 +448,16 @@ foldAllConstrained
 foldAllConstrained f =
   recordFold $ V.rpureConstrained @(ConstrainedField c) (FoldEndo $ fieldFold f)
 
+-- | Given a monoid-wrapper, e.g., Sum, and functions to wrap and unwrap, we can produce an endo-fold on a
 monoidWrapperToFold
   :: forall f a . (N.Newtype (f a) a, Monoid (f a)) => FL.Fold a a
-monoidWrapperToFold = FL.Fold (\w a -> N.pack a <> w) (mempty @(f a)) N.unpack
+monoidWrapperToFold = FL.Fold (\w a -> N.pack a <> w) (mempty @(f a)) N.unpack -- is this the correct order in (<>) ?
 
 class (N.Newtype (f a) a, Monoid (f a)) => MonoidalField f a
 instance (N.Newtype (f a) a, Monoid (f a)) => MonoidalField f a
 
+-- | Given a monoid-wrapper, e.g., Sum, apply the derived endo-fold to all fields of a record
+-- This is strictly less powerful than foldAllConstrained but might be simpler to use in some cases
 foldAllMonoid
   :: forall f rs
    . ( V.RPureConstrained (ConstrainedField (MonoidalField f)) rs
