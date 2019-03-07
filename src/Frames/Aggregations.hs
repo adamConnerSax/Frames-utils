@@ -44,6 +44,8 @@ module Frames.Aggregations
   , aggregateMonoidalFs
   , aggregateAndFoldF
   , aggregateAndFoldSubsetF
+  , liftFold
+  , recordFold
   , foldAll
   , foldAllConstrained
   , foldAllMonoid
@@ -413,6 +415,10 @@ recordFold
   => F.Rec (FoldEndo F.ElField) rs
   -> FL.Fold (F.Record rs) (F.Record rs)
 recordFold = V.rtraverse unFoldInRecord . endoFoldsToRecordFolds
+
+liftFold
+  :: V.KnownField t => FL.Fold (V.Snd t) (V.Snd t) -> FoldEndo F.ElField t
+liftFold = FoldEndo . fieldFold
 
 {-
 -- | With simpler initial types
