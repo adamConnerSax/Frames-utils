@@ -22,7 +22,7 @@ common deps
                , foldl
                , hmatrix
                , lucid
-               , monoidal-containers
+               , monoidal-containers               
                , random-fu
                , random-source
                , statistics
@@ -78,6 +78,7 @@ library
                   , mltool
                   , mmorph
                   , mtl
+                  , newtype
                   , pandoc
                   , pipes
                   , prettyprinter

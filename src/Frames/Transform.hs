@@ -8,6 +8,9 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Transform
   (
@@ -26,29 +29,28 @@ module Frames.Transform
   , bfRHS
   ) where
 
+--import qualified Control.Newtype as N
 import qualified Data.Vinyl           as V
---import qualified Data.Vinyl.Derived   as V
-import           Data.Vinyl.TypeLevel (type (++), Snd)
-import           Data.Vinyl.Functor   (Lift(..), Identity(..))
+import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
+import           Data.Vinyl.Functor   (Lift(..), Identity(..), Compose(..))
 import qualified Frames               as F
 import           Frames.Melt          (RDeleteAll, ElemOf)
---import           Data.Vinyl.Lens      (type (∈))
 
 import           GHC.TypeLits         (KnownSymbol, Symbol)
 
 -- |  mutation functions
 
 -- | Type preserving single-field mapping
-fieldEndo :: forall x rs. (V.KnownField x, ElemOf rs x {-x ∈ rs -}) => (Snd x -> Snd x) -> F.Record rs -> F.Record rs
+fieldEndo :: forall x rs. (V.KnownField x, ElemOf rs x) => (Snd x -> Snd x) -> F.Record rs -> F.Record rs
 fieldEndo f r = F.rputField @x (f $ F.rgetField @x r) r
 
 -- | replace subset with a calculated different set of fields
 transform :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
-             => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs ++ bs)
+             => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs V.++ bs)
 transform f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
 
 -- | append calculated subset 
-mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs ++ bs)
+mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs V.++ bs)
 mutate f xs = xs `F.rappend` f xs 
 
 recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
@@ -63,10 +65,10 @@ dropColumns = F.rcast
 -- change a column "name" at the type level
 retypeColumn :: forall x y rs. ( V.KnownField x
                                , V.KnownField y
-                               , Snd x ~ Snd y
+                               , V.Snd x ~ V.Snd y
                                , ElemOf rs x
                                , F.RDelete x rs F.⊆ rs)
-  => F.Record rs -> F.Record (F.RDelete x rs ++ '[y])
+  => F.Record rs -> F.Record (F.RDelete x rs V.++ '[y])
 retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
 
 
@@ -78,21 +80,10 @@ reshapeRowSimple :: forall ss ts cs ds. (ss F.⊆ ts)
                  => [F.Record cs] -- list of classifier values
                  -> (F.Record cs -> F.Record ts -> F.Record ds)
                  -> F.Record ts
-                 -> [F.Record (ss ++ cs ++ ds)]                
+                 -> [F.Record (ss V.++ cs V.++ ds)]                
 reshapeRowSimple classifiers newDataF r = 
   let ids = F.rcast r :: F.Record ss
   in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
-
-
---
---newtype RecFunction as bs = RecFunction { recFunction :: F.Record as -> F.Record bs }
-
-
-
-
---deriving via ((->) as) instance Functor (RecFunction as) where
---  fmap f (RecFunction f)  
-
 
 
 -- for aggregations
