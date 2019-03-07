@@ -15,6 +15,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Aggregations
   ( FType
@@ -41,6 +42,11 @@ module Frames.Aggregations
   , aggregateMonoidalF
   , aggregateMonoidalFsM
   , aggregateMonoidalFs
+  , aggregateAndFoldF
+  , aggregateAndFoldSubsetF
+  , foldAll
+  , foldAllConstrained
+  , foldAllMonoid
   , RealField
   , RealFieldOf
   , TwoColData
@@ -65,10 +71,12 @@ import           Data.Maybe                     ( fromMaybe
 import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
                                                 )
+import qualified Data.Profunctor               as P
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.Functor            as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.XRec               as V
+import qualified Data.Vinyl.Class.Method       as V
 import           Frames                         ( (:.) )
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
@@ -242,7 +250,6 @@ aggregateMonoidalFsM unpack toMonoid extract =
         . MM.toList
         )
 
-
 aggregateFs
   :: forall ks rs as cs b f g h
    . ( ks F.⊆ as
@@ -276,7 +283,6 @@ aggregateMonoidalFs
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 aggregateMonoidalFs unpack toMonoid extract =
   FL.simplify $ aggregateMonoidalFsM @ks unpack toMonoid (return . extract)
-
 
 aggregateFM
   :: forall ks rs as b cs f g m
@@ -353,18 +359,95 @@ aggregateAndFoldF unpack foldAtKey =
   aggregateMonoidalF @ks unpack (pure @f) (FL.fold foldAtKey)
 
 aggregateAndFoldSubsetF
-  :: forall ks rs as cs f
-   . ( ks F.⊆ as
-     , as F.⊆ rs
-     , Monoid (f (F.Record as))
+  :: forall ks cs rs
+   . ( ks F.⊆ rs
+     , cs F.⊆ rs
+     , ks F.⊆ (ks V.++ cs)
+     , cs F.⊆ (ks V.++ cs)
+     , (ks V.++ cs) F.⊆ rs
      , Ord (F.Record ks)
      , FI.RecVec (ks V.++ cs)
-     , Foldable f
-     , Applicative f
      )
-  => FL.Fold (F.Record as) (F.Record cs)
+  => FL.Fold (F.Record cs) (F.Record cs)
   -> FL.Fold (F.Record rs) (F.FrameRec (ks V.++ cs))
-aggregateAndFoldSubsetF = aggregateAndFoldF @ks (pure @f . F.rcast @as)
+aggregateAndFoldSubsetF f = aggregateAndFoldF @ks
+  (pure @[] . F.rcast @(ks V.++ cs))
+  (FL.premap (F.rcast @cs) f)
+
+
+-- let's try to get there via folds!  Then we can use that in the code above
+-- given a c a => FL.Fold a a
+-- we want a
+-- ReifyConstraint c ElField rs => FL.Fold (R.Record rs) (R.Record rs)
+
+fieldFold
+  :: V.KnownField t
+  => FL.Fold (V.Snd t) (V.Snd t)
+  -> FL.Fold (F.ElField t) (F.ElField t)
+fieldFold = P.dimap (\(V.Field x) -> x) V.Field
+
+
+--newtype RecFold f a = RecFold { unRF :: FL.Fold (V.PayloadType f a) (V.PayloadType f a) }
+newtype FoldEndo f a = FoldEndo { unFoldEndo :: FL.Fold (f a) (f a) }
+newtype FoldInRecord f rs a = FoldInRecord { unFoldInRecord :: FL.Fold (F.Record rs) (f a) }
+
+expandFoldInRecord
+  :: forall rs as
+   . (as F.⊆ rs, V.RMap as)
+  => F.Rec (FoldInRecord F.ElField as) as
+  -> F.Rec (FoldInRecord F.ElField rs) as
+expandFoldInRecord = V.rmap (FoldInRecord . FL.premap F.rcast . unFoldInRecord)
+
+class EndoFoldsToRecordFolds rs where
+  endoFoldsToRecordFolds :: F.Rec (FoldEndo F.ElField) rs -> F.Rec (FoldInRecord F.ElField rs) rs
+
+instance EndoFoldsToRecordFolds '[] where
+  endoFoldsToRecordFolds _ = V.RNil
+
+instance (EndoFoldsToRecordFolds rs, rs F.⊆ (r ': rs), V.RMap rs) => EndoFoldsToRecordFolds (r ': rs) where
+  endoFoldsToRecordFolds (fe V.:& fes) = FoldInRecord (FL.premap (V.rget @r) (unFoldEndo fe)) V.:& expandFoldInRecord @(r ': rs) (endoFoldsToRecordFolds fes)
+
+recordFold
+  :: EndoFoldsToRecordFolds rs
+  => F.Rec (FoldEndo F.ElField) rs
+  -> FL.Fold (F.Record rs) (F.Record rs)
+recordFold = V.rtraverse (unFoldInRecord) . endoFoldsToRecordFolds
+
+foldAll
+  :: (V.RPureConstrained V.KnownField rs, EndoFoldsToRecordFolds rs)
+  => (forall a . FL.Fold a a)
+  -> FL.Fold (F.Record rs) (F.Record rs)
+foldAll f =
+  recordFold $ V.rpureConstrained @V.KnownField (FoldEndo $ fieldFold f)
+
+class (c (V.Snd t), V.KnownField t) => ConstrainedField c t
+instance (c (V.Snd t), V.KnownField t) => ConstrainedField c t
+
+
+foldAllConstrained
+  :: forall c rs
+   . (V.RPureConstrained (ConstrainedField c) rs, EndoFoldsToRecordFolds rs)
+  => (forall a . c a => FL.Fold a a)
+  -> FL.Fold (F.Record rs) (F.Record rs)
+foldAllConstrained f =
+  recordFold $ V.rpureConstrained @(ConstrainedField c) (FoldEndo $ fieldFold f)
+
+monoidWrapperToFold
+  :: forall f a . (N.Newtype (f a) a, Monoid (f a)) => FL.Fold a a
+monoidWrapperToFold = FL.Fold (\w a -> N.pack a <> w) (mempty @(f a)) N.unpack
+
+class (N.Newtype (f a) a, Monoid (f a)) => MonoidalField f a
+instance (N.Newtype (f a) a, Monoid (f a)) => MonoidalField f a
+
+foldAllMonoid
+  :: forall f rs
+   . ( V.RPureConstrained (ConstrainedField (MonoidalField f)) rs
+     , EndoFoldsToRecordFolds rs
+     )
+  => FL.Fold (F.Record rs) (F.Record rs)
+foldAllMonoid = foldAllConstrained @(MonoidalField f) $ monoidWrapperToFold @f
+
+
 
 --  aggregateMonoidalF @ks unpack (pure @f) (FL.fold foldAtKey)  
 
