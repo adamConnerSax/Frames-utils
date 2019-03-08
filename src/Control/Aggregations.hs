@@ -43,18 +43,31 @@ import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
                                                 )
 import qualified Data.Profunctor               as P
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.Functor            as V
-import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.XRec               as V
-import qualified Data.Vinyl.Class.Method       as V
-import           Frames                         ( (:.) )
-import qualified Frames                        as F
-import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
 import           Control.Arrow                  ( second )
 
 
+
+-- Let's try types!!
+
+data Unpack c a where
+  UnpackSimple :: (c -> a) -> Unpack c a
+  UnpackFoldable :: Foldable f => (c -> f a) -> Unpack c a
+  UnpackMonoid :: (Foldable f, Monoid (f a)) => (c -> f a) -> Unpack c a
+
+data Aggregate a k b where
+  AggregateFold :: (a -> k) -> (b -> a -> b) -> b -> Aggregate a k b
+  AggregateMonoid :: Monoid b => (a -> k) -> (a -> b) -> Aggregate a k b
+
+{-
+-- b can be anything but c should be a row (or collection of rows?)
+data Reduce b c where
+  ReduceOne :: (b -> c) -> Reduce b c
+  ReduceFoldable :: Foldable f => (f b -> c)
+  ReduceMonoid :: Monoid
+-}
+
+data Reassemble k b c where
+  Reassemble :: (k -> b -> c) -> Reassemble k b c
 
 aggregateToMap
   :: Ord k => (a -> k) -> (b -> a -> b) -> b -> M.Map k b -> a -> M.Map k b
