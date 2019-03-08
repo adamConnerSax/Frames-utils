@@ -35,6 +35,9 @@ library
   import: deps
   ghc-options: -Wall
   exposed-modules: Frames.Aggregations
+                 , Frames.Aggregations.Core
+                 , Frames.Aggregations.Monoidal
+                 , Frames.Aggregations.Folds
                  , Frames.Transform
                  , Frames.ScatterMerge
                  , Frames.KMeans
@@ -42,6 +45,7 @@ library
                  , Frames.MaybeUtils
                  , Frames.Table
                  , Frames.ParseableTypes
+                 , Frames.Utils
                  , Frames.VegaLite
                  , Frames.VegaLite.Utils
                  , Frames.VegaLite.Histogram
@@ -52,6 +56,7 @@ library
                  , Math.Rescale
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
+                 , Control.Aggregations
                  , Control.Monad.Freer.Logger
                  , Control.Monad.Freer.Docs
                  , Control.Monad.Freer.Html
