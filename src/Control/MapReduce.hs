@@ -140,7 +140,7 @@ uagMapAllGroupOnce (UnpackF unpack) (AssignF assign) (Group group) = MapStepF $ 
 uagMapAllGroupEach :: (Functor f, Functor h, Foldable h) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
 uagMapAllGroupEach (UnpackF unpack) (AssignF assign) (Group group) = MapStepF $ foldMap id . fmap (group . fmap assign . unpack)
 
--- we can "replace" each foldMap id with an FL.Fold FL.mconcat to get Folds
+-- we can "replace" each foldMap id with an FL.Fold FL.mconcat to get Control.Foldl Foldl
 uagMapEachFold :: (Functor h, Foldable h, Monoid (g y)) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
 uagMapEachFold (UnpackF unpack) (AssignF assign) (Group group) = MapStepFold $ P.dimap unpack (group . fmap assign) FL.mconcat 
 
