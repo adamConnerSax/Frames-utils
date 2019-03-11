@@ -57,6 +57,7 @@ library
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
                  , Control.Aggregations
+                 , Control.MapReduce
                  , Control.Monad.Freer.Logger
                  , Control.Monad.Freer.Docs
                  , Control.Monad.Freer.Html
@@ -75,6 +76,7 @@ library
                   , discrimination
                   , foldl-statistics
                   , groups
+                  , hashable
                   , histogram-fill
                   , hmatrix-gsl
                   , lens
