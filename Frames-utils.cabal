@@ -38,6 +38,7 @@ library
                  , Frames.Aggregations.Core
                  , Frames.Aggregations.Monoidal
                  , Frames.Aggregations.Folds
+                 , Frames.MapReduce
                  , Frames.Transform
                  , Frames.ScatterMerge
                  , Frames.KMeans
@@ -58,6 +59,7 @@ library
                  , Math.Regression.LeastSquares
                  , Control.Aggregations
                  , Control.MapReduce
+                 , Control.MapReduce.Parallel
                  , Control.Monad.Freer.Logger
                  , Control.Monad.Freer.Docs
                  , Control.Monad.Freer.Html
@@ -87,11 +89,13 @@ library
                   , mtl
                   , newtype
                   , pandoc
+                  , parallel
                   , pipes
                   , prettyprinter
                   , profunctors
                   , random
                   , readable
+                  , split
                   , time
                   , text
                   , hvega
