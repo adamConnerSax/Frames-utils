@@ -42,17 +42,18 @@ assignFrame
   :: forall ks cs rs
    . (Ord (F.Record ks), ks F.⊆ rs, cs F.⊆ rs)
   => MR.Assign Ord (F.Record ks) (F.Record rs) (F.Record cs)
-assignFrame = MR.assign F.rcast F.rcast
+assignFrame = MR.assign (F.rcast @ks) (F.rcast @cs)
 
 reduceAndAddKey
   :: FI.RecVec ((ks V.++ cs))
-  => (b -> F.Record cs)
-  -> MR.ReduceOne (F.Record ks) b (F.FrameRec (ks V.++ cs))
+  => (h x -> F.Record cs)
+  -> MR.Reduce 'Nothing (F.Record ks) h x (F.FrameRec (ks V.++ cs))
 reduceAndAddKey process =
-  MR.ReduceOne $ \k b -> F.toFrame $ [V.rappend k (process b)]
+  fmap (F.toFrame . pure @[]) $ MR.processAndRelabel process V.rappend
+
 
 aggregateMonoidalF
-  :: forall ks rs as b cs f g h
+  :: forall ks rs as h x cs f g
    . ( ks F.⊆ as
      , as F.⊆ as
      , Ord (F.Record ks)
@@ -60,17 +61,15 @@ aggregateMonoidalF
      , Foldable f
      , Functor f
      , Foldable h
-     , Functor h
-     , Monoid b
+     , Monoid (h x)
      )
   => (F.Rec g rs -> f (F.Record as))
-  -> (F.Record as -> b)
-  -> (b -> F.Record cs)
-  -> h (F.Rec g rs)
-  -> F.FrameRec (ks V.++ cs)
-aggregateMonoidalF unpack process extract = MR.mapReduceSimple
-  (MR.uagMapAllGatherEach (MR.Unpack unpack)
-                          (assignFrame @ks @as)
-                          (MR.gatherMonoid @_ @MM.MonoidalMap process)
+  -> (F.Record as -> h x)
+  -> (h x -> F.Record cs)
+  -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
+aggregateMonoidalF unpack process extract = MR.mapGatherReduceFold
+  (MR.uagMapAllGatherEachFold (MR.Unpack unpack)
+                              (assignFrame @ks @as)
+                              (MR.gatherMonoid MR.groupMap process)
   )
   (reduceAndAddKey extract)

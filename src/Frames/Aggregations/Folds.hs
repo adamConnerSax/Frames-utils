@@ -31,7 +31,7 @@ module Frames.Aggregations.Folds
 where
 
 import qualified Frames.Aggregations.Monoidal  as FAM
-
+import qualified Frames.MapReduce              as FMR
 import qualified Control.Foldl                 as FL
 import qualified Control.Newtype               as N
 import           Data.Functor.Product           ( Product(Pair) )
@@ -53,6 +53,8 @@ import           GHC.TypeLits                   ( KnownSymbol )
 unpackAggregateAndFoldF
   :: forall ks as rs cs f g
    . ( ks F.⊆ as
+     , as F.⊆ as
+     , (ks V.++ cs) F.⊆ (ks V.++ cs)
      , Monoid (f (F.Record as)) -- can I do without this by not using the Monoidal version of aggregate??
      , Ord (F.Record ks)
      , FI.RecVec (ks V.++ cs)
@@ -63,13 +65,14 @@ unpackAggregateAndFoldF
   -> FL.Fold (F.Record as) (F.Record cs)
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 unpackAggregateAndFoldF unpack foldAtKey =
-  FAM.aggregateMonoidalF @ks unpack (pure @f) (FL.fold foldAtKey)
+  FMR.aggregateMonoidalF @ks unpack (pure @f) (FL.fold foldAtKey)
 
 
 unpackAggregateAndFoldSubsetF
   :: forall ks cs rs f g
    . ( ks F.⊆ (ks V.++ cs)
      , cs F.⊆ (ks V.++ cs)
+     , (ks V.++ cs) F.⊆ (ks V.++ cs)
      , Monoid (f (F.Record (ks V.++ cs)))
      , Ord (F.Record ks)
      , FI.RecVec (ks V.++ cs)
@@ -93,6 +96,7 @@ aggregateAndFoldSubsetF
      , ks F.⊆ (ks V.++ cs)
      , cs F.⊆ (ks V.++ cs)
      , (ks V.++ cs) F.⊆ rs
+     , (ks V.++ cs) F.⊆ (ks V.++ cs)
      , Ord (F.Record ks)
      , FI.RecVec (ks V.++ cs)
      )
