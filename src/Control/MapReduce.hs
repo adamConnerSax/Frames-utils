@@ -17,7 +17,7 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 --{-# LANGUAGE UndecidableSuperClasses #-}
 --{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.MapReduce where
 
@@ -30,8 +30,10 @@ import qualified Data.HashMap.Monoidal         as HMM
 import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
                                                 )
-import           Data.Hashable                  (Hashable)                 
-import           Data.Kind (Type, Constraint)                 
+import           Data.Hashable                  ( Hashable )
+import           Data.Kind                      ( Type
+                                                , Constraint
+                                                )
 import qualified Data.Profunctor               as P
 
 --import           Control.Arrow                  ( second )
@@ -72,7 +74,7 @@ type GroupStepT f k d c = d -> f k c -- e.g., [Maybe y] -> MonoidalMap k c
 
 -- | Some unpack and group functions
 data UnpackF g x y where
-  UnpackF :: (Foldable g, Functor g) => (x -> g y) -> UnpackF g x y
+  UnpackF :: (x -> g y) -> UnpackF g x y
 
 noUnpack :: UnpackF Identity x x
 noUnpack = UnpackF Identity
@@ -95,35 +97,49 @@ instance (Monoid c, Ord k) => GroupMap MM.MonoidalMap k c where
 
 instance (Monoid c, Hashable k, Eq k) => GroupMap HMM.MonoidalHashMap k c where
   type KeyConstraint HMM.MonoidalHashMap = Hashable
-  fromFoldable = HMM.fromList . FL.fold FL.list   
-  foldMapWithKey f = foldMap (uncurry f) . HMM.toList 
+  fromFoldable = HMM.fromList . FL.fold FL.list
+  foldMapWithKey f = foldMap (uncurry f) . HMM.toList
 
 data Group g mt k c d where
   Group :: GroupMap mt k d => (g (k, c) -> mt k d) -> Group g mt k c d
 
-groupMonoid :: (Functor g, Foldable g, Monoid d, GroupMap mt k d) => (c -> d) -> Group g mt k c d
-groupMonoid toMonoid = Group $ fromFoldable . fmap (\(k,c) -> (k, toMonoid c)) 
+groupMonoid
+  :: (Functor g, Foldable g, Monoid d, GroupMap mt k d)
+  => (c -> d)
+  -> Group g mt k c d
+groupMonoid toMonoid = Group $ fromFoldable . fmap (\(k, c) -> (k, toMonoid c))
 
-groupToApplicativeMonoid :: (Functor g, Foldable g, GroupMap mt k (h c), Applicative h) => Group g mt k c (h c)
+groupToApplicativeMonoid
+  :: (Functor g, Foldable g, GroupMap mt k (h c), Applicative h)
+  => Group g mt k c (h c)
 groupToApplicativeMonoid = groupMonoid pure
 
 groupToLists :: (Functor g, Foldable g, GroupMap mt k [c]) => Group g mt k c [c]
 groupToLists = groupToApplicativeMonoid
 
-data MapStep h f k x d where
-  MapStepF :: (Functor h, Foldable h) => (h x -> f k d) -> MapStep h f k x d
-  MapStepFold :: Foldable h => FL.Fold x (f k d) -> MapStep h f k x d
+data MapStep h x q  where -- q ~ f k d
+  MapStepF :: (h x -> q) -> MapStep h x q
+  MapStepFold :: Foldable h => FL.Fold x q -> MapStep h x q
 
-instance Functor (f k) => Functor (MapStep h f k x) where
-  fmap h (MapStepF g) = MapStepF $ fmap h . g
-  fmap h (MapStepFold fld) = MapStepFold $ fmap (fmap h) fld 
+instance Functor (MapStep h x) where
+  fmap h (MapStepF g) = MapStepF $ h . g
+  fmap h (MapStepFold fld) = MapStepFold $ fmap h fld
 
-instance Functor (f k)  => P.Profunctor (MapStep h f k) where
-  dimap l r (MapStepF g) = MapStepF $ fmap r . g . fmap l
-  dimap l r (MapStepFold fld) = MapStepFold $ P.dimap l (fmap r) fld
+instance Functor h => P.Profunctor (MapStep h) where
+  dimap l r (MapStepF g) = MapStepF $ r . g . fmap l
+  dimap l r (MapStepFold fld) = MapStepFold $ P.dimap l r fld
 
-mapStep :: Foldable h => MapStep h f k x d -> h x -> f k d
-mapStep (MapStepF g) = g
+
+-- NB: we can only share the fold over h x if both inputs are folds
+instance Foldable h => Applicative (MapStep h x) where
+  pure y = MapStepFold $ pure y
+  MapStepFold fab <*> MapStepFold fa = MapStepFold $ fab <*> fa
+  MapStepF hx_fab <*> MapStepF hx_a = MapStepF $ \hx -> (hx_fab hx) (hx_a hx)
+  MapStepFold fab <*> MapStepF hx_a = MapStepF $ \hx -> (FL.fold fab hx) (hx_a hx)
+  MapStepF hx_fab <*> MapStepFold fa = MapStepF $ \hx -> (hx_fab hx) (FL.fold fa hx)
+
+mapStep :: Foldable h => MapStep h x q -> h x -> q
+mapStep (MapStepF    g) = g
 mapStep (MapStepFold f) = FL.fold f
 
 -- Fundamentally 3 ways to do this:
@@ -131,31 +147,91 @@ mapStep (MapStepFold f) = FL.fold f
 -- group . <> . fmap . fmap : "MapAllGroupOnce" 
 --  <> . group . fmap . fmap : "MapAllGroupEach"
 
-uagMapEach :: (Functor h, Foldable h, Monoid (g y)) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
-uagMapEach (UnpackF unpack) (AssignF assign) (Group group) = MapStepF $ group . fmap assign . foldMap id . fmap unpack
+-- But we can introduce parallelism at any fmap or foldMap step, though not in a Contro.Foldl fold
 
-uagMapAllGroupOnce :: (Functor h, Foldable h, Monoid (g (k, c))) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
-uagMapAllGroupOnce (UnpackF unpack) (AssignF assign) (Group group) = MapStepF $ group . foldMap id . fmap (fmap assign . unpack)
+uagMapEach
+  :: (Functor h, Foldable h, Monoid (g y), Functor g)
+  => UnpackF g x y
+  -> AssignF keyC k y c
+  -> Group g mt k c d
+  -> MapStep h x (mt k d)
+uagMapEach (UnpackF unpack) (AssignF assign) (Group group) =
+  MapStepF $ group . fmap assign . foldMap id . fmap unpack
 
-uagMapAllGroupEach :: (Functor f, Functor h, Foldable h) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
-uagMapAllGroupEach (UnpackF unpack) (AssignF assign) (Group group) = MapStepF $ foldMap id . fmap (group . fmap assign . unpack)
+uagMapAllGroupOnce
+  :: (Functor h, Foldable h, Functor g, Monoid (g (k, c)))
+  => UnpackF g x y
+  -> AssignF keyC k y c
+  -> Group g mt k c d
+  -> MapStep h x (mt k d)
+uagMapAllGroupOnce (UnpackF unpack) (AssignF assign) (Group group) =
+  MapStepF $ group . foldMap id . fmap (fmap assign . unpack)
+
+uagMapAllGroupEach
+  :: (Functor f, Functor h, Foldable h, Functor g)
+  => UnpackF g x y
+  -> AssignF keyC k y c
+  -> Group g mt k c d
+  -> MapStep h x (mt k d)
+uagMapAllGroupEach (UnpackF unpack) (AssignF assign) (Group group) =
+  MapStepF $ foldMap id . fmap (group . fmap assign . unpack)
 
 -- we can "replace" each foldMap id with an FL.Fold FL.mconcat to get Control.Foldl Foldl
-uagMapEachFold :: (Functor h, Foldable h, Monoid (g y)) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
-uagMapEachFold (UnpackF unpack) (AssignF assign) (Group group) = MapStepFold $ P.dimap unpack (group . fmap assign) FL.mconcat 
+-- There is less opportunity to parallelize here but more to share work
+uagMapEachFold
+  :: (Functor h, Foldable h, Monoid (g y), Functor g)
+  => UnpackF g x y
+  -> AssignF keyC k y c
+  -> Group g mt k c d
+  -> MapStep h x (mt k d)
+uagMapEachFold (UnpackF unpack) (AssignF assign) (Group group) =
+  MapStepFold $ P.dimap unpack (group . fmap assign) FL.mconcat
 
-uagMapAllGroupOnceFold :: (Functor h, Foldable h, Monoid (g (k,c))) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
-uagMapAllGroupOnceFold (UnpackF unpack) (AssignF assign) (Group group) = MapStepFold $ P.dimap (fmap assign . unpack) group FL.mconcat 
+uagMapAllGroupOnceFold
+  :: (Functor h, Foldable h, Monoid (g (k, c)), Functor g)
+  => UnpackF g x y
+  -> AssignF keyC k y c
+  -> Group g mt k c d
+  -> MapStep h x (mt k d)
+uagMapAllGroupOnceFold (UnpackF unpack) (AssignF assign) (Group group) =
+  MapStepFold $ P.dimap (fmap assign . unpack) group FL.mconcat
 
-uagMapAllGroupEachFold :: (Functor f, Functor h, Foldable h) => UnpackF g x y -> AssignF keyC k y c -> Group g mt k c d -> MapStep h mt k x d
-uagMapAllGroupEachFold (UnpackF unpack) (AssignF assign) (Group group) = MapStepFold $ FL.premap (group . fmap assign . unpack) FL.mconcat
+uagMapAllGroupEachFold
+  :: (Functor f, Functor h, Foldable h, Functor g)
+  => UnpackF g x y
+  -> AssignF keyC k y c
+  -> Group g mt k c d
+  -> MapStep h x (mt k d)
+uagMapAllGroupEachFold (UnpackF unpack) (AssignF assign) (Group group) =
+  MapStepFold $ FL.premap (group . fmap assign . unpack) FL.mconcat
 
 data ReduceOne k d e where
-  ReduceOne :: Monoid e => (k -> d -> e) -> ReduceOne k d e
+  ReduceOne :: (k -> d -> e) -> ReduceOne k d e
+
+instance Functor (ReduceOne k d) where
+  fmap f (ReduceOne g) = ReduceOne $ \k -> f . g k
+
+instance P.Profunctor (ReduceOne k) where
+  dimap l r (ReduceOne g)  = ReduceOne $ \k -> P.dimap l r (g k)
+
+instance Applicative (ReduceOne k d) where
+  pure x = ReduceOne $ \k -> pure x
+  ReduceOne r1 <*> ReduceOne r2 = ReduceOne $ \k -> r1 k <*> r2 k
 
 reduceSimple :: Monoid e => (k -> d -> x) -> (x -> e) -> ReduceOne k d e
 reduceSimple reduceRow toMonoid = ReduceOne $ \k -> toMonoid . reduceRow k
 
-mapReduce1 :: (GroupMap mt k d, Foldable h) => MapStep h mt k x d -> ReduceOne k d e -> h x -> e
-mapReduce1 ms (ReduceOne reduceOne) = foldMapWithKey reduceOne . mapStep ms 
-  
+reduceList :: (k -> d -> x) -> ReduceOne k d [x]
+reduceList f = reduceSimple f pure
+
+processAndRelabel :: (d -> x) -> (k -> x -> y) -> ReduceOne k d [y]
+processAndRelabel process relabel = reduceList (\k d -> relabel k (process d))
+
+mapReduce1
+  :: (GroupMap mt k d, Foldable h, Monoid e)
+  => MapStep h x (mt k d)
+  -> ReduceOne k d e
+  -> h x
+  -> e
+mapReduce1 ms (ReduceOne reduceOne) = foldMapWithKey reduceOne . mapStep ms
+
