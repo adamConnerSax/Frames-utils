@@ -68,7 +68,8 @@ filter t = Unpack $ \x -> if t x then Just x else Nothing
 data Assign keyC k y c where
   Assign :: keyC k => (y -> (k, c)) -> Assign keyC k y c
 
-assign :: keyC k => (y -> k) -> (y -> c) -> Assign keyC k y c
+assign
+  :: forall keyC k y c . keyC k => (y -> k) -> (y -> c) -> Assign keyC k y c
 assign getKey getCols = Assign (\y -> (getKey y, getCols y))
 
 -- Not a class because for the same map we may want different methods of folding and traversing
@@ -103,7 +104,13 @@ groupHashMap = GroupMap
 
 -- | `Gather` assembles items with the same key
 data Gather (eConst :: Type -> Constraint) g mt k c d where
-  Gather :: GroupMap eConst mt k d -> (g (k, c) -> mt k d) -> Gather eConst g mt k c d
+  Gather :: (g (k, c) -> mt k d) -> Gather eConst g mt k c d
+
+instance Functor (mt k) => Functor (Gather ec g mt k d) where
+  fmap f (Gather h) = Gather $ fmap f . h
+
+instance (Functor g, Functor (mt k)) => P.Profunctor (Gather ec g mt k) where
+  dimap l r (Gather h) = Gather $ fmap r . h . fmap (\(k,x) -> (k, l x))
 
 gatherMonoid
   :: forall ec g mt k c d
@@ -112,7 +119,7 @@ gatherMonoid
   -> (c -> d)
   -> Gather ec g mt k c d
 gatherMonoid gm toMonoid =
-  Gather gm $ fromFoldable gm . fmap (\(k, c) -> (k, toMonoid c))
+  Gather $ fromFoldable gm . fmap (\(k, c) -> (k, toMonoid c))
 
 gatherApplicativeMonoid
   :: forall ec g h mt k c
@@ -180,11 +187,12 @@ data MapGather mm x ec mt k d = MapGather { grouping :: GroupMap ec mt k d, mapS
 --  <> . group . fmap . fmap : "MapAllGroupEach"
 uagMapEachFold
   :: (Monoid (g y), Functor g)
-  => Unpack mm g x y
+  => GroupMap ec mt k d
+  -> Unpack mm g x y
   -> Assign keyC k y c
   -> Gather ec g mt k c d
   -> MapGather mm x ec mt k d -- MapStep mm x (mt k d)
-uagMapEachFold unpacker (Assign assign) (Gather gm gather) = MapGather
+uagMapEachFold gm unpacker (Assign assign) (Gather gather) = MapGather
   gm
   mapStep
  where
@@ -199,11 +207,12 @@ uagMapEachFold unpacker (Assign assign) (Gather gm gather) = MapGather
 
 uagMapAllGatherOnceFold
   :: (Monoid (g (k, c)), Functor g)
-  => Unpack mm g x y
+  => GroupMap ec mt k d
+  -> Unpack mm g x y
   -> Assign keyC k y c
   -> Gather ec g mt k c d
   -> MapGather mm x ec mt k d --MapStep mm x (mt k d)
-uagMapAllGatherOnceFold unpacker (Assign assign) (Gather gm gather) = MapGather
+uagMapAllGatherOnceFold gm unpacker (Assign assign) (Gather gather) = MapGather
   gm
   mapStep
  where
@@ -218,11 +227,12 @@ uagMapAllGatherOnceFold unpacker (Assign assign) (Gather gm gather) = MapGather
 
 uagMapAllGatherEachFold
   :: (Functor g, Monoid (mt k d))
-  => Unpack mm g x y
+  => GroupMap ec mt k d
+  -> Unpack mm g x y
   -> Assign keyC k y c
   -> Gather ec g mt k c d
   -> MapGather mm x ec mt k d --MapStep mm x (mt k d)
-uagMapAllGatherEachFold unpacker (Assign assign) (Gather gm gather) = MapGather
+uagMapAllGatherEachFold gm unpacker (Assign assign) (Gather gather) = MapGather
   gm
   mapStep
  where
@@ -266,8 +276,27 @@ instance Monad m => Applicative (Reduce ('Just m) k h x) where
   ReduceM r1 <*> ReduceFoldM f2 = ReduceM $ \k -> ((<*>) <$> r1 k <*> (FL.foldM $ f2 k))
   ReduceFoldM f1 <*> ReduceM r2 = ReduceM $ \k -> ((<*>) <$> (FL.foldM $ f1 k) <*> r2 k)
 
+-- | The most common case is that the reduction doesn't depend on the key
+-- So we add support functions for processing the data and then relabeling with the key
+-- And we do this for the four variations of Reduce
 processAndRelabel :: (h x -> y) -> (k -> y -> z) -> Reduce 'Nothing k h x z
 processAndRelabel process relabel = Reduce $ \k hx -> relabel k (process hx)
+
+processAndRelabelM
+  :: Monad m => (h x -> m y) -> (k -> y -> z) -> Reduce ( 'Just m) k h x z
+processAndRelabelM processM relabel =
+  ReduceM $ \k hx -> fmap (relabel k) (processM hx)
+
+foldAndRelabel
+  :: Foldable h => FL.Fold x y -> (k -> y -> z) -> Reduce 'Nothing k h x z
+foldAndRelabel fld relabel = ReduceFold $ \k -> fmap (relabel k) fld
+
+foldAndRelabelM
+  :: (Monad m, Foldable h)
+  => FL.FoldM m x y
+  -> (k -> y -> z)
+  -> Reduce ( 'Just m) k h x z
+foldAndRelabelM fld relabel = ReduceFoldM $ \k -> fmap (relabel k) fld
 
 mapReduceFold
   :: (Foldable h, Monoid e, ec e, Functor (MapFoldT mm x))

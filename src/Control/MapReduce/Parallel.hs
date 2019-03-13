@@ -22,6 +22,8 @@ module Control.MapReduce.Parallel
   , parReduceGroupMap
   , parFoldGroupMap
   , parAllGroupMap
+  , parFoldMonoid
+  , parFoldMonoidDC
   )
 where
 
@@ -41,7 +43,7 @@ import qualified Control.Parallel.Strategies   as PS
 -- | Use these group maps when building a Control.MapReduce.Gather or in a call to Control.MapReduce.mapReduceFold
 
 parReduceGroupMap
-  :: (Semigroup c, Ord k, PS.NFData e) => GroupMap PS.NFData MM.MonoidalMap k c
+  :: (Semigroup c, Ord k) => GroupMap PS.NFData MM.MonoidalMap k c
 parReduceGroupMap = GroupMap
   (MM.fromListWith (<>) . FL.fold FL.list)
   (\doOne -> foldMap id . parMapEach (uncurry doOne) . MM.toList)

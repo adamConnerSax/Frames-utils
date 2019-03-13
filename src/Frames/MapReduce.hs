@@ -17,9 +17,20 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Frames.MapReduce where
+module Frames.MapReduce
+  ( module Control.MapReduce
+  , aggregateMonoidalF
+  , assignFrame
+  , reduceAndAddKey
+  , foldAndAddKey
+  , gatherRecordList
+  , gatherRecordFrame
+  , mapReduceFrame
+  )
+where
 
-import           Control.MapReduce             as MR
+import qualified Control.MapReduce             as MR
+import           Control.MapReduce
 
 import qualified Control.Foldl                 as FL
 import           Data.Functor.Identity          ( Identity(Identity) )
@@ -51,7 +62,45 @@ reduceAndAddKey
 reduceAndAddKey process =
   fmap (F.toFrame . pure @[]) $ MR.processAndRelabel process V.rappend
 
+foldAndAddKey
+  :: (Foldable h, FI.RecVec ((ks V.++ cs)))
+  => FL.Fold x (F.Record cs)
+  -> MR.Reduce 'Nothing (F.Record ks) h x (F.FrameRec (ks V.++ cs))
+foldAndAddKey fld =
+  fmap (F.toFrame . pure @[]) $ MR.foldAndRelabel fld V.rappend
 
+-- g is the type we unpack to.  Identity, Maybe, [] are all possible.
+gatherRecordList
+  :: (Functor g, Foldable g)
+  => MR.GroupMap ec mt (F.Record ks) [F.Record cs]
+  -> MR.Gather ec g mt (F.Record ks) (F.Record cs) [F.Record cs]
+gatherRecordList = MR.gatherLists
+
+gatherRecordFrame
+  :: (Functor g, Foldable g, Functor (mt (F.Record ks)), FI.RecVec cs)
+  => MR.GroupMap ec mt (F.Record ks) (F.FrameRec cs)
+  -> MR.Gather ec g mt (F.Record ks) (F.Record cs) (F.FrameRec cs)
+gatherRecordFrame = MR.gatherApplicativeMonoid
+
+mapReduceFrame
+  :: ( ec e
+     , Functor g
+     , Functor (MR.MapFoldT mm x)
+     , Monoid e
+     , Monoid (mt (F.Record ks) [F.Record cs])
+     , Foldable g
+     )
+  => MR.GroupMap ec mt (F.Record ks) [F.Record cs]
+  -> MR.Unpack mm g x y
+  -> MR.Assign keyC (F.Record ks) y (F.Record cs)
+  -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
+  -> MR.MapFoldT mm x e
+mapReduceFrame gm unpack assign reduce = MR.mapGatherReduceFold
+  (MR.uagMapAllGatherEachFold gm unpack assign (gatherRecordList gm))
+  reduce
+
+-- this is slightly too general to use the above
+-- if h x ~ [F.Record as], then these are equivalent
 aggregateMonoidalF
   :: forall ks rs as h x cs f g
    . ( ks F.⊆ as
@@ -68,7 +117,8 @@ aggregateMonoidalF
   -> (h x -> F.Record cs)
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 aggregateMonoidalF unpack process extract = MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold (MR.Unpack unpack)
+  (MR.uagMapAllGatherEachFold MR.groupMap
+                              (MR.Unpack unpack)
                               (assignFrame @ks @as)
                               (MR.gatherMonoid MR.groupMap process)
   )
