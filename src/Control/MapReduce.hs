@@ -87,7 +87,6 @@ assign getKey getCols = Assign (\y -> (getKey y, getCols y))
 
 -- | takes (k,c) and then allows foldMapping over (k,d) where d is some way of combining c's.
 -- d could be [c] or Seq c or c itself if c is a monoid
--- The constraint parameter is here so we can add NFData when we need it in the parallel versions
 data Gatherer (eConst :: Type -> Constraint) gt k c d =
   Gatherer
   {
@@ -100,6 +99,8 @@ data Gatherer (eConst :: Type -> Constraint) gt k c d =
 class Empty x
 instance Empty x
 
+-- this one is fastest in simple tests.  And close to linear, prolly the expected N *log N
+-- monoidal map based ones are slower at even 5000 rows and seem to grow more like N*sqrt(N)
 gathererSequence
   :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
 gathererSequence toSG =
