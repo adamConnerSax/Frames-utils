@@ -10,3 +10,4 @@ cabal.project.local
 *.png
 TAGS
 .ghc*
+bench/*.html

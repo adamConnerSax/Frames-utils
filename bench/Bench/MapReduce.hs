@@ -9,8 +9,9 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE ConstraintKinds           #-}
 module Bench.MapReduce
-  ( benchMapReduceIO
+  ( benchMapReduce
   )
 where
 
@@ -40,39 +41,33 @@ import           Numeric.LinearAlgebra          ( R
 
 
 
+
+createData :: Int -> IO (F.FrameRec AllCols, String)
 createData rows = do
   let vars   = unweighted rows
       yNoise = 1.0
       unweighted n = List.replicate n (1.0)
-  noisyData vars yNoise (LA.fromList [1.0, 2.2]) >>= makeFrame vars
+  dat <- noisyData vars yNoise (LA.fromList [1.0, 2.2]) >>= makeFrame vars
+  let nonsense = "Nonsense"
+  return (dat,nonsense)
 
 
 benchAvgXYByLabel dat = bgroup
-  ("avgXY: " ++ (show $ FL.fold FL.length dat) ++ " rows")
-  [ bench "serial" $ nf (FL.fold mrAvgXYByLabel) dat
-  , bench "parallel reduce" $ nf (FL.fold mrAvgXYByLabelP) dat
-  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
+  (show $ FL.fold FL.length dat)
+  [ bench "serial (strict)" $ nf (FL.fold $ mrAvgXYByLabel MR.groupMapStrict) dat
+  , bench "serial (lazy)" $ nf (FL.fold $ mrAvgXYByLabel MR.groupMapLazy) dat
+  , bench "serial (hash)" $ nf (FL.fold $ mrAvgXYByLabel MR.groupHashMap) dat
+  , bench "parallel reduce (strict)" $ nf (FL.fold $ mrAvgXYByLabel MRP.parReduceGroupMap) dat
+--  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
   ]
 
-
-
-benchMapReduceIO :: IO Benchmark
-benchMapReduceIO = do
-  dat1000  <- createData 1000
-  dat5000  <- createData 5000
-  dat10000 <- createData 10000
-  dat15000 <- createData 15000
-  dat20000 <- createData 20000
-
-  return $ bgroup
-    "Map-Reduce"
-    [ benchAvgXYByLabel dat1000
-    , benchAvgXYByLabel dat5000
-    , benchAvgXYByLabel dat10000
-    , benchAvgXYByLabel dat15000
-    , benchAvgXYByLabel dat20000
-    ]
-
+benchMapReduce :: Benchmark
+benchMapReduce = bgroup
+  "MapReduce"
+  [ bgroup "AvgXYByLabel" $ fmap
+      (\x -> env (createData x) (\ ~(dat,nonsense) -> benchAvgXYByLabel dat))
+      [5000, 20000]
+  ]
 
 type Label = "label" F.:-> T.Text
 type Y = "y" F.:-> Double
@@ -115,11 +110,19 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r))
                 FL.maximum
 
 -- put them together
-mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapReduceFrame MR.groupMap
+--mrAvgXYByLabel :: MR.GroupMap -> FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
+mrAvgXYByLabel gm = MR.mapReduceFrame gm
+                    noUnpack
+                    assignToLabels
+                    (MR.foldAndAddKey averageF)
+
+{-
+mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
+mrAvgXYByLabelStrict = MR.mapReduceFrame MR.groupMapStrict
                                    noUnpack
                                    assignToLabels
                                    (MR.foldAndAddKey averageF)
+
 
 mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
 mrAvgXYByLabelP = MR.mapReduceFrame MRP.parReduceGroupMap
@@ -133,7 +136,7 @@ mrAvgXYByLabelP2 = MR.mapReduceFrame
   noUnpack
   assignToLabels
   (MR.foldAndAddKey averageF)
-
+-}
 
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)

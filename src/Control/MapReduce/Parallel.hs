@@ -34,7 +34,7 @@ import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as F
 import qualified Data.List                     as L
 import qualified Data.List.Split               as L
-import qualified Data.Map.Monoidal             as MM
+import qualified Data.Map.Monoidal.Strict      as MM
 import qualified Data.HashMap.Monoidal         as HMM
 import           Data.Monoid                    ( Monoid )
 

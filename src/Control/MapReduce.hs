@@ -22,7 +22,8 @@ module Control.MapReduce where
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( join )
 import           Data.Functor.Identity          ( Identity(Identity) )
-import qualified Data.Map.Monoidal             as MM
+import qualified Data.Map.Monoidal.Strict      as MML
+import qualified Data.Map.Monoidal.Strict      as MMS
 import qualified Data.HashMap.Monoidal         as HMM
 import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
@@ -87,12 +88,19 @@ data GroupMap (eConst :: Type -> Constraint) m k c =
 class Empty x
 instance Empty x
 
-groupMap :: (Semigroup c, Ord k) => GroupMap Empty MM.MonoidalMap k c
-groupMap = GroupMap
-  (MM.fromListWith (<>) . FL.fold FL.list)
-  MM.foldMapWithKey
-  (\doOneM -> fmap (foldMap id) . MM.traverseWithKey doOneM)
-  MM.toList
+groupMapStrict :: (Semigroup c, Ord k) => GroupMap Empty MMS.MonoidalMap k c
+groupMapStrict = GroupMap
+  (MMS.fromListWith (<>) . FL.fold FL.list)
+  MMS.foldMapWithKey
+  (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
+  MMS.toList
+
+groupMapLazy :: (Semigroup c, Ord k) => GroupMap Empty MML.MonoidalMap k c
+groupMapLazy = GroupMap
+  (MML.fromListWith (<>) . FL.fold FL.list)
+  MML.foldMapWithKey
+  (\doOneM -> fmap (foldMap id) . MML.traverseWithKey doOneM)
+  MML.toList
 
 groupHashMap
   :: (Hashable k, Eq k, Semigroup c) => GroupMap Empty HMM.MonoidalHashMap k c
@@ -101,6 +109,26 @@ groupHashMap = GroupMap
   (\f -> foldMap (uncurry f) . HMM.toList)
   (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . HMM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
   HMM.toList
+
+{-
+data Gatherer m k c d =
+  Gatherer
+  {
+    empty :: m k c
+  , fromFoldable :: (forall g. Foldable g => g (k,c) -> m k c)
+  , append :: m k c -> m k c -> m k c
+  , toKeyedList :: m k c -> [(k,d)]
+--  , foldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> c -> e) -> m k c -> e)
+--  , foldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> c -> n e) -> m k c -> n e)
+--  , toList :: m k c -> [(k,c)]
+  }
+
+type KeyValueList k c = [(k,c)]
+
+gathererList :: Gatherer KeyValueList k c [c]
+gathererList = Gatherer [] (FL.fold FL.list) (++) (pure . sortOn fst 
+-}
+
 
 -- | `Gather` assembles items with the same key
 data Gather (eConst :: Type -> Constraint) g mt k c d where

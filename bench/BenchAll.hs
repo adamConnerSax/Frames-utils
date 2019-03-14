@@ -1,11 +1,10 @@
 import           Criterion.Main
 
-import           Bench.MapReduce                ( benchMapReduceIO )
+import           Bench.MapReduce                ( benchMapReduce )
 
-benchesIO :: IO [Benchmark]
-benchesIO = sequence [benchMapReduceIO]
+benches :: [Benchmark]
+benches = [benchMapReduce]
 
 main = do
-  benches <- benchesIO
   defaultMain benches
 

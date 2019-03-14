@@ -36,6 +36,7 @@ import qualified Control.Foldl                 as FL
 import           Data.Functor.Identity          ( Identity(Identity) )
 import qualified Data.Map.Monoidal             as MM
 import qualified Data.HashMap.Monoidal         as HMM
+import qualified Data.Hashable                 as Hash
 import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
                                                 )
@@ -48,6 +49,14 @@ import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
+
+
+instance Hash.Hashable (F.Record '[]) where
+  hash = const 0
+  hashWithSalt s = const s -- TODO: this seems BAD!!
+
+instance (V.KnownField t, Hash.Hashable (V.Snd t), Hash.Hashable (F.Record rs), rs F.⊆ (t ': rs)) => Hash.Hashable (F.Record (t ': rs)) where
+  hashWithSalt s r = s `Hash.hashWithSalt` (F.rgetField @t r) `Hash.hashWithSalt` (F.rcast @rs r)
 
 assignFrame
   :: forall ks cs rs
@@ -117,9 +126,9 @@ aggregateMonoidalF
   -> (h x -> F.Record cs)
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 aggregateMonoidalF unpack process extract = MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold MR.groupMap
+  (MR.uagMapAllGatherEachFold MR.groupMapStrict
                               (MR.Unpack unpack)
                               (assignFrame @ks @as)
-                              (MR.gatherMonoid MR.groupMap process)
+                              (MR.gatherMonoid MR.groupMapStrict process)
   )
   (reduceAndAddKey extract)
