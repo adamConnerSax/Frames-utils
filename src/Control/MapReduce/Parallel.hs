@@ -19,9 +19,8 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.MapReduce.Parallel
   ( module Control.MapReduce
-  , parReduceGroupMap
-  , parFoldGroupMap
-  , parAllGroupMap
+  , parReduceGatherer
+  , parReduceGatherer2
   , parFoldMonoid
   , parFoldMonoidDC
   )
@@ -34,26 +33,61 @@ import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as F
 import qualified Data.List                     as L
 import qualified Data.List.Split               as L
-import qualified Data.Map.Monoidal.Strict      as MM
+import qualified Data.Sequence                 as Seq
+import qualified Data.Map                      as M
+import qualified Data.Map.Monoidal.Strict      as MMS
+import qualified Data.Map.Monoidal             as MML
 import qualified Data.HashMap.Monoidal         as HMM
 import           Data.Monoid                    ( Monoid )
 
 import qualified Control.Parallel.Strategies   as PS
 
--- | Use these group maps when building a Control.MapReduce.Gather or in a call to Control.MapReduce.mapReduceFold
+-- | Use these in a call to Control.MapReduce.mapReduceFold
 
-parReduceGroupMap
-  :: (Semigroup c, Ord k) => GroupMap PS.NFData MM.MonoidalMap k c
-parReduceGroupMap = GroupMap
-  (MM.fromListWith (<>) . FL.fold FL.list)
-  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MM.toList)
+parReduceGatherer
+  :: (Semigroup d, Ord k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (MML.MonoidalMap k d) k c d
+parReduceGatherer toSG = Gatherer
+  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
+  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
   (\doOneM ->
     fmap (foldMap id)
       . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
-      . MM.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+      . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
   )
-  MM.toList
 
+parReduceGatherer2
+  :: (Semigroup d, Ord k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
+parReduceGatherer2 toSG
+  = let seqToMap =
+          M.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
+    in
+      Gatherer
+        (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
+        (\doOne -> foldMap id . parMapEach (uncurry doOne) . M.toList . seqToMap
+        )
+        (\doOneM ->
+          fmap (foldMap id)
+            . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
+            . M.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+            . seqToMap
+        )
+
+
+{-
+        (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
+        )
+        (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
+        (\doOneM ->
+          fmap (foldMap id)
+            . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
+            . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+        )
+-}
+{-
 parFoldGroupMap
   :: forall c k
    . (Semigroup c, Ord k, PS.NFData c)
@@ -80,7 +114,7 @@ parAllGroupMap foldMonoid = GroupMap
       . MM.traverseWithKey doOneM
   )
   MM.toList
-
+-}
 
 parMapEach :: PS.NFData b => (a -> b) -> [a] -> [b]
 parMapEach = PS.parMap (PS.rparWith PS.rdeepseq)

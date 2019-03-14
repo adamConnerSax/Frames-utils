@@ -22,12 +22,14 @@ module Control.MapReduce where
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( join )
 import           Data.Functor.Identity          ( Identity(Identity) )
+import qualified Data.Map.Strict               as M
 import qualified Data.Map.Monoidal.Strict      as MML
 import qualified Data.Map.Monoidal.Strict      as MMS
-import qualified Data.HashMap.Monoidal         as HMM
+import qualified Data.HashMap.Monoidal         as MHM
 import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
                                                 )
+import           Data.Sequence                 as Seq
 import           Data.Hashable                  ( Hashable )
 import           Data.Kind                      ( Type
                                                 , Constraint
@@ -69,6 +71,12 @@ filter t = Unpack $ \x -> if t x then Just x else Nothing
 data Assign keyC k y c where
   Assign :: keyC k => (y -> (k, c)) -> Assign keyC k y c
 
+instance Functor (Assign keyC k y) where
+  fmap f (Assign g) = Assign (\y -> let (k,c) = g y in (k, f c))
+
+instance P.Profunctor (Assign keyC k) where
+  dimap l r (Assign g) = Assign (\z -> let (k,c) = g (l z) in (k, r c))
+
 assign
   :: forall keyC k y c . keyC k => (y -> k) -> (y -> c) -> Assign keyC k y c
 assign getKey getCols = Assign (\y -> (getKey y, getCols y))
@@ -76,92 +84,69 @@ assign getKey getCols = Assign (\y -> (getKey y, getCols y))
 -- Not a class because for the same map we may want different methods of folding and traversing
 -- E.g., for a parallel mapReduce
 -- That is also the reason we carry an extra constraint.  We'll need (NFData e) but only for the parallel version
-data GroupMap (eConst :: Type -> Constraint) m k c =
-  GroupMap
+
+-- | takes (k,c) and then allows foldMapping over (k,d) where d is some way of combining c's.
+-- d could be [c] or Seq c or c itself if c is a monoid
+-- The constraint parameter is here so we can add NFData when we need it in the parallel versions
+data Gatherer (eConst :: Type -> Constraint) gt k c d =
+  Gatherer
   {
-    fromFoldable :: (forall g. Foldable g => g (k,c) -> m k c)
-  , foldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> c -> e) -> m k c -> e)
-  , foldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> c -> n e) -> m k c -> n e)
-  , toList :: m k c -> [(k,c)]
+    foldInto :: (forall h. Foldable h => h (k,c) -> gt)
+  , gFoldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> d -> e) -> gt -> e)
+  , gFoldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> d -> n e) -> gt -> n e)
   }
 
+-- | represent an empty constraint
 class Empty x
 instance Empty x
 
-groupMapStrict :: (Semigroup c, Ord k) => GroupMap Empty MMS.MonoidalMap k c
-groupMapStrict = GroupMap
-  (MMS.fromListWith (<>) . FL.fold FL.list)
+gathererMMStrict
+  :: (Monoid d, Ord k) => (c -> d) -> Gatherer Empty (MMS.MonoidalMap k d) k c d
+gathererMMStrict toMonoid = Gatherer
+  (MMS.fromListWith (<>) . fmap (\(k, c) -> (k, toMonoid c)) . FL.fold FL.list)
   MMS.foldMapWithKey
   (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
-  MMS.toList
 
-groupMapLazy :: (Semigroup c, Ord k) => GroupMap Empty MML.MonoidalMap k c
-groupMapLazy = GroupMap
-  (MML.fromListWith (<>) . FL.fold FL.list)
+gathererMMLazy
+  :: (Monoid d, Ord k) => (c -> d) -> Gatherer Empty (MML.MonoidalMap k d) k c d
+gathererMMLazy toMonoid = Gatherer
+  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toMonoid c)) . FL.fold FL.list)
   MML.foldMapWithKey
-  (\doOneM -> fmap (foldMap id) . MML.traverseWithKey doOneM)
-  MML.toList
+  (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
 
-groupHashMap
-  :: (Hashable k, Eq k, Semigroup c) => GroupMap Empty HMM.MonoidalHashMap k c
-groupHashMap = GroupMap
-  (HMM.fromList . FL.fold FL.list)
-  (\f -> foldMap (uncurry f) . HMM.toList)
-  (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . HMM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
-  HMM.toList
-
-{-
-data Gatherer m k c d =
-  Gatherer
-  {
-    empty :: m k c
-  , fromFoldable :: (forall g. Foldable g => g (k,c) -> m k c)
-  , append :: m k c -> m k c -> m k c
-  , toKeyedList :: m k c -> [(k,d)]
---  , foldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> c -> e) -> m k c -> e)
---  , foldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> c -> n e) -> m k c -> n e)
---  , toList :: m k c -> [(k,c)]
-  }
-
-type KeyValueList k c = [(k,c)]
-
-gathererList :: Gatherer KeyValueList k c [c]
-gathererList = Gatherer [] (FL.fold FL.list) (++) (pure . sortOn fst 
--}
+gathererMHM
+  :: (Monoid d, Hashable k, Eq k)
+  => (c -> d)
+  -> Gatherer Empty (MHM.MonoidalHashMap k d) k c d
+gathererMHM toMonoid = Gatherer
+  (MHM.fromList . fmap (\(k, c) -> (k, toMonoid c)) . FL.fold FL.list)
+  (\f -> foldMap (uncurry f) . MHM.toList)
+  (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . MHM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
 
 
--- | `Gather` assembles items with the same key
-data Gather (eConst :: Type -> Constraint) g mt k c d where
-  Gather :: (g (k, c) -> mt k d) -> Gather eConst g mt k c d
+gathererSequence
+  :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
+gathererSequence toSG =
+  let seqToMap =
+        M.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
+  in  Gatherer (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
+               (\f s -> M.foldMapWithKey f $ seqToMap s)
+               (\f s -> fmap (foldMap id) . M.traverseWithKey f $ seqToMap s)
 
-instance Functor (mt k) => Functor (Gather ec g mt k d) where
-  fmap f (Gather h) = Gather $ fmap f . h
 
-instance (Functor g, Functor (mt k)) => P.Profunctor (Gather ec g mt k) where
-  dimap l r (Gather h) = Gather $ fmap r . h . fmap (\(k,x) -> (k, l x))
+gathererList
+  :: forall k c d
+   . (Monoid d, Ord k)
+  => (c -> d)
+  -> Gatherer Empty [(k, c)] k c d
+gathererList toMonoid =
+  let listToMap :: (Ord k, Monoid d) => [(k, c)] -> M.Map k d
+      listToMap = M.fromListWith (<>) . fmap (\(k, c) -> (k, toMonoid c))
+  in  Gatherer
+        (FL.fold FL.list)
+        (\f kvl -> M.foldMapWithKey f $ listToMap kvl)
+        (\f kvl -> fmap (foldMap id) . M.traverseWithKey f $ listToMap kvl)
 
-gatherMonoid
-  :: forall ec g mt k c d
-   . (Functor g, Foldable g, Monoid d)
-  => GroupMap ec mt k d
-  -> (c -> d)
-  -> Gather ec g mt k c d
-gatherMonoid gm toMonoid =
-  Gather $ fromFoldable gm . fmap (\(k, c) -> (k, toMonoid c))
-
-gatherApplicativeMonoid
-  :: forall ec g h mt k c
-   . (Functor g, Foldable g, Applicative h, Monoid (h c))
-  => GroupMap ec mt k (h c)
-  -> Gather ec g mt k c (h c)
-gatherApplicativeMonoid gm = gatherMonoid gm pure
-
-gatherLists
-  :: forall ec g mt k c
-   . (Functor g, Foldable g)
-  => GroupMap ec mt k [c]
-  -> Gather ec g mt k c [c]
-gatherLists = gatherApplicativeMonoid
 
 -- | `MapStep` is the map part of MapReduce
 -- it will be a combination of Unpack, Assign and Gather
@@ -207,69 +192,66 @@ mapFold :: MapStep mm x q -> MapFoldT mm x q
 mapFold (MapStepFold  f) = f
 mapFold (MapStepFoldM f) = f
 
-data MapGather mm x ec mt k d = MapGather { grouping :: GroupMap ec mt k d, mapStep :: MapStep mm x (mt k d) }
+data MapGather mm x ec gt k c d = MapGather { gatherer :: Gatherer ec gt k c d, mapStep :: MapStep mm x gt }
 
 -- Fundamentally 3 ways to combine these operations to produce a MapStep:
 -- group . fmap . <> . fmap : "MapEach "
 -- group . <> . fmap . fmap : "MapAllGroupOnce" 
 --  <> . group . fmap . fmap : "MapAllGroupEach"
 uagMapEachFold
-  :: (Monoid (g y), Functor g)
-  => GroupMap ec mt k d
+  :: (Monoid (g y), Functor g, Foldable g)
+  => Gatherer ec gt k c d
   -> Unpack mm g x y
   -> Assign keyC k y c
-  -> Gather ec g mt k c d
-  -> MapGather mm x ec mt k d -- MapStep mm x (mt k d)
-uagMapEachFold gm unpacker (Assign assign) (Gather gather) = MapGather
-  gm
-  mapStep
+  -> MapGather mm x ec gt k c d
+uagMapEachFold gatherer unpacker (Assign assign) = MapGather gatherer mapStep
  where
   mapStep = case unpacker of
     Unpack unpack ->
-      MapStepFold $ P.dimap unpack (gather . fmap assign) FL.mconcat
+      MapStepFold $ P.dimap unpack (foldInto gatherer . fmap assign) FL.mconcat
     UnpackM unpackM ->
       MapStepFoldM
         $ FL.premapM unpackM
-        $ fmap (gather . fmap assign)
+        $ fmap (foldInto gatherer . fmap assign)
         $ FL.generalize FL.mconcat
 
 uagMapAllGatherOnceFold
-  :: (Monoid (g (k, c)), Functor g)
-  => GroupMap ec mt k d
+  :: (Monoid (g (k, c)), Functor g, Foldable g)
+  => Gatherer ec gt k c d
   -> Unpack mm g x y
   -> Assign keyC k y c
-  -> Gather ec g mt k c d
-  -> MapGather mm x ec mt k d --MapStep mm x (mt k d)
-uagMapAllGatherOnceFold gm unpacker (Assign assign) (Gather gather) = MapGather
-  gm
+--  -> Gather ec g mt k c d
+  -> MapGather mm x ec gt k c d --MapStep mm x (mt k d)
+uagMapAllGatherOnceFold gatherer unpacker (Assign assign) = MapGather
+  gatherer
   mapStep
  where
   mapStep = case unpacker of
-    Unpack unpack ->
-      MapStepFold $ P.dimap (fmap assign . unpack) gather FL.mconcat
+    Unpack unpack -> MapStepFold
+      $ P.dimap (fmap assign . unpack) (foldInto gatherer) FL.mconcat
     UnpackM unpackM ->
       MapStepFoldM
         $ FL.premapM (fmap (fmap assign) . unpackM)
-        $ fmap gather
+        $ fmap (foldInto gatherer)
         $ FL.generalize FL.mconcat
 
 uagMapAllGatherEachFold
-  :: (Functor g, Monoid (mt k d))
-  => GroupMap ec mt k d
+  :: (Functor g, Foldable g, Monoid gt)
+  => Gatherer ec gt k c d
   -> Unpack mm g x y
   -> Assign keyC k y c
-  -> Gather ec g mt k c d
-  -> MapGather mm x ec mt k d --MapStep mm x (mt k d)
-uagMapAllGatherEachFold gm unpacker (Assign assign) (Gather gather) = MapGather
-  gm
+--  -> Gather ec g mt k c d
+  -> MapGather mm x ec gt k c d --MapStep mm x (mt k d)
+uagMapAllGatherEachFold gatherer unpacker (Assign assign) = MapGather
+  gatherer
   mapStep
  where
   mapStep = case unpacker of
-    Unpack unpack ->
-      MapStepFold $ FL.premap (gather . fmap assign . unpack) FL.mconcat
+    Unpack unpack -> MapStepFold
+      $ FL.premap (foldInto gatherer . fmap assign . unpack) FL.mconcat
     UnpackM unpackM ->
       MapStepFoldM
-        $ FL.premapM (fmap (gather . fmap assign) . unpackM)
+        $ FL.premapM (fmap (foldInto gatherer . fmap assign) . unpackM)
         $ FL.generalize FL.mconcat
 
 data Reduce (mm :: Maybe (Type -> Type)) k h x e where
@@ -328,27 +310,100 @@ foldAndRelabelM fld relabel = ReduceFoldM $ \k -> fmap (relabel k) fld
 
 mapReduceFold
   :: (Foldable h, Monoid e, ec e, Functor (MapFoldT mm x))
-  => GroupMap ec mt k (h y)
-  -> MapStep mm x (mt k (h y))
-  -> Reduce mm k h y e
+  => Gatherer ec gt k y (h z)
+  -> MapStep mm x gt
+  -> Reduce mm k h z e
   -> MapFoldT mm x e
-mapReduceFold gm ms reducer = case reducer of
-  Reduce f -> fmap (foldMapWithKey gm f) $ mapFold ms
+mapReduceFold gatherer ms reducer = case reducer of
+  Reduce f -> fmap (gFoldMapWithKey gatherer f) $ mapFold ms
   ReduceFold f ->
-    fmap (foldMapWithKey gm (\k hx -> FL.fold (f k) hx)) $ mapFold ms
-  ReduceM f -> monadicMapFoldM (foldMapWithKeyM gm f) $ mapFold ms
+    fmap (gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx)) $ mapFold ms
+  ReduceM f -> monadicMapFoldM (gFoldMapWithKeyM gatherer f) $ mapFold ms
   ReduceFoldM f ->
-    monadicMapFoldM (foldMapWithKeyM gm (\k hx -> FL.foldM (f k) hx))
+    monadicMapFoldM (gFoldMapWithKeyM gatherer (\k hx -> FL.foldM (f k) hx))
       $ mapFold ms
 
 mapGatherReduceFold
   :: (Foldable h, Monoid e, ec e, Functor (MapFoldT mm x))
-  => MapGather mm x ec mt k (h y)
-  -> Reduce mm k h y e
+  => MapGather mm x ec gt k y (h z)
+  -> Reduce mm k h z e
   -> MapFoldT mm x e
-mapGatherReduceFold (MapGather gm mapStep) = mapReduceFold gm mapStep
+mapGatherReduceFold (MapGather gatherer mapStep) =
+  mapReduceFold gatherer mapStep
 
 
 monadicMapFoldM :: Monad m => (a -> m b) -> FL.FoldM m x a -> FL.FoldM m x b
 monadicMapFoldM f (FL.FoldM step begin done) = FL.FoldM step begin done'
   where done' x = done x >>= f
+
+
+--
+
+{-
+data GroupMap (eConst :: Type -> Constraint) m k c =
+  GroupMap
+  {
+    fromFoldable :: (forall g. Foldable g => g (k,c) -> m k c)
+  , foldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> c -> e) -> m k c -> e)
+  , foldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> c -> n e) -> m k c -> n e)
+  , toList :: m k c -> [(k,c)]
+  }
+
+groupMapStrict :: (Semigroup c, Ord k) => GroupMap Empty MMS.MonoidalMap k c
+groupMapStrict = GroupMap
+  (MMS.fromListWith (<>) . FL.fold FL.list)
+  MMS.foldMapWithKey
+  (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
+  MMS.toList
+
+groupMapLazy :: (Semigroup c, Ord k) => GroupMap Empty MML.MonoidalMap k c
+groupMapLazy = GroupMap
+  (MML.fromListWith (<>) . FL.fold FL.list)
+  MML.foldMapWithKey
+  (\doOneM -> fmap (foldMap id) . MML.traverseWithKey doOneM)
+  MML.toList
+
+groupHashMap
+  :: (Hashable k, Eq k, Semigroup c) => GroupMap Empty HMM.MonoidalHashMap k c
+groupHashMap = GroupMap
+  (HMM.fromList . FL.fold FL.list)
+  (\f -> foldMap (uncurry f) . HMM.toList)
+  (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . HMM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
+  HMM.toList
+-}
+
+
+{-
+-- | `Gather` assembles items with the same key
+data Gather (eConst :: Type -> Constraint) g mt k c d where
+  Gather :: (g (k, c) -> mt k d) -> Gather eConst g mt k c d
+
+instance Functor (mt k) => Functor (Gather ec g mt k d) where
+  fmap f (Gather h) = Gather $ fmap f . h
+
+instance (Functor g, Functor (mt k)) => P.Profunctor (Gather ec g mt k) where
+  dimap l r (Gather h) = Gather $ fmap r . h . fmap (\(k,x) -> (k, l x))
+
+gatherMonoid
+  :: forall ec g mt k c d
+   . (Functor g, Foldable g, Monoid d)
+  => GroupMap ec mt k d
+  -> (c -> d)
+  -> Gather ec g mt k c d
+gatherMonoid gm toMonoid =
+  Gather $ fromFoldable gm . fmap (\(k, c) -> (k, toMonoid c))
+
+gatherApplicativeMonoid
+  :: forall ec g h mt k c
+   . (Functor g, Foldable g, Applicative h, Monoid (h c))
+  => GroupMap ec mt k (h c)
+  -> Gather ec g mt k c (h c)
+gatherApplicativeMonoid gm = gatherMonoid gm pure
+
+gatherLists
+  :: forall ec g mt k c
+   . (Functor g, Foldable g)
+  => GroupMap ec mt k [c]
+  -> Gather ec g mt k c [c]
+gatherLists = gatherApplicativeMonoid
+-}

@@ -23,8 +23,8 @@ module Frames.MapReduce
   , assignFrame
   , reduceAndAddKey
   , foldAndAddKey
-  , gatherRecordList
-  , gatherRecordFrame
+--  , gatherRecordList
+--  , gatherRecordFrame
   , mapReduceFrame
   )
 where
@@ -65,7 +65,8 @@ assignFrame
 assignFrame = MR.assign (F.rcast @ks) (F.rcast @cs)
 
 reduceAndAddKey
-  :: FI.RecVec ((ks V.++ cs))
+  :: forall ks cs h x
+   . FI.RecVec ((ks V.++ cs))
   => (h x -> F.Record cs)
   -> MR.Reduce 'Nothing (F.Record ks) h x (F.FrameRec (ks V.++ cs))
 reduceAndAddKey process =
@@ -78,6 +79,7 @@ foldAndAddKey
 foldAndAddKey fld =
   fmap (F.toFrame . pure @[]) $ MR.foldAndRelabel fld V.rappend
 
+{-
 -- g is the type we unpack to.  Identity, Maybe, [] are all possible.
 gatherRecordList
   :: (Functor g, Foldable g)
@@ -90,22 +92,23 @@ gatherRecordFrame
   => MR.GroupMap ec mt (F.Record ks) (F.FrameRec cs)
   -> MR.Gather ec g mt (F.Record ks) (F.Record cs) (F.FrameRec cs)
 gatherRecordFrame = MR.gatherApplicativeMonoid
+-}
 
 mapReduceFrame
   :: ( ec e
      , Functor g
      , Functor (MR.MapFoldT mm x)
      , Monoid e
-     , Monoid (mt (F.Record ks) [F.Record cs])
+     , Monoid gt
      , Foldable g
      )
-  => MR.GroupMap ec mt (F.Record ks) [F.Record cs]
+  => MR.Gatherer ec gt (F.Record ks) (F.Record cs) [F.Record cs]
   -> MR.Unpack mm g x y
   -> MR.Assign keyC (F.Record ks) y (F.Record cs)
   -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
   -> MR.MapFoldT mm x e
-mapReduceFrame gm unpack assign reduce = MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold gm unpack assign (gatherRecordList gm))
+mapReduceFrame gatherer unpack assign reduce = MR.mapGatherReduceFold
+  (MR.uagMapAllGatherEachFold gatherer unpack assign)
   reduce
 
 -- this is slightly too general to use the above
@@ -126,9 +129,8 @@ aggregateMonoidalF
   -> (h x -> F.Record cs)
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 aggregateMonoidalF unpack process extract = MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold MR.groupMapStrict
+  (MR.uagMapAllGatherEachFold (MR.gathererMMStrict process)
                               (MR.Unpack unpack)
                               (assignFrame @ks @as)
-                              (MR.gatherMonoid MR.groupMapStrict process)
   )
   (reduceAndAddKey extract)

@@ -54,10 +54,12 @@ createData rows = do
 
 benchAvgXYByLabel dat = bgroup
   (show $ FL.fold FL.length dat)
-  [ bench "serial (strict)" $ nf (FL.fold $ mrAvgXYByLabel MR.groupMapStrict) dat
-  , bench "serial (lazy)" $ nf (FL.fold $ mrAvgXYByLabel MR.groupMapLazy) dat
-  , bench "serial (hash)" $ nf (FL.fold $ mrAvgXYByLabel MR.groupHashMap) dat
-  , bench "parallel reduce (strict)" $ nf (FL.fold $ mrAvgXYByLabel MRP.parReduceGroupMap) dat
+  [ bench "serial (seq -> strict map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSequence pure)) dat
+--  , bench "serial (strict monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMStrict pure)) dat
+--  , bench "serial (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMLazy pure)) dat
+--  , bench "serial (monoidal hash map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMHM pure)) dat
+--  , bench "parallel reduce (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
+  , bench "parallel reduce (sequence -> strict map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer2 pure)) dat
 --  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
   ]
 
@@ -66,7 +68,7 @@ benchMapReduce = bgroup
   "MapReduce"
   [ bgroup "AvgXYByLabel" $ fmap
       (\x -> env (createData x) (\ ~(dat,nonsense) -> benchAvgXYByLabel dat))
-      [5000, 20000]
+      [5000, 20000, 50000, 100000]
   ]
 
 type Label = "label" F.:-> T.Text
@@ -94,8 +96,8 @@ assignDups = MR.assign @Ord @(F.Record '[IsDup])
   (F.rcast @'[Y, X, Weight])
 
 -- some gatherings
-gatherLists = MR.gatherRecordList
-gatherFrames = MR.gatherRecordFrame
+--gatherLists = MR.gatherRecordList
+--gatherFrames = MR.gatherRecordFrame
 
 -- some reductions
 --averageF :: FL.Fold (F.FrameRec '[X,Y]) F.Record '[X,Y]
