@@ -100,17 +100,31 @@ data Gatherer (eConst :: Type -> Constraint) gt k c d =
 class Empty x
 instance Empty x
 
+gathererSequence
+  :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
+gathererSequence toSG =
+  let seqToMap =
+        M.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
+  in  Gatherer (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
+               (\f s -> M.foldMapWithKey f $ seqToMap s)
+               (\f s -> fmap (foldMap id) . M.traverseWithKey f $ seqToMap s)
+
+
 gathererMMStrict
-  :: (Monoid d, Ord k) => (c -> d) -> Gatherer Empty (MMS.MonoidalMap k d) k c d
-gathererMMStrict toMonoid = Gatherer
-  (MMS.fromListWith (<>) . fmap (\(k, c) -> (k, toMonoid c)) . FL.fold FL.list)
+  :: (Semigroup d, Ord k)
+  => (c -> d)
+  -> Gatherer Empty (MMS.MonoidalMap k d) k c d
+gathererMMStrict toSG = Gatherer
+  (MMS.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
   MMS.foldMapWithKey
   (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
 
 gathererMMLazy
-  :: (Monoid d, Ord k) => (c -> d) -> Gatherer Empty (MML.MonoidalMap k d) k c d
-gathererMMLazy toMonoid = Gatherer
-  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toMonoid c)) . FL.fold FL.list)
+  :: (Semigroup d, Ord k)
+  => (c -> d)
+  -> Gatherer Empty (MML.MonoidalMap k d) k c d
+gathererMMLazy toSG = Gatherer
+  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
   MML.foldMapWithKey
   (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
 
@@ -123,29 +137,6 @@ gathererMHM toMonoid = Gatherer
   (\f -> foldMap (uncurry f) . MHM.toList)
   (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . MHM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
 
-
-gathererSequence
-  :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
-gathererSequence toSG =
-  let seqToMap =
-        M.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
-  in  Gatherer (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
-               (\f s -> M.foldMapWithKey f $ seqToMap s)
-               (\f s -> fmap (foldMap id) . M.traverseWithKey f $ seqToMap s)
-
-
-gathererList
-  :: forall k c d
-   . (Monoid d, Ord k)
-  => (c -> d)
-  -> Gatherer Empty [(k, c)] k c d
-gathererList toMonoid =
-  let listToMap :: (Ord k, Monoid d) => [(k, c)] -> M.Map k d
-      listToMap = M.fromListWith (<>) . fmap (\(k, c) -> (k, toMonoid c))
-  in  Gatherer
-        (FL.fold FL.list)
-        (\f kvl -> M.foldMapWithKey f $ listToMap kvl)
-        (\f kvl -> fmap (foldMap id) . M.traverseWithKey f $ listToMap kvl)
 
 
 -- | `MapStep` is the map part of MapReduce

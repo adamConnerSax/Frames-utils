@@ -20,7 +20,7 @@
 module Control.MapReduce.Parallel
   ( module Control.MapReduce
   , parReduceGatherer
-  , parReduceGatherer2
+  , parReduceGathererMM
   , parFoldMonoid
   , parFoldMonoidDC
   )
@@ -44,24 +44,12 @@ import qualified Control.Parallel.Strategies   as PS
 
 -- | Use these in a call to Control.MapReduce.mapReduceFold
 
+
 parReduceGatherer
   :: (Semigroup d, Ord k)
   => (c -> d)
-  -> MR.Gatherer PS.NFData (MML.MonoidalMap k d) k c d
-parReduceGatherer toSG = Gatherer
-  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
-  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
-  (\doOneM ->
-    fmap (foldMap id)
-      . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
-      . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
-  )
-
-parReduceGatherer2
-  :: (Semigroup d, Ord k)
-  => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
-parReduceGatherer2 toSG
+parReduceGatherer toSG
   = let seqToMap =
           M.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
     in
@@ -77,16 +65,20 @@ parReduceGatherer2 toSG
         )
 
 
-{-
-        (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
-        )
-        (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
-        (\doOneM ->
-          fmap (foldMap id)
-            . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
-            . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
-        )
--}
+parReduceGathererMM
+  :: (Semigroup d, Ord k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (MML.MonoidalMap k d) k c d
+parReduceGathererMM toSG = Gatherer
+  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
+  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
+  (\doOneM ->
+    fmap (foldMap id)
+      . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
+      . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+  )
+
+
 {-
 parFoldGroupMap
   :: forall c k

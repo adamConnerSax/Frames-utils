@@ -59,6 +59,7 @@ templateVars = M.fromList
 --  , ("tufte","True")
   ]
 
+-- this is annoying.  Where should this instance live?
 type instance FI.VectorFor (Maybe a) = VB.Vector
 
 mapReduceNotesMD
@@ -110,9 +111,6 @@ unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 assignToLabels = MR.assignFrame @'[Label] @[Y,X,Weight]
 assignDups = MR.assign @Ord @(F.Record '[IsDup]) (\r -> (T.length (F.rgetField @Label r) > 1) F.&: V.RNil) (F.rcast @[Y,X,Weight])
 
--- some gatherings
-gatherLists = MR.gatherRecordList
-gatherFrames = MR.gatherRecordFrame
 
 -- some reductions
 --averageF :: FL.Fold (F.FrameRec '[X,Y]) F.Record '[X,Y]
@@ -126,13 +124,13 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.re
 
 -- put them together
 mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapReduceFrame MR.groupMap noUnpack assignToLabels (MR.foldAndAddKey averageF)
+mrAvgXYByLabel = MR.mapReduceFrame (MR.gathererSequence pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabelP = MR.mapReduceFrame MRP.parReduceGroupMap noUnpack assignToLabels (MR.foldAndAddKey averageF)
+mrAvgXYByLabelP = MR.mapReduceFrame (MRP.parReduceGatherer pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 mrMaxXYByLabelABC :: FL.Fold (F.Record AllCols) (F.FrameRec '[Label,ZM])
-mrMaxXYByLabelABC = MR.mapReduceFrame MRP.parReduceGroupMap (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
+mrMaxXYByLabelABC = MR.mapReduceFrame (MRP.parReduceGatherer pure) (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
 
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)
