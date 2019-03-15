@@ -109,7 +109,7 @@ unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 
 -- some assignings
 assignToLabels = MR.assignFrame @'[Label] @[Y,X,Weight]
-assignDups = MR.assign @Ord @(F.Record '[IsDup]) (\r -> (T.length (F.rgetField @Label r) > 1) F.&: V.RNil) (F.rcast @[Y,X,Weight])
+assignDups = MR.assign @(F.Record '[IsDup]) (\r -> (T.length (F.rgetField @Label r) > 1) F.&: V.RNil) (F.rcast @[Y,X,Weight])
 
 
 -- some reductions
@@ -124,7 +124,7 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.re
 
 -- put them together
 mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapReduceFrame (MR.gathererSequence pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)
+mrAvgXYByLabel = MR.mapReduceFrame (MR.defaultHashableGatherer pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
 mrAvgXYByLabelP = MR.mapReduceFrame (MRP.parReduceGatherer pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)

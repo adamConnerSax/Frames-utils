@@ -22,6 +22,8 @@ module Frames.Aggregations.Folds
   , unpackAggregateAndFoldSubsetF
   , aggregateAndFoldSubsetF
 --  , liftFold
+  , FoldRecord(..)
+  , sequenceRecFold
   , FoldEndo(..)
   , sequenceEndoFolds
   , foldAll
@@ -164,7 +166,9 @@ instance (EndoFieldFoldsToRecordFolds rs, rs F.⊆ (r ': rs), V.RMap rs) => Endo
 
 -- can we do all/some of this via F.Rec (Fold as) bs?
 sequenceRecFold
-  :: F.Rec (FoldRecord F.ElField as) rs -> FL.Fold (F.Record as) (F.Record rs)
+  :: forall as rs
+   . F.Rec (FoldRecord F.ElField as) rs
+  -> FL.Fold (F.Record as) (F.Record rs)
 sequenceRecFold = V.rtraverse unFoldRecord
 
 

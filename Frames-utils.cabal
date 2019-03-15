@@ -95,9 +95,11 @@ library
                   , prettyprinter
                   , random
                   , readable
+                  , sort
                   , split
                   , time
                   , text
+                  , unordered-containers
                   , hvega
                   , void
 
@@ -125,7 +127,7 @@ executable FrameRegressions
 
 executable MapReduce
   import: deps
-  ghc-options: -Wall -O2 -threaded -rtsopts 
+  ghc-options: -Wall -O2 -threaded -rtsopts "-with-rtsopts=-N" -funbox-strict-fields 
   build-depends: base
                , data-default
                , Frames-utils

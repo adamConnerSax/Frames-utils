@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE ConstraintKinds           #-}
 module Bench.MapReduce
-  ( benchMapReduce
+  ( benchMapReduceIO
   )
 where
 
@@ -42,34 +42,39 @@ import           Numeric.LinearAlgebra          ( R
 
 
 
-createData :: Int -> IO (F.FrameRec AllCols, String)
+createData :: Int -> IO (F.FrameRec AllCols)
 createData rows = do
+  putStrLn $ "Creating " ++ show rows ++ " rows of data."
   let vars   = unweighted rows
       yNoise = 1.0
       unweighted n = List.replicate n (1.0)
-  dat <- noisyData vars yNoise (LA.fromList [1.0, 2.2]) >>= makeFrame vars
-  let nonsense = "Nonsense"
-  return (dat,nonsense)
-
+  noisyData vars yNoise (LA.fromList [1.0, 2.2]) >>= makeFrame vars
 
 benchAvgXYByLabel dat = bgroup
   (show $ FL.fold FL.length dat)
-  [ bench "serial (seq -> strict map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSequence pure)) dat
+  [ bench "serial (seq -> strict map)"
+    $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictMap pure)) dat
+  , bench "serial (seq -> strict hash map)"
+    $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictHashMap pure)) dat
+  , bench "serial (seq -> strict hash map)"
+    $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToSortedList pure)) dat
+
 --  , bench "serial (strict monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMStrict pure)) dat
 --  , bench "serial (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMLazy pure)) dat
 --  , bench "serial (monoidal hash map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMHM pure)) dat
 --  , bench "parallel reduce (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
-  , bench "parallel reduce (sequence -> strict map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer2 pure)) dat
+  , bench "parallel reduce (sequence -> strict map)"
+    $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
 --  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
   ]
 
-benchMapReduce :: Benchmark
-benchMapReduce = bgroup
-  "MapReduce"
-  [ bgroup "AvgXYByLabel" $ fmap
-      (\x -> env (createData x) (\ ~(dat,nonsense) -> benchAvgXYByLabel dat))
-      [5000, 20000, 50000, 100000]
-  ]
+benchMapReduceIO :: IO Benchmark
+benchMapReduceIO = do
+  putStrLn "Creating data for benchmarks to use..."
+  dat <- mapM createData [5000, 20000, 50000, 100000]
+  return
+    $ bgroup "MapReduce" [bgroup "AvgXYByLabel" $ fmap benchAvgXYByLabel dat]
+
 
 type Label = "label" F.:-> T.Text
 type Y = "y" F.:-> Double
@@ -91,7 +96,7 @@ unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 
 -- some assignings
 assignToLabels = MR.assignFrame @'[Label] @'[Y, X, Weight]
-assignDups = MR.assign @Ord @(F.Record '[IsDup])
+assignDups = MR.assign @(F.Record '[IsDup])
   (\r -> (T.length (F.rgetField @Label r) > 1) F.&: V.RNil)
   (F.rcast @'[Y, X, Weight])
 
@@ -113,10 +118,8 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r))
 
 -- put them together
 --mrAvgXYByLabel :: MR.GroupMap -> FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel gm = MR.mapReduceFrame gm
-                    noUnpack
-                    assignToLabels
-                    (MR.foldAndAddKey averageF)
+mrAvgXYByLabel gm =
+  MR.mapReduceFrame gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 {-
 mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)

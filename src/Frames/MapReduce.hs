@@ -25,7 +25,8 @@ module Frames.MapReduce
   , foldAndAddKey
 --  , gatherRecordList
 --  , gatherRecordFrame
-  , mapReduceFrame
+  , mapReduceGF
+  , mapRListF
   )
 where
 
@@ -61,7 +62,7 @@ instance (V.KnownField t, Hash.Hashable (V.Snd t), Hash.Hashable (F.Record rs), 
 assignFrame
   :: forall ks cs rs
    . (Ord (F.Record ks), ks F.⊆ rs, cs F.⊆ rs)
-  => MR.Assign Ord (F.Record ks) (F.Record rs) (F.Record cs)
+  => MR.Assign (F.Record ks) (F.Record rs) (F.Record cs)
 assignFrame = MR.assign (F.rcast @ks) (F.rcast @cs)
 
 reduceAndAddKey
@@ -94,7 +95,7 @@ gatherRecordFrame
 gatherRecordFrame = MR.gatherApplicativeMonoid
 -}
 
-mapReduceFrame
+mapReduceGF
   :: ( ec e
      , Functor g
      , Functor (MR.MapFoldT mm x)
@@ -104,12 +105,34 @@ mapReduceFrame
      )
   => MR.Gatherer ec gt (F.Record ks) (F.Record cs) [F.Record cs]
   -> MR.Unpack mm g x y
-  -> MR.Assign keyC (F.Record ks) y (F.Record cs)
+  -> MR.Assign (F.Record ks) y (F.Record cs)
   -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
   -> MR.MapFoldT mm x e
-mapReduceFrame gatherer unpack assign reduce = MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold gatherer unpack assign)
-  reduce
+mapReduceGF frameGatherer unpacker assigner reducer = MR.mapGatherReduceFold
+  (MR.uagMapAllGatherEachFold frameGatherer unpacker assigner)
+  reducer
+
+mapRListF
+  :: ( Functor g
+     , Functor (MR.MapFoldT mm x)
+     , Monoid e
+     , Foldable g
+     , Hashable (F.Record ks)
+     , Eq (F.Record ks)
+     )
+  => MR.Unpack mm g x y
+  -> MR.Assign (F.Record ks) y (F.Record cs)
+  -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
+  -> MR.MapFoldT mm x e
+mapRListF = mapReduceGF (MR.defaultHashableGatherer pure)
+{-
+  MR.mapGatherReduceFold
+  (MR.uagMapAllGatherEachFold (MR.defaultHashableGatherer pure)
+                              unpacker
+                              assigner
+  )
+  reducer
+-}
 
 -- this is slightly too general to use the above
 -- if h x ~ [F.Record as], then these are equivalent
