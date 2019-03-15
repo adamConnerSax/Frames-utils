@@ -56,9 +56,7 @@ benchAvgXYByLabel dat = bgroup
     $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictMap pure)) dat
   , bench "serial (seq -> strict hash map)"
     $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictHashMap pure)) dat
-  , bench "serial (seq -> strict hash map)"
-    $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToSortedList pure)) dat
-
+--  , bench "serial (seq -> sorted list)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToSortedList pure)) dat
 --  , bench "serial (strict monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMStrict pure)) dat
 --  , bench "serial (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMLazy pure)) dat
 --  , bench "serial (monoidal hash map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMHM pure)) dat
@@ -119,7 +117,7 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r))
 -- put them together
 --mrAvgXYByLabel :: MR.GroupMap -> FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
 mrAvgXYByLabel gm =
-  MR.mapReduceFrame gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
+  MR.mapReduceGF gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 {-
 mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
