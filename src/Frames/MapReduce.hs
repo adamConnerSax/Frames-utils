@@ -91,6 +91,7 @@ splitOnKeys
 splitOnKeys = assignKeysAndData @ks @cs
 {-# INLINABLE splitOnKeys #-}
 
+-- | 
 reduceAndAddKey
   :: forall ks cs h x
    . FI.RecVec ((ks V.++ cs))
@@ -105,23 +106,9 @@ foldAndAddKey
   => FL.Fold x (F.Record cs)
   -> MR.Reduce 'Nothing (F.Record ks) h x (F.FrameRec (ks V.++ cs))
 foldAndAddKey fld =
-  fmap (F.toFrame . pure @[]) $ MR.foldAndRelabel fld V.rappend
+  fmap (F.toFrame . pure @[]) $ MR.foldAndRelabel fld V.rappend  -- is Frame a reasonably fast thing for many appends?
 {-# INLINABLE foldAndAddKey #-}
 
-{-
--- g is the type we unpack to.  Identity, Maybe, [] are all possible.
-gatherRecordList
-  :: (Functor g, Foldable g)
-  => MR.GroupMap ec mt (F.Record ks) [F.Record cs]
-  -> MR.Gather ec g mt (F.Record ks) (F.Record cs) [F.Record cs]
-gatherRecordList = MR.gatherLists
-
-gatherRecordFrame
-  :: (Functor g, Foldable g, Functor (mt (F.Record ks)), FI.RecVec cs)
-  => MR.GroupMap ec mt (F.Record ks) (F.FrameRec cs)
-  -> MR.Gather ec g mt (F.Record ks) (F.Record cs) (F.FrameRec cs)
-gatherRecordFrame = MR.gatherApplicativeMonoid
--}
 
 mapReduceGF
   :: ( ec e

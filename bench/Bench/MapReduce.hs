@@ -50,6 +50,7 @@ createData rows = do
       unweighted n = List.replicate n (1.0)
   noisyData vars yNoise (LA.fromList [1.0, 2.2]) >>= makeFrame vars
 
+benchAvgXYByLabel :: F.FrameRec AllCols -> Benchmark
 benchAvgXYByLabel dat = bgroup
   (show $ FL.fold FL.length dat)
   [ bench "serial (seq -> strict map)"
@@ -61,8 +62,14 @@ benchAvgXYByLabel dat = bgroup
 --  , bench "serial (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMLazy pure)) dat
 --  , bench "serial (monoidal hash map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMHM pure)) dat
 --  , bench "parallel reduce (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
-  , bench "parallel reduce (sequence -> strict map)"
-    $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
+  , bench "parallel reduce (sequence -> strict hash map)"
+    $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashable pure)) dat
+  , bench "parallel map (seq -> strict map)"
+  $ nf (mrAvgXYByLabelPM 6 (MR.gathererSeqToStrictMap pure))
+  $ dat
+  , bench "parallel map/reduce (seq -> strict hash map)"
+  $ nf (mrAvgXYByLabelPM 6 (MRP.parReduceGathererHashable pure))
+  $ dat
 --  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
   ]
 
@@ -118,6 +125,11 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r))
 --mrAvgXYByLabel :: MR.GroupMap -> FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
 mrAvgXYByLabel gm =
   MR.mapReduceGF gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
+
+mrAvgXYByLabelPM n gm =
+  let (MRP.MapGather _ mapStep) =
+        MR.uagMapAllGatherEachFold gm noUnpack assignToLabels
+  in  MRP.parallelMapReduce @[] n gm mapStep (MR.foldAndAddKey averageF)
 
 {-
 mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)

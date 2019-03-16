@@ -76,7 +76,7 @@ asPandoc = do
                 . Log.wrapPrefix "Main"
                 . fmap BH.renderHtml
   htmlAsTextE <- runAllP $ P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF $ do
-    let rows = 20000
+    let rows :: Int = 20000
         vars = unweighted rows
         yNoise = 1.0
     Log.logLE Log.Info "Creating data"    
@@ -108,7 +108,7 @@ editLabel f r = F.rputField @Label (f (F.rgetField @Label r)) r -- this would be
 unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 
 -- some assignings
-assignToLabels = MR.assignFrame @'[Label] @[Y,X,Weight]
+assignToLabels = MR.assignKeys @'[Label]
 assignDups = MR.assign @(F.Record '[IsDup]) (\r -> (T.length (F.rgetField @Label r) > 1) F.&: V.RNil) (F.rcast @[Y,X,Weight])
 
 
@@ -123,14 +123,14 @@ maxX = P.dimap (F.rgetField @X) (FT.recordSingleton @ZM) FL.maximum
 maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.recordSingleton @ZM) FL.maximum
 
 -- put them together
-mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapReduceFrame (MR.defaultHashableGatherer pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)
+--mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
+mrAvgXYByLabel = MR.mapRListF noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 
 mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabelP = MR.mapReduceFrame (MRP.parReduceGatherer pure) noUnpack assignToLabels (MR.foldAndAddKey averageF)
+mrAvgXYByLabelP = MR.mapReduceGF (MRP.parReduceGatherer pure) noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 
 mrMaxXYByLabelABC :: FL.Fold (F.Record AllCols) (F.FrameRec '[Label,ZM])
-mrMaxXYByLabelABC = MR.mapReduceFrame (MRP.parReduceGatherer pure) (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
+mrMaxXYByLabelABC = MR.mapReduceGF (MRP.parReduceGatherer pure) (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
 
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)

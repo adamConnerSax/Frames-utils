@@ -19,10 +19,12 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.MapReduce.Parallel
   ( module Control.MapReduce
-  , parReduceGatherer
+  , parReduceGathererOrd
+  , parReduceGathererHashable
   , parReduceGathererMM
   , parFoldMonoid
   , parFoldMonoidDC
+  , parallelMapReduce
   )
 where
 
@@ -34,33 +36,62 @@ import qualified Data.Foldable                 as F
 import qualified Data.List                     as L
 import qualified Data.List.Split               as L
 import qualified Data.Sequence                 as Seq
-import qualified Data.Map                      as M
+import qualified Data.Map                      as ML
+import qualified Data.Map.Strict               as MS
+import           Data.Hashable                  ( Hashable )
+import qualified Data.HashMap.Strict           as HMS
 import qualified Data.Map.Monoidal.Strict      as MMS
 import qualified Data.Map.Monoidal             as MML
 import qualified Data.HashMap.Monoidal         as HMM
-import           Data.Monoid                    ( Monoid )
+import           Data.Monoid                    ( Monoid
+                                                , mconcat
+                                                )
 
 import qualified Control.Parallel.Strategies   as PS
 
 -- | Use these in a call to Control.MapReduce.mapReduceFold
 
 
-parReduceGatherer
+parReduceGathererOrd
   :: (Semigroup d, Ord k)
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
-parReduceGatherer toSG
+parReduceGathererOrd toSG
   = let seqToMap =
-          M.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
+          MS.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
     in
       Gatherer
         (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
-        (\doOne -> foldMap id . parMapEach (uncurry doOne) . M.toList . seqToMap
+        (\doOne ->
+          foldMap id . parMapEach (uncurry doOne) . MS.toList . seqToMap
         )
         (\doOneM ->
           fmap (foldMap id)
             . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
-            . M.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+            . MS.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+            . seqToMap
+        )
+
+
+parReduceGathererHashable
+  :: (Semigroup d, Hashable k, Eq k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
+parReduceGathererHashable toSG
+  = let seqToMap =
+          HMS.fromListWith (<>)
+            . fmap (\(k, c) -> (k, toSG c))
+            . FL.fold FL.list
+    in
+      Gatherer
+        (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
+        (\doOne ->
+          foldMap id . parMapEach (uncurry doOne) . HMS.toList . seqToMap
+        )
+        (\doOneM ->
+          fmap (foldMap id)
+            . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
+            . HMS.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
             . seqToMap
         )
 
@@ -187,6 +218,35 @@ groupHashMap = GroupMap
   HMM.toList
 -}
 
+-- | split input into n chunks, spark each separately
+parallelMapReduce
+  :: forall h x q gt k y z ce e
+   . ( Monoid e
+     , ce e
+     , PS.NFData gt
+     , Functor (MR.MapFoldT 'Nothing x)
+     , Foldable q
+     , Foldable h
+     , Monoid gt
+     )
+  => Int
+  -> Gatherer ce gt k y (h z)
+  -> MapStep 'Nothing x gt
+  -> Reduce 'Nothing k h z e
+  -> q x
+  -> e
+parallelMapReduce n gatherer mapStep reduceStep qx
+  = let
+      chunkedH :: [[x]] = L.divvy n n $ FL.fold FL.list qx -- list divvied into n sublists
+      mapped :: [gt]    = parMapEach (FL.fold (mapFold mapStep)) chunkedH -- list of n gt
+      merged :: gt      = mconcat mapped
+      reduced           = case reduceStep of
+        Reduce f -> gFoldMapWithKey gatherer f merged
+        ReduceFold f ->
+          gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx) merged
+    in
+      reduced
+{-# INLINABLE parallelMapReduce #-}
 
 {-
 -- | Parallel strategies for mapReduce
