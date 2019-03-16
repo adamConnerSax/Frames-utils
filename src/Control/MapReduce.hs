@@ -26,7 +26,7 @@ import qualified Data.Map.Strict               as MS
 import qualified Data.Map.Strict               as ML
 import qualified Data.HashMap.Lazy             as HML
 import qualified Data.HashMap.Strict           as HMS
-import qualified Data.Map.Monoidal.Strict      as MML
+import qualified Data.Map.Monoidal             as MML
 import qualified Data.Map.Monoidal.Strict      as MMS
 import qualified Data.HashMap.Monoidal         as MHM
 import           Data.Monoid                    ( (<>)
@@ -336,37 +336,67 @@ foldToSequence :: Foldable h => h (k, c) -> Seq.Seq (k, c)
 foldToSequence = FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id)
 {-# INLINABLE foldToSequence #-}
 
+-- fix Seq as the gatherer type
+sequenceGatherer
+  :: forall mt k d c ce
+   . (Semigroup d, Foldable (mt k))
+  => ([(k, d)] -> mt k d)
+  -> (forall e . (Monoid e, ce e) => (k -> d -> e) -> mt k d -> e)
+  -> (  forall e f
+      . (Applicative f, Monoid e, ce e)
+     => (k -> d -> f e)
+     -> mt k d
+     -> f (mt k e)
+     )
+  -> (forall e . (Monoid e, ce e) => mt k e -> e) -- this might not be foldMap in || case
+  -> ((c -> d) -> Gatherer ce (Seq.Seq (k, c)) k c d)
+sequenceGatherer fromKeyValueList foldMapWithKey traverseWithKey foldMonoid toSG
+  = let seqToMap :: Seq.Seq (k, c) -> mt k d
+        seqToMap =
+          fromKeyValueList . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list -- can we do this as a direct fold?
+    in  Gatherer foldToSequence
+                 (\f s -> foldMapWithKey f $ seqToMap s)
+                 (\f s -> fmap (foldMonoid) . traverseWithKey f $ seqToMap s)
+
+
 gathererSeqToStrictHashMap
   :: (Monoid d, Hashable k, Eq k)
   => (c -> d)
   -> Gatherer Empty (Seq.Seq (k, c)) k c d
-gathererSeqToStrictHashMap toSG =
-  let seqToMap =
-        HMS.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
-  in  Gatherer
-        foldToSequence
-        (\f s -> HMS.foldlWithKey' (\e k d -> e <> f k d) mempty $ seqToMap s)
-        (\f s -> fmap (foldMap id) . HMS.traverseWithKey f $ seqToMap s)
+gathererSeqToStrictHashMap = sequenceGatherer
+  HMS.fromList
+  (\f -> HMS.foldlWithKey' (\e k d -> e <> f k d) mempty)
+  HMS.traverseWithKey
+  (foldMap id)
+
+gathererSeqToLazyHashMap
+  :: (Monoid d, Hashable k, Eq k)
+  => (c -> d)
+  -> Gatherer Empty (Seq.Seq (k, c)) k c d
+gathererSeqToLazyHashMap = sequenceGatherer
+  (HML.fromListWith (<>))
+  (\f -> HML.foldlWithKey' (\e k d -> e <> f k d) mempty)
+  HML.traverseWithKey
+  (foldMap id)
 
 gathererSeqToStrictMap
   :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
-gathererSeqToStrictMap toSG =
-  let seqToMap =
-        MS.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
-  in  Gatherer foldToSequence
-               (\f s -> MS.foldMapWithKey f $ seqToMap s)
-               (\f s -> fmap (foldMap id) . MS.traverseWithKey f $ seqToMap s)
+gathererSeqToStrictMap = sequenceGatherer (MS.fromListWith (<>))
+                                          MS.foldMapWithKey
+                                          MS.traverseWithKey
+                                          (foldMap id)
+
 
 gathererSeqToLazyMap
   :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
-gathererSeqToLazyMap toSG =
-  let seqToMap =
-        ML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list
-  in  Gatherer foldToSequence
-               (\f s -> ML.foldMapWithKey f $ seqToMap s)
-               (\f s -> fmap (foldMap id) . ML.traverseWithKey f $ seqToMap s)
+gathererSeqToLazyMap = sequenceGatherer (ML.fromListWith (<>))
+                                        ML.foldMapWithKey
+                                        ML.traverseWithKey
+                                        (foldMap id)
 
 
+
+{-
 -- This one is slower.  Why?
 gathererSeqToSortedList
   :: (Monoid d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
@@ -377,105 +407,4 @@ gathererSeqToSortedList toSG =
                (\f s -> mconcat . fmap (uncurry f) $ seqToList s)
                (\f s -> fmap mconcat . traverse (uncurry f) $ seqToList s)
 
-
--- monoidal map based ones are slower at even 5000 rows and seem to grow more like N*sqrt(N)
-gathererMMStrict
-  :: (Semigroup d, Ord k)
-  => (c -> d)
-  -> Gatherer Empty (MMS.MonoidalMap k d) k c d
-gathererMMStrict toSG = Gatherer
-  (MMS.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
-  MMS.foldMapWithKey
-  (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
-
-gathererMMLazy
-  :: (Semigroup d, Ord k)
-  => (c -> d)
-  -> Gatherer Empty (MML.MonoidalMap k d) k c d
-gathererMMLazy toSG = Gatherer
-  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
-  MML.foldMapWithKey
-  (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
-
-gathererMHM
-  :: (Monoid d, Hashable k, Eq k)
-  => (c -> d)
-  -> Gatherer Empty (MHM.MonoidalHashMap k d) k c d
-gathererMHM toMonoid = Gatherer
-  (MHM.fromList . fmap (\(k, c) -> (k, toMonoid c)) . FL.fold FL.list)
-  (\f -> foldMap (uncurry f) . MHM.toList)
-  (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . MHM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
-
-
-
-
---
-
-{-
-data GroupMap (eConst :: Type -> Constraint) m k c =
-  GroupMap
-  {
-    fromFoldable :: (forall g. Foldable g => g (k,c) -> m k c)
-  , foldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> c -> e) -> m k c -> e)
-  , foldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> c -> n e) -> m k c -> n e)
-  , toList :: m k c -> [(k,c)]
-  }
-
-groupMapStrict :: (Semigroup c, Ord k) => GroupMap Empty MMS.MonoidalMap k c
-groupMapStrict = GroupMap
-  (MMS.fromListWith (<>) . FL.fold FL.list)
-  MMS.foldMapWithKey
-  (\doOneM -> fmap (foldMap id) . MMS.traverseWithKey doOneM)
-  MMS.toList
-
-groupMapLazy :: (Semigroup c, Ord k) => GroupMap Empty MML.MonoidalMap k c
-groupMapLazy = GroupMap
-  (MML.fromListWith (<>) . FL.fold FL.list)
-  MML.foldMapWithKey
-  (\doOneM -> fmap (foldMap id) . MML.traverseWithKey doOneM)
-  MML.toList
-
-groupHashMap
-  :: (Hashable k, Eq k, Semigroup c) => GroupMap Empty HMM.MonoidalHashMap k c
-groupHashMap = GroupMap
-  (HMM.fromList . FL.fold FL.list)
-  (\f -> foldMap (uncurry f) . HMM.toList)
-  (\doOneM -> fmap (foldMap id) . traverse (uncurry doOneM) . HMM.toList) -- why no traverseWithKey?  Use Lens.itraverse??
-  HMM.toList
--}
-
-
-{-
--- | `Gather` assembles items with the same key
-data Gather (eConst :: Type -> Constraint) g mt k c d where
-  Gather :: (g (k, c) -> mt k d) -> Gather eConst g mt k c d
-
-instance Functor (mt k) => Functor (Gather ec g mt k d) where
-  fmap f (Gather h) = Gather $ fmap f . h
-
-instance (Functor g, Functor (mt k)) => P.Profunctor (Gather ec g mt k) where
-  dimap l r (Gather h) = Gather $ fmap r . h . fmap (\(k,x) -> (k, l x))
-
-gatherMonoid
-  :: forall ec g mt k c d
-   . (Functor g, Foldable g, Monoid d)
-  => GroupMap ec mt k d
-  -> (c -> d)
-  -> Gather ec g mt k c d
-gatherMonoid gm toMonoid =
-  Gather $ fromFoldable gm . fmap (\(k, c) -> (k, toMonoid c))
-
-gatherApplicativeMonoid
-  :: forall ec g h mt k c
-   . (Functor g, Foldable g, Applicative h, Monoid (h c))
-  => GroupMap ec mt k (h c)
-  -> Gather ec g mt k c (h c)
-gatherApplicativeMonoid gm = gatherMonoid gm pure
-
-gatherLists
-  :: forall ec g mt k c
-   . (Functor g, Foldable g)
-  => GroupMap ec mt k [c]
-  -> Gather ec g mt k c [c]
-gatherLists = gatherApplicativeMonoid
 -}

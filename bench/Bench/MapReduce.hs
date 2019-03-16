@@ -38,7 +38,7 @@ import qualified Numeric.LinearAlgebra         as LA
 import           Numeric.LinearAlgebra          ( R
                                                 , Matrix
                                                 )
-
+import           Control.Concurrent             ( getNumCapabilities )
 
 
 
@@ -50,8 +50,8 @@ createData rows = do
       unweighted n = List.replicate n (1.0)
   noisyData vars yNoise (LA.fromList [1.0, 2.2]) >>= makeFrame vars
 
-benchAvgXYByLabel :: F.FrameRec AllCols -> Benchmark
-benchAvgXYByLabel dat = bgroup
+benchAvgXYByLabel :: Int -> F.FrameRec AllCols -> Benchmark
+benchAvgXYByLabel numThreadsToUse dat = bgroup
   (show $ FL.fold FL.length dat)
   [ bench "serial (seq -> strict map)"
     $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictMap pure)) dat
@@ -63,12 +63,17 @@ benchAvgXYByLabel dat = bgroup
 --  , bench "serial (monoidal hash map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMHM pure)) dat
 --  , bench "parallel reduce (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
   , bench "parallel reduce (sequence -> strict hash map)"
-    $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashable pure)) dat
-  , bench "parallel map (seq -> strict map)"
-  $ nf (mrAvgXYByLabelPM 6 (MR.gathererSeqToStrictMap pure))
-  $ dat
+    $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashableS pure)) dat
+  , bench "parallel reduce (sequence -> lazy hash map)"
+    $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashableL pure)) dat
+--  , bench "parallel map (seq -> strict map)"
+--  $ nf (mrAvgXYByLabelPM numThreadsToUse (MR.gathererSeqToStrictMap pure))
+--  $ dat
   , bench "parallel map/reduce (seq -> strict hash map)"
-  $ nf (mrAvgXYByLabelPM 6 (MRP.parReduceGathererHashable pure))
+  $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableS pure))
+  $ dat
+  , bench "parallel map/reduce (seq -> lazy hash map)"
+  $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableL pure))
   $ dat
 --  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
   ]
@@ -77,8 +82,17 @@ benchMapReduceIO :: IO Benchmark
 benchMapReduceIO = do
   putStrLn "Creating data for benchmarks to use..."
   dat <- mapM createData [5000, 20000, 50000, 100000]
-  return
-    $ bgroup "MapReduce" [bgroup "AvgXYByLabel" $ fmap benchAvgXYByLabel dat]
+  nc  <- getNumCapabilities
+  let threadsToUse = maximum (1, nc - 2) -- leave some for gc, if possible
+  putStrLn
+    $  "Runtime reports "
+    ++ show nc
+    ++ " capabilities (threads that can truly run simultaneously).  Using "
+    ++ show threadsToUse
+    ++ " (leaving some for GC, if possible)."
+  return $ bgroup
+    "MapReduce"
+    [bgroup "AvgXYByLabel" $ fmap (benchAvgXYByLabel threadsToUse) dat]
 
 
 type Label = "label" F.:-> T.Text
@@ -129,7 +143,7 @@ mrAvgXYByLabel gm =
 mrAvgXYByLabelPM n gm =
   let (MRP.MapGather _ mapStep) =
         MR.uagMapAllGatherEachFold gm noUnpack assignToLabels
-  in  MRP.parallelMapReduce @[] n gm mapStep (MR.foldAndAddKey averageF)
+  in  MRP.parallelMapReduce @[] 1000 n gm mapStep (MR.foldAndAddKey averageF)
 
 {-
 mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)

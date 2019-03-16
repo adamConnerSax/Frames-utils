@@ -158,7 +158,7 @@ aggregateMonoidalF
   -> (h x -> F.Record cs)
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 aggregateMonoidalF unpack process extract = MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold (MR.gathererMMStrict process)
+  (MR.uagMapAllGatherEachFold (MR.gathererSeqToStrictMap process)
                               (MR.Unpack unpack)
                               (assignKeys @ks)
   )
