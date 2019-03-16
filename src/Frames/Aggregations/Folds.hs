@@ -23,6 +23,7 @@ module Frames.Aggregations.Folds
   , aggregateAndFoldSubsetF
 --  , liftFold
   , FoldRecord(..)
+  , recFieldF
   , sequenceRecFold
   , FoldEndo(..)
   , sequenceEndoFolds
@@ -134,6 +135,14 @@ newtype FoldFieldEndo f a = FoldFieldEndo { unFoldFieldEndo :: EndoFold (f a) } 
 newtype FoldRecord f rs a = FoldRecord { unFoldRecord :: FL.Fold (F.Record rs) (f a) }
 
 -- how do we build FoldRecords?
+recFieldF
+  :: forall t rs a
+   . V.KnownField t
+  => FL.Fold a (V.Snd t)
+  -> (F.Record rs -> a)
+  -> FoldRecord V.ElField rs t
+recFieldF fld fromRec = FoldRecord $ P.dimap fromRec V.Field fld
+
 
 fieldToFieldFold
   :: forall x y rs

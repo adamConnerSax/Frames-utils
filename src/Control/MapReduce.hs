@@ -70,6 +70,7 @@ noUnpack = Unpack Identity
 
 filter :: (x -> Bool) -> Unpack 'Nothing Maybe x x
 filter t = Unpack $ \x -> if t x then Just x else Nothing
+{-# INLINABLE filter #-}
 
 -- | `Assign` associates a key with a given item/row
 -- It takes an extra argument for the key constraint type
@@ -78,12 +79,15 @@ data Assign k y c where
 
 instance Functor (Assign k y) where
   fmap f (Assign g) = Assign (\y -> let (k,c) = g y in (k, f c))
+  {-# INLINABLE fmap #-}
 
 instance P.Profunctor (Assign k) where
   dimap l r (Assign g) = Assign (\z -> let (k,c) = g (l z) in (k, r c))
+  {-# INLINABLE dimap #-}
 
 assign :: forall k y c . (y -> k) -> (y -> c) -> Assign k y c
 assign getKey getCols = Assign (\y -> (getKey y, getCols y))
+{-# INLINABLE assign #-}
 
 -- Not a class because for the same map we may want different methods of folding and traversing
 -- E.g., for a parallel mapReduce
@@ -109,11 +113,12 @@ defaultHashableGatherer
   => (c -> d)
   -> Gatherer Empty (Seq.Seq (k, c)) k c d
 defaultHashableGatherer = gathererSeqToStrictHashMap
+{-# INLINABLE defaultHashableGatherer #-}
 
 defaultOrdGatherer
   :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
 defaultOrdGatherer = gathererSeqToStrictMap
-
+{-# INLINABLE defaultOrdGatherer #-}
 
 -- | `MapStep` is the map part of MapReduce
 -- it will be a combination of Unpack, Assign and Gather
@@ -125,24 +130,30 @@ data MapStep (a :: Maybe (Type -> Type)) x q  where -- q ~ f k d
 
 mapStepGeneralize :: Monad m => MapStep 'Nothing x q -> MapStep ( 'Just m) x q
 mapStepGeneralize (MapStepFold f) = MapStepFoldM $ FL.generalize f
+{-# INLINABLE mapStepGeneralize #-}
 
 instance Functor (MapStep mm x) where
   fmap h (MapStepFold fld) = MapStepFold $ fmap h fld
   fmap h (MapStepFoldM fld) = MapStepFoldM $ fmap h fld
+  {-# INLINABLE fmap #-}
 
 instance P.Profunctor (MapStep mm) where
   dimap l r (MapStepFold fld) = MapStepFold $ P.dimap l r fld
   dimap l r (MapStepFoldM fld) = MapStepFoldM $ P.dimap l r fld
+  {-# INLINABLE dimap #-}
 
 -- NB: we can only share the fold over h x if both inputs are folds
 instance Applicative (MapStep 'Nothing x) where
   pure y = MapStepFold $ pure y
+  {-# INLINABLE pure #-}
   MapStepFold x <*> MapStepFold y = MapStepFold $ x <*> y
+  {-# INLINABLE (<*>) #-}
 
 instance Monad m => Applicative (MapStep ('Just m) x) where
   pure y = MapStepFoldM $ pure y
+  {-# INLINABLE pure #-}
   MapStepFoldM x <*> MapStepFoldM y = MapStepFoldM $ x <*> y
-
+  {-# INLINABLE (<*>) #-}
 
 -- we will export this to reserve the possibility of MapStep being something else internally
 type family MapFoldT (mm :: Maybe (Type -> Type)) :: (Type -> Type -> Type) where
@@ -157,6 +168,7 @@ type family WrapMaybe (mm :: Maybe (Type -> Type)) (a :: Type) :: Type where
 mapFold :: MapStep mm x q -> MapFoldT mm x q
 mapFold (MapStepFold  f) = f
 mapFold (MapStepFoldM f) = f
+{-# INLINABLE mapFold #-}
 
 data MapGather mm x ec gt k c d = MapGather { gatherer :: Gatherer ec gt k c d, mapStep :: MapStep mm x gt }
 
@@ -180,6 +192,7 @@ uagMapEachFold gatherer unpacker (Assign assign) = MapGather gatherer mapStep
         $ FL.premapM unpackM
         $ fmap (foldInto gatherer . fmap assign)
         $ FL.generalize FL.mconcat
+{-# INLINABLE uagMapEachFold #-}
 
 uagMapAllGatherOnceFold
   :: (Monoid (g (k, c)), Functor g, Foldable g)
@@ -199,6 +212,7 @@ uagMapAllGatherOnceFold gatherer unpacker (Assign assign) = MapGather
         $ FL.premapM (fmap (fmap assign) . unpackM)
         $ fmap (foldInto gatherer)
         $ FL.generalize FL.mconcat
+{-# INLINABLE uagMapAllGatherOnceFold #-}
 
 uagMapAllGatherEachFold
   :: (Functor g, Foldable g, Monoid gt)
@@ -217,6 +231,7 @@ uagMapAllGatherEachFold gatherer unpacker (Assign assign) = MapGather
       MapStepFoldM
         $ FL.premapM (fmap (foldInto gatherer . fmap assign) . unpackM)
         $ FL.generalize FL.mconcat
+{-# INLINABLE uagMapAllGatherEachFold #-}
 
 data Reduce (mm :: Maybe (Type -> Type)) k h x e where
   Reduce :: (k -> h x -> e) -> Reduce 'Nothing k h x e
@@ -229,41 +244,50 @@ instance Functor (Reduce mm k h x) where
   fmap f (ReduceFold g) = ReduceFold $ \k -> fmap f (g k)
   fmap f (ReduceM g) = ReduceM $ \k -> fmap f . g k
   fmap f (ReduceFoldM g) = ReduceFoldM $ \k -> fmap f (g k)
+  {-# INLINABLE fmap #-}
 
 instance Functor h => P.Profunctor (Reduce mm k h) where
   dimap l r (Reduce g)  = Reduce $ \k -> P.dimap (fmap l) r (g k)
   dimap l r (ReduceFold g) = ReduceFold $ \k -> P.dimap l r (g k)
   dimap l r (ReduceM g)  = ReduceM $ \k -> P.dimap (fmap l) (fmap r) (g k)
   dimap l r (ReduceFoldM g) = ReduceFoldM $ \k -> P.dimap l r (g k)
+  {-# INLINABLE dimap #-}
 
 instance Foldable h => Applicative (Reduce 'Nothing k h x) where
   pure x = ReduceFold $ const (pure x)
+  {-# INLINABLE pure #-}
   Reduce r1 <*> Reduce r2 = Reduce $ \k -> r1 k <*> r2 k
   ReduceFold f1 <*> ReduceFold f2 = ReduceFold $ \k -> f1 k <*> f2 k
   Reduce r1 <*> ReduceFold f2 = Reduce $ \k -> r1 k <*> (FL.fold $ f2 k)
   ReduceFold f1 <*> Reduce r2 = Reduce $ \k -> (FL.fold $ f1 k) <*> r2 k
+  {-# INLINABLE (<*>) #-}
 
 instance Monad m => Applicative (Reduce ('Just m) k h x) where
   pure x = ReduceM $ \k -> pure $ pure x
+  {-# INLINABLE pure #-}
   ReduceM r1 <*> ReduceM r2 = ReduceM $ \k -> ((<*>) <$> r1 k <*> r2 k)
   ReduceFoldM f1 <*> ReduceFoldM f2 = ReduceFoldM $ \k -> f1 k <*> f2 k
   ReduceM r1 <*> ReduceFoldM f2 = ReduceM $ \k -> ((<*>) <$> r1 k <*> (FL.foldM $ f2 k))
   ReduceFoldM f1 <*> ReduceM r2 = ReduceM $ \k -> ((<*>) <$> (FL.foldM $ f1 k) <*> r2 k)
+  {-# INLINABLE (<*>) #-}
 
 -- | The most common case is that the reduction doesn't depend on the key
 -- So we add support functions for processing the data and then relabeling with the key
 -- And we do this for the four variations of Reduce
 processAndRelabel :: (h x -> y) -> (k -> y -> z) -> Reduce 'Nothing k h x z
 processAndRelabel process relabel = Reduce $ \k hx -> relabel k (process hx)
+{-# INLINABLE processAndRelabel #-}
 
 processAndRelabelM
   :: Monad m => (h x -> m y) -> (k -> y -> z) -> Reduce ( 'Just m) k h x z
 processAndRelabelM processM relabel =
   ReduceM $ \k hx -> fmap (relabel k) (processM hx)
+{-# INLINABLE processAndRelabelM #-}
 
 foldAndRelabel
   :: Foldable h => FL.Fold x y -> (k -> y -> z) -> Reduce 'Nothing k h x z
 foldAndRelabel fld relabel = ReduceFold $ \k -> fmap (relabel k) fld
+{-# INLINABLE foldAndRelabel #-}
 
 foldAndRelabelM
   :: (Monad m, Foldable h)
@@ -271,6 +295,7 @@ foldAndRelabelM
   -> (k -> y -> z)
   -> Reduce ( 'Just m) k h x z
 foldAndRelabelM fld relabel = ReduceFoldM $ \k -> fmap (relabel k) fld
+{-# INLINABLE foldAndRelabelM #-}
 
 mapReduceFold
   :: (Foldable h, Monoid e, ec e, Functor (MapFoldT mm x))
@@ -286,6 +311,7 @@ mapReduceFold gatherer ms reducer = case reducer of
   ReduceFoldM f ->
     monadicMapFoldM (gFoldMapWithKeyM gatherer (\k hx -> FL.foldM (f k) hx))
       $ mapFold ms
+{-# INLINABLE mapReduceFold #-}
 
 mapGatherReduceFold
   :: (Foldable h, Monoid e, ec e, Functor (MapFoldT mm x))
@@ -294,12 +320,12 @@ mapGatherReduceFold
   -> MapFoldT mm x e
 mapGatherReduceFold (MapGather gatherer mapStep) =
   mapReduceFold gatherer mapStep
-
+{-# INLINABLE mapGatherReduceFold #-}
 
 monadicMapFoldM :: Monad m => (a -> m b) -> FL.FoldM m x a -> FL.FoldM m x b
 monadicMapFoldM f (FL.FoldM step begin done) = FL.FoldM step begin done'
   where done' x = done x >>= f
-
+{-# INLINABLE monadicMapFoldM #-}
 
 --
 {- Various (serial) gatherer implementations for testing, etc.

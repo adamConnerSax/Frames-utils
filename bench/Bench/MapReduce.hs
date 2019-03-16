@@ -93,7 +93,7 @@ editLabel f r = F.rputField @Label (f (F.rgetField @Label r)) r -- this would be
 unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 
 -- some assignings
-assignToLabels = MR.assignFrame @'[Label] @'[Y, X, Weight]
+assignToLabels = MR.assignKeysAndData @'[Label] @'[Y, X, Weight]
 assignDups = MR.assign @(F.Record '[IsDup])
   (\r -> (T.length (F.rgetField @Label r) > 1) F.&: V.RNil)
   (F.rcast @'[Y, X, Weight])

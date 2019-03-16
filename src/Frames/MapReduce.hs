@@ -20,7 +20,9 @@
 module Frames.MapReduce
   ( module Control.MapReduce
   , aggregateMonoidalF
-  , assignFrame
+  , assignKeysAndData
+  , assignKeys
+  , splitOnKeys
   , reduceAndAddKey
   , foldAndAddKey
 --  , gatherRecordList
@@ -47,6 +49,7 @@ import           Data.Kind                      ( Type
                                                 )
 import qualified Data.Profunctor               as P
 import qualified Frames                        as F
+import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -54,16 +57,39 @@ import qualified Data.Vinyl.TypeLevel          as V
 
 instance Hash.Hashable (F.Record '[]) where
   hash = const 0
+  {-# INLINABLE hash #-}
   hashWithSalt s = const s -- TODO: this seems BAD!!
+  {-# INLINABLE hashWithSalt #-}
 
 instance (V.KnownField t, Hash.Hashable (V.Snd t), Hash.Hashable (F.Record rs), rs F.⊆ (t ': rs)) => Hash.Hashable (F.Record (t ': rs)) where
   hashWithSalt s r = s `Hash.hashWithSalt` (F.rgetField @t r) `Hash.hashWithSalt` (F.rcast @rs r)
+  {-# INLINABLE hashWithSalt #-}
 
-assignFrame
+
+-- | Assign both keys and data cols.  Uses type applications to specify if they cannot be inferred.  Keys usually can't.  Data often can be from the functions
+-- that follow
+assignKeysAndData
   :: forall ks cs rs
-   . (Ord (F.Record ks), ks F.⊆ rs, cs F.⊆ rs)
+   . (ks F.⊆ rs, cs F.⊆ rs)
   => MR.Assign (F.Record ks) (F.Record rs) (F.Record cs)
-assignFrame = MR.assign (F.rcast @ks) (F.rcast @cs)
+assignKeysAndData = MR.assign (F.rcast @ks) (F.rcast @cs)
+{-# INLINABLE assignKeysAndData #-}
+
+-- | Assign keys and leave all columns, including the keys, in the data passed to gather and reduce
+assignKeys
+  :: forall ks rs
+   . (ks F.⊆ rs)
+  => MR.Assign (F.Record ks) (F.Record rs) (F.Record rs)
+assignKeys = MR.assign (F.rcast @ks) id
+{-# INLINABLE assignKeys #-}
+
+-- | Assign keys and leave the rest of the columns, excluding the keys, in the data passed to gather and reduce
+splitOnKeys
+  :: forall ks rs cs
+   . (ks F.⊆ rs, cs ~ F.RDeleteAll ks rs, cs F.⊆ rs)
+  => MR.Assign (F.Record ks) (F.Record rs) (F.Record cs)
+splitOnKeys = assignKeysAndData @ks @cs
+{-# INLINABLE splitOnKeys #-}
 
 reduceAndAddKey
   :: forall ks cs h x
@@ -72,6 +98,7 @@ reduceAndAddKey
   -> MR.Reduce 'Nothing (F.Record ks) h x (F.FrameRec (ks V.++ cs))
 reduceAndAddKey process =
   fmap (F.toFrame . pure @[]) $ MR.processAndRelabel process V.rappend
+{-# INLINABLE reduceAndAddKey #-}
 
 foldAndAddKey
   :: (Foldable h, FI.RecVec ((ks V.++ cs)))
@@ -79,6 +106,7 @@ foldAndAddKey
   -> MR.Reduce 'Nothing (F.Record ks) h x (F.FrameRec (ks V.++ cs))
 foldAndAddKey fld =
   fmap (F.toFrame . pure @[]) $ MR.foldAndRelabel fld V.rappend
+{-# INLINABLE foldAndAddKey #-}
 
 {-
 -- g is the type we unpack to.  Identity, Maybe, [] are all possible.
@@ -125,21 +153,12 @@ mapRListF
   -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
   -> MR.MapFoldT mm x e
 mapRListF = mapReduceGF (MR.defaultHashableGatherer pure)
-{-
-  MR.mapGatherReduceFold
-  (MR.uagMapAllGatherEachFold (MR.defaultHashableGatherer pure)
-                              unpacker
-                              assigner
-  )
-  reducer
--}
 
 -- this is slightly too general to use the above
 -- if h x ~ [F.Record as], then these are equivalent
 aggregateMonoidalF
   :: forall ks rs as h x cs f g
    . ( ks F.⊆ as
-     , as F.⊆ as
      , Ord (F.Record ks)
      , FI.RecVec (ks V.++ cs)
      , Foldable f
@@ -154,6 +173,6 @@ aggregateMonoidalF
 aggregateMonoidalF unpack process extract = MR.mapGatherReduceFold
   (MR.uagMapAllGatherEachFold (MR.gathererMMStrict process)
                               (MR.Unpack unpack)
-                              (assignFrame @ks @as)
+                              (assignKeys @ks)
   )
   (reduceAndAddKey extract)
