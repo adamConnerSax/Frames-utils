@@ -364,7 +364,7 @@ gathererSeqToStrictHashMap
   => (c -> d)
   -> Gatherer Empty (Seq.Seq (k, c)) k c d
 gathererSeqToStrictHashMap = sequenceGatherer
-  HMS.fromList
+  (HMS.fromListWith (<>))
   (\f -> HMS.foldlWithKey' (\e k d -> e <> f k d) mempty)
   HMS.traverseWithKey
   (foldMap id)
