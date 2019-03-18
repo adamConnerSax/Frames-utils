@@ -357,7 +357,7 @@ sequenceGatherer fromKeyValueList foldMapWithKey traverseWithKey foldMonoid toSG
     in  Gatherer foldToSequence
                  (\f s -> foldMapWithKey f $ seqToMap s)
                  (\f s -> fmap (foldMonoid) . traverseWithKey f $ seqToMap s)
-
+{-# INLINABLE sequenceGatherer #-}
 
 gathererSeqToStrictHashMap
   :: (Monoid d, Hashable k, Eq k)
@@ -368,6 +368,7 @@ gathererSeqToStrictHashMap = sequenceGatherer
   (\f -> HMS.foldlWithKey' (\e k d -> e <> f k d) mempty)
   HMS.traverseWithKey
   (foldMap id)
+{-# INLINABLE gathererSeqToStrictHashMap #-}
 
 gathererSeqToLazyHashMap
   :: (Monoid d, Hashable k, Eq k)
@@ -378,6 +379,7 @@ gathererSeqToLazyHashMap = sequenceGatherer
   (\f -> HML.foldlWithKey' (\e k d -> e <> f k d) mempty)
   HML.traverseWithKey
   (foldMap id)
+{-# INLINABLE gathererSeqToLazyHashMap #-}
 
 gathererSeqToStrictMap
   :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
@@ -385,7 +387,7 @@ gathererSeqToStrictMap = sequenceGatherer (MS.fromListWith (<>))
                                           MS.foldMapWithKey
                                           MS.traverseWithKey
                                           (foldMap id)
-
+{-# INLINABLE gathererSeqToStrictMap #-}
 
 gathererSeqToLazyMap
   :: (Semigroup d, Ord k) => (c -> d) -> Gatherer Empty (Seq.Seq (k, c)) k c d
@@ -393,7 +395,7 @@ gathererSeqToLazyMap = sequenceGatherer (ML.fromListWith (<>))
                                         ML.foldMapWithKey
                                         ML.traverseWithKey
                                         (foldMap id)
-
+{-# INLINABLE gathererSeqToLazyMap #-}
 
 
 {-

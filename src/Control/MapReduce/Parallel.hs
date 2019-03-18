@@ -19,13 +19,14 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.MapReduce.Parallel
   ( module Control.MapReduce
+  , parallelMapReduce
+  , defaultParReduceGatherer
   , parReduceGathererOrd
   , parReduceGathererHashableL
   , parReduceGathererHashableS
-  , parReduceGathererMM
+--  , parReduceGathererMM
   , parFoldMonoid
   , parFoldMonoidDC
-  , parallelMapReduce
   )
 where
 
@@ -50,6 +51,59 @@ import           Data.Monoid                    ( Monoid
                                                 )
 
 import qualified Control.Parallel.Strategies   as PS
+--
+
+-- | You can use this in the reguler mapReduce call and it will do parallel reduce.  To get parallelism in the map stage as well,
+-- use the parallelMapReduce below.  
+defaultParReduceGatherer
+  :: (Semigroup d, Hashable k, Eq k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
+defaultParReduceGatherer = parReduceGathererHashableL
+
+-- | split input into n chunks, spark each separately
+-- use a || foldMap to gather
+-- optionally use a || reduction scheme.  This is controlled by the gatherer
+parallelMapReduce
+  :: forall h x q gt k y z ce e
+   . ( Monoid e
+     , ce e
+     , PS.NFData gt
+     , Functor (MR.MapFoldT 'Nothing x)
+     , Foldable q
+     , Foldable h
+     , Monoid gt
+     )
+  => Int -- 1000 seems optimal on my current machine
+  -> Int
+  -> Gatherer ce gt k y (h z)
+  -> MapStep 'Nothing x gt
+  -> Reduce 'Nothing k h z e
+  -> q x
+  -> e
+parallelMapReduce oneSparkMax numThreads gatherer mapStep reduceStep qx
+  = let
+      chunkedH :: [[x]] = L.divvy numThreads numThreads $ FL.fold FL.list qx -- list divvied into n sublists
+      mapped :: [gt]    = parMapEach (FL.fold (mapFold mapStep)) chunkedH -- list of n gt
+      merged :: gt      = parFoldMonoid oneSparkMax mapped
+      reduced           = case reduceStep of
+        Reduce f -> gFoldMapWithKey gatherer f merged
+        ReduceFold f ->
+          gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx) merged
+    in
+      reduced
+{-# INLINABLE parallelMapReduce #-}
+
+
+parMapEach :: PS.NFData b => (a -> b) -> [a] -> [b]
+parMapEach = PS.parMap (PS.rparWith PS.rdeepseq)
+{-# INLINABLE parMapEach #-}
+
+parMapChunk :: PS.NFData b => Int -> (a -> b) -> [a] -> [b]
+parMapChunk chunkSize f =
+  PS.withStrategy (PS.parListChunk chunkSize (PS.rparWith PS.rdeepseq)) . fmap f
+{-# INLINABLE parMapChunk #-}
+
 
 -- | Use these in a call to Control.MapReduce.mapReduceFold
 -- for parallel reduction.  For parallel folding after reduction, choose a parFoldMonoid f
@@ -65,12 +119,14 @@ parReduceGathererOrd' foldMonoid = MR.sequenceGatherer
     . MS.traverseWithKey f
   )
   foldMonoid
+{-# INLINABLE parReduceGathererOrd' #-}
 
 parReduceGathererOrd
   :: (Semigroup d, Ord k)
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
 parReduceGathererOrd = parReduceGathererOrd' (foldMap id)
+{-# INLINABLE parReduceGathererOrd #-}
 
 parReduceGathererHashableS'
   :: (Semigroup d, Hashable k, Eq k)
@@ -79,18 +135,19 @@ parReduceGathererHashableS'
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
 parReduceGathererHashableS' foldMonoid = MR.sequenceGatherer
   (HMS.fromListWith (<>))
-  (\doOne -> foldMonoid . parMapEach (uncurry doOne) . HMS.toList)
+  (\doOne -> foldMonoid . parMapChunk 1000 (uncurry doOne) . HMS.toList)
   (\doOneM -> fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
     . HMS.traverseWithKey doOneM
   )
   foldMonoid
+{-# INLINABLE parReduceGathererHashableS' #-}
 
 parReduceGathererHashableS
   :: (Semigroup d, Hashable k, Eq k)
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
 parReduceGathererHashableS = parReduceGathererHashableS' (foldMap id)
-
+{-# INLINABLE parReduceGathererHashableS #-}
 
 parReduceGathererHashableL'
   :: (Semigroup d, Hashable k, Eq k)
@@ -99,11 +156,12 @@ parReduceGathererHashableL'
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
 parReduceGathererHashableL' foldMonoid = MR.sequenceGatherer
   (HML.fromListWith (<>))
-  (\doOne -> foldMonoid . parMapEach (uncurry doOne) . HML.toList)
+  (\doOne -> foldMonoid . parMapChunk 1000 (uncurry doOne) . HML.toList)
   (\doOneM -> fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
     . HML.traverseWithKey doOneM
   )
   foldMonoid
+{-# INLINABLE parReduceGathererHashableL' #-}
 
 
 parReduceGathererHashableL
@@ -111,49 +169,7 @@ parReduceGathererHashableL
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
 parReduceGathererHashableL = parReduceGathererHashableL' (foldMap id)
-
-
-{-
-
-parReduceGathererHashableL
-  :: (Semigroup d, Hashable k, Eq k)
-  => (c -> d)
-  -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
-parReduceGathererHashableL toSG
-  = let seqToMap =
-          HML.fromListWith (<>)
-            . fmap (\(k, c) -> (k, toSG c))
-            . FL.fold FL.list
-    in
-      Gatherer
-        (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
-        (\doOne ->
-          foldMap id . parMapEach (uncurry doOne) . HML.toList . seqToMap
-        )
-        (\doOneM ->
-          fmap (foldMap id)
-            . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
-            . HML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
-            . seqToMap
-        )
-
--}
-parReduceGathererMM
-  :: (Semigroup d, Ord k)
-  => (c -> d)
-  -> MR.Gatherer PS.NFData (MML.MonoidalMap k d) k c d
-parReduceGathererMM toSG = Gatherer
-  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
-  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
-  (\doOneM ->
-    fmap (foldMap id)
-      . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
-      . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
-  )
-
-
-parMapEach :: PS.NFData b => (a -> b) -> [a] -> [b]
-parMapEach = PS.parMap (PS.rparWith PS.rdeepseq)
+{-# INLINABLE parReduceGathererHashableL #-}
 
 {-
 parTraverseEach
@@ -178,7 +194,7 @@ parFoldMonoid chunkSize fm = go (F.toList fm)
         $ L.chunksOf chunkSize lm
         )
     False -> foldMap id lm
-
+{-# INLINABLE parFoldMonoid #-}
 
 -- | like `foldMap id` but does sublists in || first
 parFoldMonoid'
@@ -229,36 +245,46 @@ divConq f arg threshold conquer divide = go arg
 
 
 
--- | split input into n chunks, spark each separately
--- use a || foldMap to gather
--- optionally use a || reduction scheme.  This is controlled by the gatherer
-parallelMapReduce
-  :: forall h x q gt k y z ce e
-   . ( Monoid e
-     , ce e
-     , PS.NFData gt
-     , Functor (MR.MapFoldT 'Nothing x)
-     , Foldable q
-     , Foldable h
-     , Monoid gt
-     )
-  => Int -- 1000 seems optimal on my current machine
-  -> Int
-  -> Gatherer ce gt k y (h z)
-  -> MapStep 'Nothing x gt
-  -> Reduce 'Nothing k h z e
-  -> q x
-  -> e
-parallelMapReduce oneSparkMax numThreads gatherer mapStep reduceStep qx
-  = let
-      chunkedH :: [[x]] = L.divvy numThreads numThreads $ FL.fold FL.list qx -- list divvied into n sublists
-      mapped :: [gt]    = parMapEach (FL.fold (mapFold mapStep)) chunkedH -- list of n gt
-      merged :: gt      = parFoldMonoid oneSparkMax mapped
-      reduced           = case reduceStep of
-        Reduce f -> gFoldMapWithKey gatherer f merged
-        ReduceFold f ->
-          gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx) merged
-    in
-      reduced
-{-# INLINABLE parallelMapReduce #-}
 
+{-
+
+parReduceGathererMM
+  :: (Semigroup d, Ord k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (MML.MonoidalMap k d) k c d
+parReduceGathererMM toSG = Gatherer
+  (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
+  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
+  (\doOneM ->
+    fmap (foldMap id)
+      . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
+      . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+  )
+
+
+
+
+
+parReduceGathererHashableL
+  :: (Semigroup d, Hashable k, Eq k)
+  => (c -> d)
+  -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
+parReduceGathererHashableL toSG
+  = let seqToMap =
+          HML.fromListWith (<>)
+            . fmap (\(k, c) -> (k, toSG c))
+            . FL.fold FL.list
+    in
+      Gatherer
+        (FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id))
+        (\doOne ->
+          foldMap id . parMapEach (uncurry doOne) . HML.toList . seqToMap
+        )
+        (\doOneM ->
+          fmap (foldMap id)
+            . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
+            . HML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
+            . seqToMap
+        )
+{-# INLINABLE parReduceGathererHashableL #-}
+-}

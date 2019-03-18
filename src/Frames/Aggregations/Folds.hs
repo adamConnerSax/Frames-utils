@@ -69,7 +69,7 @@ unpackAggregateAndFoldF
   -> FL.Fold (F.Rec g rs) (F.FrameRec (ks V.++ cs))
 unpackAggregateAndFoldF unpack foldAtKey =
   FMR.aggregateMonoidalF @ks unpack (pure @f) (FL.fold foldAtKey)
-
+{-# INLINABLE unpackAggregateAndFoldF #-}
 
 unpackAggregateAndFoldSubsetF
   :: forall ks cs rs f g
@@ -89,7 +89,7 @@ unpackAggregateAndFoldSubsetF unpack foldAtKey =
   unpackAggregateAndFoldF @ks @(ks V.++ cs)
     unpack
     (FL.premap (F.rcast @cs) foldAtKey)
-
+{-# INLINABLE unpackAggregateAndFoldSubsetF #-}
 
 -- | aggregateAndFoldSubset simplifies further by assuming that the inner fold is `cs` to `cs` and that the `cs` are a subset of the `rs`
 aggregateAndFoldSubsetF
@@ -108,6 +108,7 @@ aggregateAndFoldSubsetF
 aggregateAndFoldSubsetF f = unpackAggregateAndFoldF @ks
   (pure @[] . F.rcast @(ks V.++ cs))
   (FL.premap (F.rcast @cs) f)
+{-# INLINABLE aggregateAndFoldSubsetF #-}
 
 -- TODO: Monadic versions of these ??
 
@@ -119,6 +120,7 @@ fieldFold
   => FL.Fold a a
   -> FL.Fold (F.ElField t) (F.ElField t)
 fieldFold = P.dimap (\(V.Field x) -> x) V.Field
+{-# INLINABLE fieldFold #-}
 
 -- | A Type synonym to help us remember when the folds are "monoidal"
 type EndoFold a = FL.Fold a a
@@ -142,7 +144,7 @@ recFieldF
   -> (F.Record rs -> a)
   -> FoldRecord V.ElField rs t
 recFieldF fld fromRec = FoldRecord $ P.dimap fromRec V.Field fld
-
+{-# INLINABLE recFieldF #-}
 
 fieldToFieldFold
   :: forall x y rs
@@ -150,7 +152,7 @@ fieldToFieldFold
   => FL.Fold (V.Snd x) (V.Snd y)
   -> FoldRecord F.ElField rs y
 fieldToFieldFold = FoldRecord . P.dimap (F.rgetField @x) (V.Field)
-
+{-# INLINABLE fieldToFieldFold #-}
 
 -- | Folds are contravariant in their input type.
 -- So given a record of folds from records on a list of fields, we can fold over a records of a superset of fields via rcast
@@ -160,18 +162,21 @@ expandFoldInRecord
   => F.Rec (FoldRecord F.ElField as) as
   -> F.Rec (FoldRecord F.ElField rs) as
 expandFoldInRecord = V.rmap (FoldRecord . FL.premap F.rcast . unFoldRecord)
+{-# INLINABLE expandFoldInRecord #-}
 
 -- | Change a record of single field folds to a record of folds from the entire record to each field
 -- This requires a class since it is a function on types
 class EndoFieldFoldsToRecordFolds rs where
   endoFieldFoldsToRecordFolds :: F.Rec (FoldFieldEndo F.ElField) rs -> F.Rec (FoldRecord F.ElField rs) rs
 
+
 instance EndoFieldFoldsToRecordFolds '[] where
   endoFieldFoldsToRecordFolds _ = V.RNil
+  {-# INLINABLE endoFieldFoldsToRecordFolds #-}
 
 instance (EndoFieldFoldsToRecordFolds rs, rs F.⊆ (r ': rs), V.RMap rs) => EndoFieldFoldsToRecordFolds (r ': rs) where
   endoFieldFoldsToRecordFolds (fe V.:& fes) = FoldRecord (FL.premap (V.rget @r) (unFoldFieldEndo fe)) V.:& expandFoldInRecord @(r ': rs) (endoFieldFoldsToRecordFolds fes)
-
+  {-# INLINABLE endoFieldFoldsToRecordFolds #-}
 
 -- can we do all/some of this via F.Rec (Fold as) bs?
 sequenceRecFold
@@ -179,7 +184,7 @@ sequenceRecFold
    . F.Rec (FoldRecord F.ElField as) rs
   -> FL.Fold (F.Record as) (F.Record rs)
 sequenceRecFold = V.rtraverse unFoldRecord
-
+{-# INLINABLE sequenceRecFold #-}
 
 -- | turn a record of folds over each field, into a fold over records 
 sequenceFieldEndoFolds
@@ -187,14 +192,17 @@ sequenceFieldEndoFolds
   => F.Rec (FoldFieldEndo F.ElField) rs
   -> FL.Fold (F.Record rs) (F.Record rs)
 sequenceFieldEndoFolds = sequenceRecFold . endoFieldFoldsToRecordFolds
+{-# INLINABLE sequenceFieldEndoFolds #-}
 
 liftFold
   :: V.KnownField t => FL.Fold (V.Snd t) (V.Snd t) -> FoldFieldEndo F.ElField t
 liftFold = FoldFieldEndo . fieldFold
+{-# INLINABLE liftFold #-}
 
 -- This is not a natural transformation, FoldEndoT ~> FoldEndo F.EField, because of the constraint
 liftFoldEndo :: V.KnownField t => FoldEndo t -> FoldFieldEndo F.ElField t
 liftFoldEndo = FoldFieldEndo . fieldFold . unFoldEndo
+{-# INLINABLE liftFoldEndo #-}
 
 liftFolds
   :: (V.RPureConstrained V.KnownField rs, V.RApply rs)
@@ -202,6 +210,8 @@ liftFolds
   -> F.Rec (FoldFieldEndo F.ElField) rs
 liftFolds = V.rapply liftedFs
   where liftedFs = V.rpureConstrained @V.KnownField $ V.Lift liftFoldEndo
+{-# INLINABLE liftFolds #-}
+
 
 -- | turn a record of folds over each field, into a fold over records 
 sequenceEndoFolds
@@ -213,7 +223,7 @@ sequenceEndoFolds
   => F.Rec FoldEndo rs
   -> FL.Fold (F.Record rs) (F.Record rs)
 sequenceEndoFolds = sequenceFieldEndoFolds . liftFolds
---  V.rtraverse unFoldInRecord . endoFieldFoldsToRecordFolds . liftFolds
+{-# INLINABLE sequenceEndoFolds #-}
 
 -- | apply an unconstrained endo-fold, e.g., a fold which takes the last item in a container, to every field in a record
 foldAll
@@ -224,6 +234,7 @@ foldAll
   => (forall a . FL.Fold a a)
   -> FL.Fold (F.Record rs) (F.Record rs)
 foldAll f = sequenceEndoFolds $ V.rpureConstrained @V.KnownField (FoldEndo f)
+{-# INLINABLE foldAll #-}
 
 class (c (V.Snd t)) => ConstrainedField c t
 instance (c (V.Snd t)) => ConstrainedField c t
@@ -241,11 +252,13 @@ foldAllConstrained
   -> FL.Fold (F.Record rs) (F.Record rs)
 foldAllConstrained f =
   sequenceEndoFolds $ V.rpureConstrained @(ConstrainedField c) (FoldEndo f)
+{-# INLINABLE foldAllConstrained #-}
 
 -- | Given a monoid-wrapper, e.g., Sum, and functions to wrap and unwrap, we can produce an endo-fold on a
 monoidWrapperToFold
   :: forall f a . (N.Newtype (f a) a, Monoid (f a)) => FL.Fold a a
 monoidWrapperToFold = FL.Fold (\w a -> N.pack a <> w) (mempty @(f a)) N.unpack -- is this the correct order in (<>) ?
+{-# INLINABLE monoidWrapperToFold #-}
 
 class (N.Newtype (f a) a, Monoid (f a)) => MonoidalField f a
 instance (N.Newtype (f a) a, Monoid (f a)) => MonoidalField f a
@@ -261,4 +274,4 @@ foldAllMonoid
      )
   => FL.Fold (F.Record rs) (F.Record rs)
 foldAllMonoid = foldAllConstrained @(MonoidalField f) $ monoidWrapperToFold @f
-
+{-# INLINABLE foldAllMonoid #-}
