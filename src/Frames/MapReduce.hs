@@ -19,12 +19,14 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.MapReduce
   ( module Control.MapReduce
+  , unpackGoodRows
   , aggregateMonoidalF
   , assignKeysAndData
   , assignKeys
   , splitOnKeys
   , reduceAndAddKey
   , foldAndAddKey
+  , makeRecsWithKey
 --  , gatherRecordList
 --  , gatherRecordFrame
   , mapReduceGF
@@ -65,6 +67,15 @@ instance (V.KnownField t, Hash.Hashable (V.Snd t), Hash.Hashable (F.Record rs), 
   hashWithSalt s r = s `Hash.hashWithSalt` (F.rgetField @t r) `Hash.hashWithSalt` (F.rcast @rs r)
   {-# INLINABLE hashWithSalt #-}
 
+unpackGoodRows
+  :: forall cs rs
+   . (cs F.⊆ rs)
+  => MR.Unpack
+       'Nothing
+       Maybe
+       (F.Rec (Maybe F.:. F.ElField) rs)
+       (F.Record cs)
+unpackGoodRows = MR.Unpack $ F.recMaybe . F.rcast
 
 -- | Assign both keys and data cols.  Uses type applications to specify if they cannot be inferred.  Keys usually can't.  Data often can be from the functions
 -- that follow
@@ -109,6 +120,15 @@ foldAndAddKey fld =
   fmap (F.toFrame . pure @[]) $ MR.foldAndRelabel fld V.rappend  -- is Frame a reasonably fast thing for many appends?
 {-# INLINABLE foldAndAddKey #-}
 
+makeRecsWithKey
+  :: (Functor g, Foldable g, (FI.RecVec (ks V.++ as)))
+  => (y -> F.Record as)
+  -> MR.Reduce mm (F.Record ks) h x (g y)
+  -> MR.Reduce mm (F.Record ks) h x (F.FrameRec (ks V.++ as))
+makeRecsWithKey makeRec reduceToY = fmap F.toFrame
+  $ MR.mapReduceWithKey addKey reduceToY
+  where addKey k = fmap (V.rappend k . makeRec)
+
 
 mapReduceGF
   :: ( ec e
@@ -140,6 +160,7 @@ mapRListF
   -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
   -> MR.MapFoldT mm x e
 mapRListF = mapReduceGF (MR.defaultHashableGatherer pure)
+
 
 -- this is slightly too general to use the above
 -- if h x ~ [F.Record as], then these are equivalent

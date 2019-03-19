@@ -19,8 +19,11 @@
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 module Frames.KMeans
-  ( kMeans
-  , kMeansWithClusters -- this one returns the centroid and the list of clustered rows
+  ( --kMeans
+--    kMeansWithClusters -- this one returns the centroid and the list of clustered rows
+    kMeansOne
+  , kMeansOneWithClusters
+  , kMeansOneWCReduce
   , clusteredRows -- turn the output of the above into one set of labeled rows
   , IsCentroid
   , ClusterId
@@ -28,6 +31,7 @@ module Frames.KMeans
   , forgyCentroids
   , partitionCentroids
   , kMeansPPCentroids
+  , weighted2DRecord
 -- * re-exports
   , euclidSq
   , l1dist
@@ -35,10 +39,11 @@ module Frames.KMeans
   )
 where
 
-import qualified Control.Aggregations          as CA
+--import qualified Control.Aggregations          as CA
 import qualified Frames.Utils                  as FU
 import qualified Frames.Aggregations           as FA
 import qualified Frames.Transform              as FT
+import qualified Frames.MapReduce              as MR
 import qualified Math.Rescale                  as MR
 import qualified Math.KMeans                   as MK
 import           Math.KMeans                    ( Weighted(..)
@@ -62,7 +67,7 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.Curry              as V
-import qualified Data.Vinyl.Functor            as V
+--import qualified Data.Vinyl.Functor            as V
 import qualified Data.Vinyl.TypeLevel          as V
 import           Frames                         ( (&:) )
 import qualified Frames                        as F
@@ -104,7 +109,6 @@ partitionCentroids
   -> f (F.Record '[x, y, w])
   -> [U.Vector Double]
 partitionCentroids = MK.partitionCentroids (weighted2DRecord @x @y @w)
-
 
 -- Choose first from input at random
 -- Now, until you have enough,
@@ -156,6 +160,7 @@ weighted2DRecord =
 type WithScaledCols rs = rs V.++ [FU.DblX, FU.DblY]
 type WithScaled rs = F.Record (WithScaledCols rs)
 
+
 kMeans
   :: forall ks x y w rs effs
    . ( FU.ThreeDTransformable rs ks x y w
@@ -194,6 +199,7 @@ kMeans sunXF sunYF numClusters makeInitial distance =
                   distance
           . fmap (F.rcast @'[x, y, w])
   in  FA.aggregateAndAnalyzeEachM' @ks (fmap (fmap toRecord) . computeOne)
+
 
 kMeansOne
   :: forall x y w f effs
@@ -234,7 +240,7 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
     return $ catMaybes $ V.toList $ fmap
       (fmap fix . MK.centroid weighted . members)
       clusters -- we drop empty clusters ??
-
+{-
 kMeansWithClusters
   :: forall ks x y w effs rs
    . ( FU.ThreeDTransformable rs ks x y w
@@ -285,9 +291,10 @@ kMeansWithClusters sunXF sunYF numClusters numTries makeInitial distance
         )
         (return M.empty)
         (traverse computeOne)
+-}
 
 kMeansOneWithClusters
-  :: forall rs x y w f effs
+  :: forall x y w rs f effs
    . ( FU.ThreeColData x y w
      , Foldable f
      , Functor f
@@ -359,6 +366,61 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
         <> " null clusters dropped."
       else Log.logLE Log.Diagnostic "All clusters have at least one member."
     return result
+
+-- as a reduce for mapReduce
+kMeansOneWCReduce
+  :: forall ks x y w rs f effs
+   . ( FU.ThreeColData x y w
+     , Foldable f
+     , Functor f
+     , F.ElemOf rs x
+     , F.ElemOf rs y
+     , F.ElemOf rs w
+     , '[FU.DblX, FU.DblY, w] F.⊆ WithScaledCols rs
+     , rs F.⊆ WithScaledCols rs
+     , Eq (WithScaled rs)
+     , V.RMap (rs V.++ '[FU.DblX, FU.DblY])
+     , V.ReifyConstraint Show F.ElField (rs V.++ '[FU.DblX, FU.DblY])
+     , V.RecordToList (rs V.++ '[FU.DblX, FU.DblY])
+     , Show (V.Snd w)
+     , Log.LogWithPrefixes effs
+     )
+  => Int
+  -> Int
+  -> (  Int
+     -> f (F.Record '[FU.DblX, FU.DblY, w])
+     -> FR.Eff effs [U.Vector Double]
+     )  -- initial centroids, monadic because may need randomness
+  -> Distance
+  -> Weighted (WithScaled rs) (V.Snd w)
+  -> FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
+  -> FL.Fold
+       (F.Record '[y, w])
+       (MR.ScaleAndUnscale (V.Snd y))
+  -> MR.Reduce
+       ( 'Just (FR.Eff effs))
+       (F.Record ks)
+       f
+       (F.Record rs)
+       ( M.Map
+           (F.Record ks)
+           [ ( (V.Snd x, V.Snd y, V.Snd w)
+             , [F.Record rs]
+             )
+           ]
+       )
+kMeansOneWCReduce numClusters numTries makeInitial distance weighted sunX sunY
+  = MR.ReduceM $ \k rows -> sequence $ M.singleton
+    k
+    (kMeansOneWithClusters @x @y @w sunX
+                                    sunY
+                                    numClusters
+                                    numTries
+                                    makeInitial
+                                    weighted
+                                    distance
+                                    rows
+    )
 
 type IsCentroid = "is_centroid" F.:-> Bool
 type ClusterId = "cluster_id" F.:-> Int
