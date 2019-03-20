@@ -1,10 +1,7 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -20,27 +17,29 @@
 module Control.MapReduce where
 
 import qualified Control.Foldl                 as FL
-import           Control.Monad                  ( join )
+import           Data.Foldable                  ( fold )
+--import           Control.Monad                  ( join )
 import           Data.Functor.Identity          ( Identity(Identity) )
 import qualified Data.Map.Strict               as MS
 import qualified Data.Map.Strict               as ML
 import qualified Data.HashMap.Lazy             as HML
 import qualified Data.HashMap.Strict           as HMS
-import qualified Data.Map.Monoidal             as MML
-import qualified Data.Map.Monoidal.Strict      as MMS
-import qualified Data.HashMap.Monoidal         as MHM
 import           Data.Monoid                    ( (<>)
                                                 , Monoid(..)
-                                                , mconcat
                                                 )
 import qualified Data.Sequence                 as Seq
-import qualified Data.Sort                     as Sort
+
 import           Data.Hashable                  ( Hashable )
 import           Data.Kind                      ( Type
                                                 , Constraint
                                                 )
 import qualified Data.Profunctor               as P
 
+{-
+import qualified Data.Map.Monoidal             as MML
+import qualified Data.Map.Monoidal.Strict      as MMS
+import qualified Data.HashMap.Monoidal         as MHM
+-}
 
 -- | MapReduce as folds
 -- This is all just wrapping around Control.Foldl so that it's easier to see the map-reduce structure
@@ -82,6 +81,9 @@ generalizeUnpack (Unpack f) = UnpackM $ return . f
 noUnpack :: Unpack 'Nothing Identity x x
 noUnpack = Unpack Identity
 
+simpleUnpack :: (x -> y) -> Unpack 'Nothing Identity x y
+simpleUnpack f = Unpack $ Identity . f
+
 filter :: (x -> Bool) -> Unpack 'Nothing Maybe x x
 filter t = Unpack $ \x -> if t x then Just x else Nothing
 {-# INLINABLE filter #-}
@@ -112,9 +114,9 @@ assign getKey getCols = Assign (\y -> (getKey y, getCols y))
 data Gatherer (eConst :: Type -> Constraint) gt k c d =
   Gatherer
   {
-    foldInto :: (forall h. Foldable h => h (k,c) -> gt)
-  , gFoldMapWithKey :: (forall e. (eConst e, Monoid e) => (k -> d -> e) -> gt -> e)
-  , gFoldMapWithKeyM :: (forall e n. (eConst e, Monoid e, Monad n) => (k -> d -> n e) -> gt -> n e)
+    foldInto :: forall h. Foldable h => h (k,c) -> gt
+  , gFoldMapWithKey :: forall e. (eConst e, Monoid e) => (k -> d -> e) -> gt -> e
+  , gFoldMapWithKeyM :: forall e n. (eConst e, Monoid e, Monad n) => (k -> d -> n e) -> gt -> n e
   }
 
 -- | represent an empty constraint
@@ -195,15 +197,16 @@ uagMapEachFold
   -> Unpack mm g x y
   -> Assign k y c
   -> MapGather mm x ec gt k c d
-uagMapEachFold gatherer unpacker (Assign assign) = MapGather gatherer mapStep
+uagMapEachFold gatherer' unpacker (Assign assign') = MapGather gatherer'
+                                                               mapStep'
  where
-  mapStep = case unpacker of
-    Unpack unpack ->
-      MapStepFold $ P.dimap unpack (foldInto gatherer . fmap assign) FL.mconcat
+  mapStep' = case unpacker of
+    Unpack unpack -> MapStepFold
+      $ P.dimap unpack (foldInto gatherer' . fmap assign') FL.mconcat
     UnpackM unpackM ->
       MapStepFoldM
         $ FL.premapM unpackM
-        $ fmap (foldInto gatherer . fmap assign)
+        $ fmap (foldInto gatherer' . fmap assign')
         $ FL.generalize FL.mconcat
 {-# INLINABLE uagMapEachFold #-}
 
@@ -213,17 +216,17 @@ uagMapAllGatherOnceFold
   -> Unpack mm g x y
   -> Assign k y c
   -> MapGather mm x ec gt k c d --MapStep mm x (mt k d)
-uagMapAllGatherOnceFold gatherer unpacker (Assign assign) = MapGather
-  gatherer
-  mapStep
+uagMapAllGatherOnceFold gatherer' unpacker (Assign assign') = MapGather
+  gatherer'
+  mapStep'
  where
-  mapStep = case unpacker of
+  mapStep' = case unpacker of
     Unpack unpack -> MapStepFold
-      $ P.dimap (fmap assign . unpack) (foldInto gatherer) FL.mconcat
+      $ P.dimap (fmap assign' . unpack) (foldInto gatherer') FL.mconcat
     UnpackM unpackM ->
       MapStepFoldM
-        $ FL.premapM (fmap (fmap assign) . unpackM)
-        $ fmap (foldInto gatherer)
+        $ FL.premapM (fmap (fmap assign') . unpackM)
+        $ fmap (foldInto gatherer')
         $ FL.generalize FL.mconcat
 {-# INLINABLE uagMapAllGatherOnceFold #-}
 
@@ -233,16 +236,16 @@ uagMapAllGatherEachFold
   -> Unpack mm g x y
   -> Assign k y c
   -> MapGather mm x ec gt k c d --MapStep mm x (mt k d)
-uagMapAllGatherEachFold gatherer unpacker (Assign assign) = MapGather
-  gatherer
-  mapStep
+uagMapAllGatherEachFold gatherer' unpacker (Assign assign') = MapGather
+  gatherer'
+  mapStep'
  where
-  mapStep = case unpacker of
+  mapStep' = case unpacker of
     Unpack unpack -> MapStepFold
-      $ FL.premap (foldInto gatherer . fmap assign . unpack) FL.mconcat
+      $ FL.premap (foldInto gatherer' . fmap assign' . unpack) FL.mconcat
     UnpackM unpackM ->
       MapStepFoldM
-        $ FL.premapM (fmap (foldInto gatherer . fmap assign) . unpackM)
+        $ FL.premapM (fmap (foldInto gatherer' . fmap assign') . unpackM)
         $ FL.generalize FL.mconcat
 {-# INLINABLE uagMapAllGatherEachFold #-}
 
@@ -271,17 +274,17 @@ instance Foldable h => Applicative (Reduce 'Nothing k h x) where
   {-# INLINABLE pure #-}
   Reduce r1 <*> Reduce r2 = Reduce $ \k -> r1 k <*> r2 k
   ReduceFold f1 <*> ReduceFold f2 = ReduceFold $ \k -> f1 k <*> f2 k
-  Reduce r1 <*> ReduceFold f2 = Reduce $ \k -> r1 k <*> (FL.fold $ f2 k)
-  ReduceFold f1 <*> Reduce r2 = Reduce $ \k -> (FL.fold $ f1 k) <*> r2 k
+  Reduce r1 <*> ReduceFold f2 = Reduce $ \k -> r1 k <*> FL.fold (f2 k)
+  ReduceFold f1 <*> Reduce r2 = Reduce $ \k -> FL.fold (f1 k) <*> r2 k
   {-# INLINABLE (<*>) #-}
 
 instance Monad m => Applicative (Reduce ('Just m) k h x) where
-  pure x = ReduceM $ \k -> pure $ pure x
+  pure x = ReduceM $ \_ -> pure $ pure x
   {-# INLINABLE pure #-}
-  ReduceM r1 <*> ReduceM r2 = ReduceM $ \k -> ((<*>) <$> r1 k <*> r2 k)
+  ReduceM r1 <*> ReduceM r2 = ReduceM $ \k -> (<*>) <$> r1 k <*> r2 k
   ReduceFoldM f1 <*> ReduceFoldM f2 = ReduceFoldM $ \k -> f1 k <*> f2 k
-  ReduceM r1 <*> ReduceFoldM f2 = ReduceM $ \k -> ((<*>) <$> r1 k <*> (FL.foldM $ f2 k))
-  ReduceFoldM f1 <*> ReduceM r2 = ReduceM $ \k -> ((<*>) <$> (FL.foldM $ f1 k) <*> r2 k)
+  ReduceM r1 <*> ReduceFoldM f2 = ReduceM $ \k -> (<*>) <$> r1 k <*> FL.foldM (f2 k)
+  ReduceFoldM f1 <*> ReduceM r2 = ReduceM $ \k -> (<*>) <$> FL.foldM (f1 k) <*> r2 k
   {-# INLINABLE (<*>) #-}
 
 mapReduceWithKey :: (k -> y -> z) -> Reduce mm k h x y -> Reduce mm k h x z
@@ -332,13 +335,13 @@ mapReduceFold
   -> MapStep mm x gt
   -> Reduce mm k h z e
   -> MapFoldT mm x e
-mapReduceFold gatherer ms reducer = case reducer of
-  Reduce f -> fmap (gFoldMapWithKey gatherer f) $ mapFold ms
+mapReduceFold gatherer' ms reducer = case reducer of
+  Reduce f -> fmap (gFoldMapWithKey gatherer' f) $ mapFold ms
   ReduceFold f ->
-    fmap (gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx)) $ mapFold ms
-  ReduceM f -> monadicMapFoldM (gFoldMapWithKeyM gatherer f) $ mapFold ms
+    fmap (gFoldMapWithKey gatherer' (\k hx -> FL.fold (f k) hx)) $ mapFold ms
+  ReduceM f -> monadicMapFoldM (gFoldMapWithKeyM gatherer' f) $ mapFold ms
   ReduceFoldM f ->
-    monadicMapFoldM (gFoldMapWithKeyM gatherer (\k hx -> FL.foldM (f k) hx))
+    monadicMapFoldM (gFoldMapWithKeyM gatherer' (\k hx -> FL.foldM (f k) hx))
       $ mapFold ms
 {-# INLINABLE mapReduceFold #-}
 
@@ -347,8 +350,8 @@ mapGatherReduceFold
   => MapGather mm x ec gt k y (h z)
   -> Reduce mm k h z e
   -> MapFoldT mm x e
-mapGatherReduceFold (MapGather gatherer mapStep) =
-  mapReduceFold gatherer mapStep
+mapGatherReduceFold (MapGather gatherer' mapStep') =
+  mapReduceFold gatherer' mapStep'
 {-# INLINABLE mapGatherReduceFold #-}
 
 monadicMapFoldM :: Monad m => (a -> m b) -> FL.FoldM m x a -> FL.FoldM m x b
@@ -381,7 +384,7 @@ Should get moved to their own module
 -}
 
 foldToSequence :: Foldable h => h (k, c) -> Seq.Seq (k, c)
-foldToSequence = FL.fold (FL.Fold (\s x -> s Seq.|> x) Seq.empty id)
+foldToSequence = FL.fold (FL.Fold (Seq.|>) Seq.empty id)
 {-# INLINABLE foldToSequence #-}
 
 -- fix Seq as the gatherer type
@@ -404,7 +407,7 @@ sequenceGatherer fromKeyValueList foldMapWithKey traverseWithKey foldMonoid toSG
           fromKeyValueList . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list -- can we do this as a direct fold?
     in  Gatherer foldToSequence
                  (\f s -> foldMapWithKey f $ seqToMap s)
-                 (\f s -> fmap (foldMonoid) . traverseWithKey f $ seqToMap s)
+                 (\f s -> fmap foldMonoid . traverseWithKey f $ seqToMap s)
 {-# INLINABLE sequenceGatherer #-}
 
 gathererSeqToStrictHashMap
@@ -415,7 +418,7 @@ gathererSeqToStrictHashMap = sequenceGatherer
   (HMS.fromListWith (<>))
   (\f -> HMS.foldlWithKey' (\e k d -> e <> f k d) mempty)
   HMS.traverseWithKey
-  (foldMap id)
+  fold
 {-# INLINABLE gathererSeqToStrictHashMap #-}
 
 gathererSeqToLazyHashMap
@@ -426,7 +429,7 @@ gathererSeqToLazyHashMap = sequenceGatherer
   (HML.fromListWith (<>))
   (\f -> HML.foldlWithKey' (\e k d -> e <> f k d) mempty)
   HML.traverseWithKey
-  (foldMap id)
+  fold
 {-# INLINABLE gathererSeqToLazyHashMap #-}
 
 gathererSeqToStrictMap
@@ -434,7 +437,7 @@ gathererSeqToStrictMap
 gathererSeqToStrictMap = sequenceGatherer (MS.fromListWith (<>))
                                           MS.foldMapWithKey
                                           MS.traverseWithKey
-                                          (foldMap id)
+                                          fold
 {-# INLINABLE gathererSeqToStrictMap #-}
 
 gathererSeqToLazyMap
@@ -442,7 +445,7 @@ gathererSeqToLazyMap
 gathererSeqToLazyMap = sequenceGatherer (ML.fromListWith (<>))
                                         ML.foldMapWithKey
                                         ML.traverseWithKey
-                                        (foldMap id)
+                                        fold
 {-# INLINABLE gathererSeqToLazyMap #-}
 
 

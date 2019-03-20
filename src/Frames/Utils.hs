@@ -34,8 +34,7 @@ module Frames.Utils
   )
 where
 
-import qualified Control.Aggregations          as CA
-
+import qualified Control.MapReduce             as MR
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
@@ -60,10 +59,12 @@ goodDataByKey
        (M.Map (F.Record ks) (Int, Int))
 goodDataByKey =
   let getKey = F.recMaybe . F.rcast @ks
-  in  FL.prefilter (isJust . getKey) $ FL.Fold
-        (CA.aggregateToMap (fromJust . getKey) (flip (:)) [])
-        M.empty
-        (fmap $ FL.fold goodDataCount)
+  in  MR.mapGatherReduceFold
+        (MR.uagMapAllGatherEachFold (MR.defaultOrdGatherer (pure @[]))
+                                    MR.noUnpack
+                                    (MR.assign (fromJust . getKey) id)
+        )
+        (MR.Reduce $ \k -> M.singleton k . FL.fold goodDataCount)
 
 goodDataCount :: FL.Fold (F.Rec (Maybe F.:. F.ElField) rs) (Int, Int)
 goodDataCount =

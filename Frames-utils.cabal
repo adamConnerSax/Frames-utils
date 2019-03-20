@@ -35,10 +35,7 @@ common deps
 library
   import: deps
   ghc-options: -Wall -O2 -funbox-strict-fields
-  exposed-modules: Frames.Aggregations
-                 , Frames.Aggregations.Core
-                 , Frames.Aggregations.Monoidal
-                 , Frames.Aggregations.Folds
+  exposed-modules: Frames.Folds
                  , Frames.MapReduce
                  , Frames.Transform
                  , Frames.ScatterMerge
@@ -58,7 +55,6 @@ library
                  , Math.Rescale
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
-                 , Control.Aggregations
                  , Control.MapReduce
                  , Control.MapReduce.Parallel
                  , Control.Monad.Freer.Logger

@@ -57,25 +57,16 @@ benchAvgXYByLabel numThreadsToUse dat = bgroup
     $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictMap pure)) dat
   , bench "serial (seq -> strict hash map)"
     $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToStrictHashMap pure)) dat
---  , bench "serial (seq -> sorted list)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererSeqToSortedList pure)) dat
---  , bench "serial (strict monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMStrict pure)) dat
---  , bench "serial (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMMLazy pure)) dat
---  , bench "serial (monoidal hash map)" $ nf (FL.fold $ mrAvgXYByLabel (MR.gathererMHM pure)) dat
---  , bench "parallel reduce (lazy monoidal map)" $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGatherer pure)) dat
   , bench "parallel reduce (sequence -> strict hash map)"
     $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashableS pure)) dat
   , bench "parallel reduce (sequence -> lazy hash map)"
     $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashableL pure)) dat
---  , bench "parallel map (seq -> strict map)"
---  $ nf (mrAvgXYByLabelPM numThreadsToUse (MR.gathererSeqToStrictMap pure))
---  $ dat
   , bench "parallel map/reduce (seq -> strict hash map)"
   $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableS pure))
   $ dat
   , bench "parallel map/reduce (seq -> lazy hash map)"
   $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableL pure))
   $ dat
---  , bench "parallel reduce/combine" $ nf (FL.fold mrAvgXYByLabelP2) dat
   ]
 
 benchMapReduceIO :: IO Benchmark

@@ -39,9 +39,7 @@ module Frames.KMeans
   )
 where
 
---import qualified Control.Aggregations          as CA
 import qualified Frames.Utils                  as FU
-import qualified Frames.Aggregations           as FA
 import qualified Frames.Transform              as FT
 import qualified Frames.MapReduce              as MR
 import qualified Math.Rescale                  as MR
@@ -160,7 +158,7 @@ weighted2DRecord =
 type WithScaledCols rs = rs V.++ [FU.DblX, FU.DblY]
 type WithScaled rs = F.Record (WithScaledCols rs)
 
-
+{-
 kMeans
   :: forall ks x y w rs effs
    . ( FU.ThreeDTransformable rs ks x y w
@@ -199,7 +197,7 @@ kMeans sunXF sunYF numClusters makeInitial distance =
                   distance
           . fmap (F.rcast @'[x, y, w])
   in  FA.aggregateAndAnalyzeEachM' @ks (fmap (fmap toRecord) . computeOne)
-
+-}
 
 kMeansOne
   :: forall x y w f effs

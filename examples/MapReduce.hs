@@ -11,45 +11,43 @@
 {-# LANGUAGE TypeFamilies              #-}
 module Main where
 
-import qualified Control.Foldl                as FL
-import           Control.Monad.IO.Class (MonadIO (..))
-import qualified Data.List                    as List
-import           Data.Maybe                   (fromMaybe)
-import qualified Data.Map                     as M
-import qualified Data.Profunctor              as P
-import qualified Data.Text                    as T
-import qualified Data.Text.IO                 as T
-import qualified Data.Text.Lazy               as TL
-import qualified Data.Vector.Storable         as V
-import qualified Data.Vector         as VB
-import qualified Data.Vinyl                   as V
-import qualified Frames                       as F
-import qualified Frames.InCore                as FI
+import qualified Control.Foldl                   as FL
+import           Control.Monad.IO.Class           (MonadIO (..))
+import qualified Data.List                       as List
+--import           Data.Maybe                       (fromMaybe)
+import qualified Data.Map                        as M
+import qualified Data.Profunctor                 as P
+import qualified Data.Text                       as T
+import qualified Data.Text.IO                    as T
+import qualified Data.Text.Lazy                  as TL
+import qualified Data.Vector.Storable            as V
+import qualified Data.Vector                     as VB
+import qualified Data.Vinyl                      as V
+import qualified Frames                          as F
+import qualified Frames.InCore                   as FI
 
-import qualified Numeric.LinearAlgebra        as LA
-import           Numeric.LinearAlgebra        (R, Matrix)
+import qualified Numeric.LinearAlgebra           as LA
+import           Numeric.LinearAlgebra            (R
+                                                  , Matrix
+                                                  )
 
-import qualified Frames.VegaLite               as FV
-import qualified Html.Blaze.Report            as H
-import qualified Text.Blaze.Html5              as H
-import qualified Text.Blaze.Html5.Attributes   as HA
-import           Text.Blaze.Html              ((!))
-import qualified Text.Blaze.Html.Renderer.Text as BH
-import qualified Text.Pandoc.Report           as P
-import qualified Statistics.Types             as S
+import qualified Text.Blaze.Html.Renderer.Text   as BH
+import qualified Text.Pandoc.Report              as P
 
-import qualified Control.Monad.Freer.Logger   as Log
-import qualified Control.Monad.Freer          as FR
+import qualified Control.Monad.Freer.Logger      as Log
+import qualified Control.Monad.Freer             as FR
 import qualified Control.Monad.Freer.PandocMonad as FR
-import qualified Control.Monad.Freer.Pandoc as P
+import qualified Control.Monad.Freer.Pandoc      as P
 
 import qualified Frames.MapReduce as MR
-import qualified Control.MapReduce.Parallel as MRP
-import qualified Frames.Aggregations.Folds as FF
-import qualified Frames.Transform as          FT
-import           Frames.Table                  (blazeTable, RecordColonnade)
+import qualified Control.MapReduce.Parallel      as MRP
+import qualified Frames.Folds                    as FF
+import qualified Frames.Transform                as FT
+import           Frames.Table                    (blazeTable
+                                                 , RecordColonnade
+                                                 )
 
-import Data.String.Here
+import           Data.String.Here
 
 templateVars = M.fromList
   [

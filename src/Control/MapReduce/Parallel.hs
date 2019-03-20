@@ -1,11 +1,7 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -125,7 +121,7 @@ parReduceGathererOrd
   :: (Semigroup d, Ord k)
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
-parReduceGathererOrd = parReduceGathererOrd' (foldMap id)
+parReduceGathererOrd = parReduceGathererOrd' F.fold
 {-# INLINABLE parReduceGathererOrd #-}
 
 parReduceGathererHashableS'
@@ -146,7 +142,7 @@ parReduceGathererHashableS
   :: (Semigroup d, Hashable k, Eq k)
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
-parReduceGathererHashableS = parReduceGathererHashableS' (foldMap id)
+parReduceGathererHashableS = parReduceGathererHashableS' F.fold
 {-# INLINABLE parReduceGathererHashableS #-}
 
 parReduceGathererHashableL'
@@ -168,7 +164,7 @@ parReduceGathererHashableL
   :: (Semigroup d, Hashable k, Eq k)
   => (c -> d)
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
-parReduceGathererHashableL = parReduceGathererHashableL' (foldMap id)
+parReduceGathererHashableL = parReduceGathererHashableL' F.fold
 {-# INLINABLE parReduceGathererHashableL #-}
 
 {-
@@ -189,11 +185,8 @@ parFoldMonoid chunkSize fm = go (F.toList fm)
  where
   go lm = case L.length lm > chunkSize of
     True ->
-      go
-        ( PS.parMap (PS.rparWith PS.rdeepseq) (foldMap id)
-        $ L.chunksOf chunkSize lm
-        )
-    False -> foldMap id lm
+      go (PS.parMap (PS.rparWith PS.rdeepseq) F.fold $ L.chunksOf chunkSize lm)
+    False -> F.fold lm
 {-# INLINABLE parFoldMonoid #-}
 
 -- | like `foldMap id` but does sublists in || first
@@ -202,7 +195,7 @@ parFoldMonoid'
 parFoldMonoid' threadsToUse fm =
   let asList  = F.toList fm
       chunked = L.divvy threadsToUse threadsToUse asList
-  in  mconcat $ parMapEach mconcat $ chunked
+  in  mconcat $ parMapEach mconcat chunked
 
 
 parFoldMonoidDC :: (Monoid b, PS.NFData b, Foldable h) => Int -> h b -> b
@@ -254,9 +247,9 @@ parReduceGathererMM
   -> MR.Gatherer PS.NFData (MML.MonoidalMap k d) k c d
 parReduceGathererMM toSG = Gatherer
   (MML.fromListWith (<>) . fmap (\(k, c) -> (k, toSG c)) . FL.fold FL.list)
-  (\doOne -> foldMap id . parMapEach (uncurry doOne) . MML.toList)
+  (\doOne -> fold . parMapEach (uncurry doOne) . MML.toList)
   (\doOneM ->
-    fmap (foldMap id)
+    fmap fold
       . fmap (PS.withStrategy (PS.parTraversable PS.rdeepseq)) -- deepseq each one in ||
       . MML.traverseWithKey doOneM -- hopefully, this just lazily creates thunks
   )

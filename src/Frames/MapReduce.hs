@@ -31,6 +31,7 @@ module Frames.MapReduce
 --  , gatherRecordFrame
   , mapReduceGF
   , mapRListF
+  , mapRListFOrd
   )
 where
 
@@ -102,7 +103,7 @@ splitOnKeys
 splitOnKeys = assignKeysAndData @ks @cs
 {-# INLINABLE splitOnKeys #-}
 
--- | 
+-- | The common case where we reduce the data to a single row and then (re-)attach a key
 reduceAndAddKey
   :: forall ks cs h x
    . FI.RecVec ((ks V.++ cs))
@@ -112,6 +113,7 @@ reduceAndAddKey process =
   fmap (F.toFrame . pure @[]) $ MR.processAndRelabel process V.rappend
 {-# INLINABLE reduceAndAddKey #-}
 
+-- | The common case where we reduce (via a fold) the data to a single row and then (re-)attach a key
 foldAndAddKey
   :: (Foldable h, FI.RecVec ((ks V.++ cs)))
   => FL.Fold x (F.Record cs)
@@ -160,6 +162,19 @@ mapRListF
   -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
   -> MR.MapFoldT mm x e
 mapRListF = mapReduceGF (MR.defaultHashableGatherer pure)
+
+mapRListFOrd
+  :: ( Functor g
+     , Functor (MR.MapFoldT mm x)
+     , Monoid e
+     , Foldable g
+     , Ord (F.Record ks)
+     )
+  => MR.Unpack mm g x y
+  -> MR.Assign (F.Record ks) y (F.Record cs)
+  -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
+  -> MR.MapFoldT mm x e
+mapRListFOrd = mapReduceGF (MR.defaultOrdGatherer pure)
 
 
 -- this is slightly too general to use the above
