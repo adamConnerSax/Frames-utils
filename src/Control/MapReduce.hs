@@ -361,18 +361,18 @@ monadicMapFoldM f (FL.FoldM step begin done) = FL.FoldM step begin done'
   where done' x = done x >>= f
 {-# INLINABLE monadicMapFoldM #-}
 
-class DefaultGatherer (ce :: Type -> Constraint) h k y d where
+class DefaultGatherer (ce :: Type -> Constraint) k y d where
   defaultGatherer :: (ce k, Semigroup d) => (y -> d) -> Gatherer Empty (Seq.Seq (k, y)) k y d
 
-instance Ord k => DefaultGatherer Ord h k y d where
+instance Ord k => DefaultGatherer Ord k y d where
   defaultGatherer toSG = defaultOrdGatherer toSG
 
-instance (Hashable k, Eq k, Semigroup d) => DefaultGatherer Hashable h k y d where
+instance (Hashable k, Eq k, Semigroup d) => DefaultGatherer Hashable k y d where
   defaultGatherer toSG = defaultHashableGatherer toSG
 
-simple
+basicListF
   :: forall kc k y c mm x e g
-   . ( DefaultGatherer kc [] k c [c]
+   . ( DefaultGatherer kc k c [c]
      , Monoid e
      , Functor (MapFoldT mm x)
      , Functor g
@@ -383,8 +383,8 @@ simple
   -> Assign k y c
   -> Reduce mm k [] c e
   -> MapFoldT mm x e
-simple u a r = mapGatherReduceFold
-  (uagMapAllGatherEachFold (defaultGatherer @kc @[] (pure @[])) u a)
+basicListF u a r = mapGatherReduceFold
+  (uagMapAllGatherEachFold (defaultGatherer @kc (pure @[])) u a)
   r
 
 unpackOnlyFold

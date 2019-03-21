@@ -161,7 +161,7 @@ mapRListF
   -> MR.Assign (F.Record ks) y (F.Record cs)
   -> MR.Reduce mm (F.Record ks) [] (F.Record cs) e
   -> MR.MapFoldT mm x e
-mapRListF = mapReduceGF (MR.defaultHashableGatherer pure)
+mapRListF = MR.basicListF @Hashable --mapReduceGF (MR.defaultHashableGatherer pure)
 
 mapRListFOrd
   :: ( Functor g

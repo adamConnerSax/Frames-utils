@@ -124,9 +124,7 @@ scatterMergeOne numBinsX numBinsY rtX rtY dataRows =
       wgtdSumF =
         let f (wX, wY, totW) (x, y, w) = let w' = realToFrac w in (wX + w' * x, wY + w' * y, totW + w)
         in FL.Fold f (0, 0 , 0) (\(wX, wY, totW) -> let tw = realToFrac totW in (wX/tw, wY/tw, totW))
-      mapRFold = MR.mapGatherReduceFold -- we can't use the frame version here since the keys and data are not in a frame
-                 (MR.uagMapAllGatherEachFold (MR.defaultOrdGatherer (pure @[])) (MR.simpleUnpack binAndScale) (MR.assign getKey getData))
-                 (MR.Reduce $ \_ xyws -> [FL.fold wgtdSumF xyws])
+      mapRFold = MR.basicListF @Ord (MR.simpleUnpack binAndScale) (MR.assign getKey getData) (MR.Reduce $ \_ xyws -> [FL.fold wgtdSumF xyws])
   in FL.fold mapRFold dataRows
 
 
@@ -187,8 +185,7 @@ scatterMerge' toX toY xBins yBins =
       makeXYW :: (V.Snd x, V.Snd y, V.Snd w) -> F.Record [x,y,w]
       makeXYW (x,y,w) =  x &: y &: w &: V.RNil
       extractF :: FL.Fold (F.Record [Bin2D,FU.DblX, FU.DblY, w]) ([(V.Snd x, V.Snd y, FU.FType w)])
-      extractF = MR.mapGatherReduceFold
-        (MR.uagMapAllGatherEachFold (MR.defaultOrdGatherer (pure @[])) MR.noUnpack (MR.splitOnKeys @'[Bin2D]))
+      extractF = MR.basicListF @Ord MR.noUnpack (MR.splitOnKeys @'[Bin2D])
         (MR.ReduceFold $ const $ FL.Fold wgtdSum (0,0,0) (\(wX, wY, totW) -> let totW' = realToFrac totW in [(toX (wX/totW'), toY (wY/totW'), totW)]))
   in MR.mapRListFOrd
      (MR.simpleUnpack $ binRow . F.rcast @(UseCols ks x y w))

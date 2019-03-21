@@ -59,11 +59,9 @@ goodDataByKey
        (M.Map (F.Record ks) (Int, Int))
 goodDataByKey =
   let getKey = F.recMaybe . F.rcast @ks
-  in  MR.mapGatherReduceFold
-        (MR.uagMapAllGatherEachFold (MR.defaultOrdGatherer (pure @[]))
-                                    MR.noUnpack
-                                    (MR.assign (fromJust . getKey) id)
-        )
+  in  MR.basicListF @Ord
+        MR.noUnpack
+        (MR.assign (fromJust . getKey) id)
         (MR.Reduce $ \k -> M.singleton k . FL.fold goodDataCount)
 
 goodDataCount :: FL.Fold (F.Rec (Maybe F.:. F.ElField) rs) (Int, Int)
