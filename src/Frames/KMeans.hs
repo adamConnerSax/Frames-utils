@@ -141,13 +141,7 @@ kMeansPPCentroids distF k dataRows = MK.kMeansPPCentroids distF k pts
 
 weighted2DRecord
   :: forall x y w rs
-   . ( FU.RealField x
-     , FU.RealField y
-     , FU.RealField w
-     , F.ElemOf rs x
-     , F.ElemOf rs y
-     , F.ElemOf rs w
-     )
+   . (FU.RealFieldOf rs x, FU.RealFieldOf rs y, FU.RealFieldOf rs w)
   => Weighted (F.Record rs) (V.Snd w)
 weighted2DRecord =
   let getX = realToFrac . F.rgetField @x
@@ -155,13 +149,14 @@ weighted2DRecord =
       makeV r = U.fromList [getX r, getY r]
   in  Weighted 2 makeV (F.rgetField @w)
 
-type WithScaledCols rs = rs V.++ [FU.DblX, FU.DblY]
-type WithScaled rs = F.Record (WithScaledCols rs)
-
+type WithScaledCols rs x y = rs V.++ [x, y]
+type WithScaled rs x y = F.Record (WithScaledCols rs x y)
 
 kMeansOne
-  :: forall x y w f effs
+  :: forall x y w f effs scaledX scaledY
    . ( FU.ThreeColData x y w
+     , FU.TField Double scaledX
+     , FU.TField Double scaledY
      , Foldable f
      , Functor f
      , Log.LogWithPrefixes effs
@@ -171,10 +166,10 @@ kMeansOne
   -> FL.Fold (F.Record '[y, w]) (MR.ScaleAndUnscale (V.Snd y))
   -> Int
   -> (  Int
-     -> f (F.Record '[FU.DblX, FU.DblY, w])
+     -> f (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
-  -> Weighted (F.Record '[FU.DblX, FU.DblY, w]) (V.Snd w)
+  -> Weighted (F.Record '[scaledX, scaledY, w]) (V.Snd w)
   -> Distance
   -> f (F.Record '[x, y, w])
   -> FR.Eff effs [(V.Snd x, V.Snd y, V.Snd w)]
@@ -200,19 +195,21 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
       clusters -- we drop empty clusters ??
 
 kMeansOneWithClusters
-  :: forall x y w rs f effs
+  :: forall x y w rs f effs scaledX scaledY
    . ( FU.ThreeColData x y w
      , Foldable f
      , Functor f
+     , FU.TField Double scaledX
+     , FU.TField Double scaledY
      , F.ElemOf rs x
      , F.ElemOf rs y
      , F.ElemOf rs w
-     , '[FU.DblX, FU.DblY, w] F.⊆ WithScaledCols rs
-     , rs F.⊆ WithScaledCols rs
-     , Eq (WithScaled rs)
-     , V.RMap (rs V.++ '[FU.DblX, FU.DblY])
-     , V.ReifyConstraint Show F.ElField (rs V.++ '[FU.DblX, FU.DblY])
-     , V.RecordToList (rs V.++ '[FU.DblX, FU.DblY])
+     , '[scaledX, scaledY, w] F.⊆ WithScaledCols rs scaledX scaledY
+     , rs F.⊆ WithScaledCols rs scaledX scaledY
+     , Eq (WithScaled rs scaledX scaledY)
+     , V.RMap (rs V.++ '[scaledX, scaledY])
+     , V.ReifyConstraint Show F.ElField (rs V.++ '[scaledX, scaledY])
+     , V.RecordToList (rs V.++ '[scaledX, scaledY])
      , Show (V.Snd w)
      , Log.LogWithPrefixes effs
      )
@@ -221,10 +218,10 @@ kMeansOneWithClusters
   -> Int
   -> Int
   -> (  Int
-     -> f (F.Record '[FU.DblX, FU.DblY, w])
+     -> f (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
-  -> Weighted (WithScaled rs) (V.Snd w)
+  -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
   -> Distance
   -> f (F.Record rs)
   -> FR.Eff
@@ -235,8 +232,8 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
     let (sunX, sunY) = FL.fold
           ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF)
           (fmap (F.rcast @'[x, y, w]) dataRows)
-        addX = FT.recordSingleton @FU.DblX . MR.from sunX . F.rgetField @x
-        addY = FT.recordSingleton @FU.DblY . MR.from sunY . F.rgetField @y
+        addX = FT.recordSingleton @scaledX . MR.from sunX . F.rgetField @x
+        addY = FT.recordSingleton @scaledY . MR.from sunY . F.rgetField @y
         addXY r = addX r F.<+> addY r
         plusScaled = fmap (FT.mutate addXY) dataRows
     initials <- mapM
@@ -275,30 +272,32 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
 
 -- as a reduce for mapReduce
 kMeansOneWCReduce
-  :: forall ks x y w rs f effs
+  :: forall ks x y w rs f effs scaledX scaledY
    . ( FU.ThreeColData x y w
      , Foldable f
      , Functor f
+     , FU.TField Double scaledX
+     , FU.TField Double scaledY
      , F.ElemOf rs x
      , F.ElemOf rs y
      , F.ElemOf rs w
-     , '[FU.DblX, FU.DblY, w] F.⊆ WithScaledCols rs
-     , rs F.⊆ WithScaledCols rs
-     , Eq (WithScaled rs)
-     , V.RMap (rs V.++ '[FU.DblX, FU.DblY])
-     , V.ReifyConstraint Show F.ElField (rs V.++ '[FU.DblX, FU.DblY])
-     , V.RecordToList (rs V.++ '[FU.DblX, FU.DblY])
+     , '[scaledX, scaledY, w] F.⊆ WithScaledCols rs scaledX scaledY
+     , rs F.⊆ WithScaledCols rs scaledX scaledY
+     , Eq (WithScaled rs scaledX scaledY)
+     , V.RMap (rs V.++ '[scaledX, scaledY])
+     , V.ReifyConstraint Show F.ElField (rs V.++ '[scaledX, scaledY])
+     , V.RecordToList (rs V.++ '[scaledX, scaledY])
      , Show (V.Snd w)
      , Log.LogWithPrefixes effs
      )
   => Int
   -> Int
   -> (  Int
-     -> f (F.Record '[FU.DblX, FU.DblY, w])
+     -> f (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Distance
-  -> Weighted (WithScaled rs) (V.Snd w)
+  -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
   -> FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
   -> FL.Fold
        (F.Record '[y, w])
@@ -336,9 +335,9 @@ type ClusteredRow ks x y w = F.Record (ks V.++ [IsCentroid, ClusterId, MarkLabel
 
 clusteredRows
   :: forall x y w ks rs
-   . ( FU.RealField x
-     , FU.RealField y
-     , FU.RealField w
+   . ( FU.RealFieldOf rs x
+     , FU.RealFieldOf rs y
+     , FU.RealFieldOf rs w
      , ClusteredRow
          ks
          x
@@ -347,9 +346,6 @@ clusteredRows
          ~
          F.Record
          (ks V.++ '[IsCentroid, ClusterId, MarkLabel, x, y, w])
-     , F.ElemOf rs x
-     , F.ElemOf rs y
-     , F.ElemOf rs w
      )
   => (F.Record rs -> Text) -- label for each row
   -> M.Map (F.Record ks) [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]

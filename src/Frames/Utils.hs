@@ -25,8 +25,12 @@ module Frames.Utils
   , goodDataByKey
   , filterField
   , filterMaybeField
+  , CField
+  , CFieldOf
   , RealField
   , RealFieldOf
+  , TField
+  , TFieldOf
   , TwoColData
   , ThreeColData
   , ThreeDTransformable
@@ -91,11 +95,23 @@ type DblX = "double_x" F.:-> Double
 type DblY = "double_y" F.:-> Double
 
 type UseCols ks x y w = ks V.++ '[x,y,w]
-type RealField x = (V.KnownField x, Real (FType x))
+type CField c x = (V.KnownField x, c (FType x))
+type RealField x = CField Real x -- (V.KnownField x, Real (FType x))
+
+type TField t x = (V.KnownField x, t ~ V.Snd x)
+
 
 -- This thing is...unfortunate. Is there something built into Frames or Vinyl that would do this?
+class (CField c x, F.ElemOf rs x {-x V.∈ rs-}) => CFieldOf c rs x
+instance (CField c x, F.ElemOf rs x{- x V.∈ rs -}) => CFieldOf c rs x
+
 class (RealField x, x V.∈ rs) => RealFieldOf rs x
 instance (RealField x, x V.∈ rs) => RealFieldOf rs x
+
+class (TField t x, F.ElemOf rs x {-x V.∈ rs-}) => TFieldOf t rs x
+instance (TField t x, F.ElemOf rs x{- x V.∈ rs -}) => TFieldOf t rs x
+
+
 
 type TwoColData x y = F.AllConstrained (RealFieldOf [x,y]) '[x, y]
 type ThreeColData x y z = ([x,z] F.⊆ [x,y,z], [y,z] F.⊆ [x,y,z], [x,y] F.⊆ [x,y,z], F.AllConstrained (RealFieldOf [x,y,z]) '[x, y, z])
