@@ -43,7 +43,7 @@ import qualified Data.HashMap.Monoidal         as MHM
 
 -- | MapReduce as folds
 -- This is all just wrapping around Control.Foldl so that it's easier to see the map-reduce structure
--- The Mapping step is broken into 3 parts:
+-- The Mapping step is broken into 3. parts:
 -- 1. unpacking, which could include "melting" or filtering,
 -- 2. assigning, which assigns a group to each unpacked item.  Could just be choosing a key column(s)
 -- 3. gathering, which pulls together the items in each group
@@ -54,10 +54,12 @@ import qualified Data.HashMap.Monoidal         as MHM
 -- and we will loop over the data only once.
 -- The Reduce type is also Applicative so there could be work sharing there as well:
 -- e.g., if your `reduce :: (k -> d -> e)` has the form `reduce k :: FL.Fold d e` 
-
--- | I've made some choices.  For example, to use these simplified pieces to build your fold, you will have to
--- use either MonoidalMap or MonoidalHashMap as your storage for grouped items
-
+-- A couple of parts are less straightforward.  One record of functions, the "Gatherer" is responsible for choosing
+-- what structure holds the grouped data.  The default choices are Map or HashMap
+-- And there is the question of how data is grouped for each key after assigning.  The simplest, and most common choice
+-- is as a list but other options are possible.  This choice is typically made via a function from the data part of the assign
+-- to a monoid.  So if assign chooses a (k, c) pair for each unpacked datum, we group to (k, d) where d is a monoid.  And
+-- we specify this via a choice of `Monoid d => (c->d)`, often, for gathering into lists, just `pure @[] :: c -> [c]`
 
 -- | `Unpack` is for melting rows or filtering, e.g.
 data Unpack (mm :: Maybe (Type -> Type)) g x y where
@@ -125,7 +127,7 @@ instance Empty x
 
 -- this one is fastest in simple tests.  And close to linear, prolly the expected N(ln N)
 defaultHashableGatherer
-  :: (Monoid d, Hashable k, Eq k)
+  :: (Semigroup d, Hashable k, Eq k)
   => (c -> d)
   -> Gatherer Empty (Seq.Seq (k, c)) k c d
 defaultHashableGatherer = gathererSeqToStrictHashMap
@@ -359,6 +361,31 @@ monadicMapFoldM f (FL.FoldM step begin done) = FL.FoldM step begin done'
   where done' x = done x >>= f
 {-# INLINABLE monadicMapFoldM #-}
 
+class DefaultGatherer (ce :: Type -> Constraint) h k y d where
+  defaultGatherer :: (ce k, Semigroup d) => (y -> d) -> Gatherer Empty (Seq.Seq (k, y)) k y d
+
+instance Ord k => DefaultGatherer Ord h k y d where
+  defaultGatherer toSG = defaultOrdGatherer toSG
+
+instance (Hashable k, Eq k, Semigroup d) => DefaultGatherer Hashable h k y d where
+  defaultGatherer toSG = defaultHashableGatherer toSG
+
+simple
+  :: forall kc k y c mm x e g
+   . ( DefaultGatherer kc [] k c [c]
+     , Monoid e
+     , Functor (MapFoldT mm x)
+     , Functor g
+     , Foldable g
+     , kc k
+     )
+  => Unpack mm g x y
+  -> Assign k y c
+  -> Reduce mm k [] c e
+  -> MapFoldT mm x e
+simple u a r = mapGatherReduceFold
+  (uagMapAllGatherEachFold (defaultGatherer @kc @[] (pure @[])) u a)
+  r
 
 unpackOnlyFold
   :: forall h mm g x y
@@ -411,7 +438,7 @@ sequenceGatherer fromKeyValueList foldMapWithKey traverseWithKey foldMonoid toSG
 {-# INLINABLE sequenceGatherer #-}
 
 gathererSeqToStrictHashMap
-  :: (Monoid d, Hashable k, Eq k)
+  :: (Semigroup d, Hashable k, Eq k)
   => (c -> d)
   -> Gatherer Empty (Seq.Seq (k, c)) k c d
 gathererSeqToStrictHashMap = sequenceGatherer
