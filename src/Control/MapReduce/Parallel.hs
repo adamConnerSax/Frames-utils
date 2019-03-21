@@ -14,39 +14,36 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.MapReduce.Parallel
-  ( module Control.MapReduce
-  , parallelMapReduce
+  ( parallelMapReduce
   , defaultParReduceGatherer
   , parReduceGathererOrd
   , parReduceGathererHashableL
   , parReduceGathererHashableS
---  , parReduceGathererMM
   , parFoldMonoid
   , parFoldMonoidDC
+  -- * re-exports
+  , NFData
   )
 where
 
-import           Control.MapReduce
-import qualified Control.MapReduce             as MR
+import qualified Control.MapReduce.Core        as MR
+import qualified Control.MapReduce.Gatherer    as MR
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as F
 import qualified Data.List                     as L
 import qualified Data.List.Split               as L
 import qualified Data.Sequence                 as Seq
-import qualified Data.Map                      as ML
 import qualified Data.Map.Strict               as MS
 import           Data.Hashable                  ( Hashable )
 import qualified Data.HashMap.Strict           as HMS
 import qualified Data.HashMap.Strict           as HML
-import qualified Data.Map.Monoidal.Strict      as MMS
-import qualified Data.Map.Monoidal             as MML
-import qualified Data.HashMap.Monoidal         as HMM
 import           Data.Monoid                    ( Monoid
                                                 , mconcat
                                                 )
 
 import qualified Control.Parallel.Strategies   as PS
+import           Control.Parallel.Strategies    ( NFData ) -- for re-export
 --
 
 -- | You can use this in the reguler mapReduce call and it will do parallel reduce.  To get parallelism in the map stage as well,
@@ -72,22 +69,20 @@ parallelMapReduce
      )
   => Int -- 1000 seems optimal on my current machine
   -> Int
-  -> Gatherer ce gt k y (h z)
-  -> MapStep 'Nothing x gt
-  -> Reduce 'Nothing k h z e
+  -> MR.Gatherer ce gt k y (h z)
+  -> MR.MapStep 'Nothing x gt
+  -> MR.Reduce 'Nothing k h z e
   -> q x
   -> e
-parallelMapReduce oneSparkMax numThreads gatherer mapStep reduceStep qx
-  = let
-      chunkedH :: [[x]] = L.divvy numThreads numThreads $ FL.fold FL.list qx -- list divvied into n sublists
-      mapped :: [gt]    = parMapEach (FL.fold (mapFold mapStep)) chunkedH -- list of n gt
+parallelMapReduce oneSparkMax numThreads gatherer mapStep reduceStep qx =
+  let chunkedH :: [[x]] = L.divvy numThreads numThreads $ FL.fold FL.list qx -- list divvied into n sublists
+      mapped :: [gt]    = parMapEach (FL.fold (MR.mapFold mapStep)) chunkedH -- list of n gt
       merged :: gt      = parFoldMonoid oneSparkMax mapped
       reduced           = case reduceStep of
-        Reduce f -> gFoldMapWithKey gatherer f merged
-        ReduceFold f ->
-          gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx) merged
-    in
-      reduced
+        MR.Reduce f -> MR.gFoldMapWithKey gatherer f merged
+        MR.ReduceFold f ->
+          MR.gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx) merged
+  in  reduced
 {-# INLINABLE parallelMapReduce #-}
 
 

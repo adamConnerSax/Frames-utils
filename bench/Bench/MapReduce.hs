@@ -20,7 +20,7 @@ import           Control.DeepSeq                ( NFData(rnf) )
 
 import qualified Frames.MapReduce              as MR
 import qualified Control.MapReduce.Parallel    as MRP
-import qualified Frames.Aggregations.Folds     as FF
+import qualified Frames.Folds                  as FF
 import qualified Frames.Transform              as FT
 import           Frames.Table                   ( blazeTable
                                                 , RecordColonnade
@@ -65,7 +65,7 @@ benchAvgXYByLabel numThreadsToUse dat = bgroup
   $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableS pure))
   $ dat
   , bench "parallel map/reduce (seq -> lazy hash map)"
-  $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableL pure))
+  $ nf (mrAvgXYByLabelPMS numThreadsToUse)
   $ dat
   ]
 
@@ -131,8 +131,16 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r))
 mrAvgXYByLabel gm =
   MR.mapReduceGF gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
+-- use the simple version
+mrAvgXYByLabelPMS n = MR.parBasicListHashable 1000
+                                              n
+                                              noUnpack
+                                              assignToLabels
+                                              (MR.foldAndAddKey averageF)
+
+-- construct it directly so we can compare different gatherer implementations
 mrAvgXYByLabelPM n gm =
-  let (MRP.MapGather _ mapStep) =
+  let (MR.MapGather _ mapStep) =
         MR.uagMapAllGatherEachFold gm noUnpack assignToLabels
   in  MRP.parallelMapReduce @[] 1000 n gm mapStep (MR.foldAndAddKey averageF)
 

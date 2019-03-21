@@ -56,6 +56,9 @@ library
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
                  , Control.MapReduce
+                 , Control.MapReduce.Core
+                 , Control.MapReduce.Gatherer
+                 , Control.MapReduce.Simple
                  , Control.MapReduce.Parallel
                  , Control.Monad.Freer.Logger
                  , Control.Monad.Freer.Docs

@@ -128,7 +128,7 @@ makeRecsWithKey
   -> MR.Reduce mm (F.Record ks) h x (g y)
   -> MR.Reduce mm (F.Record ks) h x (F.FrameRec (ks V.++ as))
 makeRecsWithKey makeRec reduceToY = fmap F.toFrame
-  $ MR.mapReduceWithKey addKey reduceToY
+  $ MR.reduceMapWithKey addKey reduceToY
   where addKey k = fmap (V.rappend k . makeRec)
 
 
