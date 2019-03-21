@@ -62,10 +62,13 @@ benchAvgXYByLabel numThreadsToUse dat = bgroup
   , bench "parallel reduce (sequence -> lazy hash map)"
     $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashableL pure)) dat
   , bench "parallel map/reduce (seq -> strict hash map)"
-  $ nf (mrAvgXYByLabelPM numThreadsToUse (MRP.parReduceGathererHashableS pure))
+  $ nf
+      (FL.fold $ mrAvgXYByLabelPM numThreadsToUse
+                                  (MRP.parReduceGathererHashableS pure)
+      )
   $ dat
   , bench "parallel map/reduce (seq -> lazy hash map)"
-  $ nf (mrAvgXYByLabelPMS numThreadsToUse)
+  $ nf (FL.fold $ mrAvgXYByLabelPMS numThreadsToUse)
   $ dat
   ]
 
@@ -132,17 +135,17 @@ mrAvgXYByLabel gm =
   MR.mapReduceGF gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 -- use the simple version
-mrAvgXYByLabelPMS n = MR.parBasicListHashable 1000
-                                              n
-                                              noUnpack
-                                              assignToLabels
-                                              (MR.foldAndAddKey averageF)
+mrAvgXYByLabelPMS n = MR.parBasicListHashableF 1000
+                                               n
+                                               noUnpack
+                                               assignToLabels
+                                               (MR.foldAndAddKey averageF)
 
 -- construct it directly so we can compare different gatherer implementations
 mrAvgXYByLabelPM n gm =
   let (MR.MapGather _ mapStep) =
         MR.uagMapAllGatherEachFold gm noUnpack assignToLabels
-  in  MRP.parallelMapReduce @[] 1000 n gm mapStep (MR.foldAndAddKey averageF)
+  in  MRP.parallelMapReduceF @[] 1000 n gm mapStep (MR.foldAndAddKey averageF)
 
 {-
 mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)

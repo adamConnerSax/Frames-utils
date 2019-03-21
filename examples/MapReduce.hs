@@ -125,10 +125,11 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.re
 mrAvgXYByLabel = MR.mapRListF noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 
 mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabelP = MR.mapReduceGF (MRP.defaultParReduceGatherer pure) noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+mrAvgXYByLabelP = MR.parBasicListHashableF 1000 6 noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+--  MR.MR.mapReduceGF (MRP.defaultParReduceGatherer pure) 
 
 mrMaxXYByLabelABC :: FL.Fold (F.Record AllCols) (F.FrameRec '[Label,ZM])
-mrMaxXYByLabelABC = MR.mapReduceGF (MRP.defaultParReduceGatherer pure) (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
+mrMaxXYByLabelABC = MR.parBasicListHashableF 1000 6 (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
 
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)

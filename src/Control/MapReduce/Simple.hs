@@ -126,8 +126,8 @@ unpackOnlyFold unpack = MR.mapGatherReduceFold
   )
   MR.idReducer
 
-parBasicListHashable
-  :: forall k g y c x q e
+parBasicListHashableF
+  :: forall k g y c x e
    . ( Monoid e
      , MRP.NFData e -- for the parallel reduce     
      , MRP.NFData k -- for the parallel assign
@@ -135,7 +135,6 @@ parBasicListHashable
      , Functor (MR.MapFoldT 'Nothing x)
      , Functor g
      , Foldable g
-     , Foldable q
      , Hashable k
      , Eq k
      )
@@ -144,16 +143,15 @@ parBasicListHashable
   -> MR.Unpack 'Nothing g x y
   -> MR.Assign k y c
   -> MR.Reduce 'Nothing k [] c e
-  -> q x
-  -> e
-parBasicListHashable oneSparkMax numThreads u a r qx =
+  -> MR.MapFoldT 'Nothing x e
+parBasicListHashableF oneSparkMax numThreads u a r =
   let g                        = MRP.parReduceGathererHashableL (pure @[])
       (MR.MapGather _ mapStep) = MR.uagMapAllGatherEachFold g u a
-  in  MRP.parallelMapReduce oneSparkMax numThreads g mapStep r qx
+  in  MRP.parallelMapReduceF oneSparkMax numThreads g mapStep r
 
 
-parBasicListOrd
-  :: forall k g y c x q e
+parBasicListOrdF
+  :: forall k g y c x e
    . ( Monoid e
      , MRP.NFData e -- for the parallel reduce     
      , MRP.NFData k -- for the parallel assign
@@ -161,7 +159,6 @@ parBasicListOrd
      , Functor (MR.MapFoldT 'Nothing x)
      , Functor g
      , Foldable g
-     , Foldable q
      , Ord k
      )
   => Int -- items per spark for folding and mapping
@@ -169,9 +166,8 @@ parBasicListOrd
   -> MR.Unpack 'Nothing g x y
   -> MR.Assign k y c
   -> MR.Reduce 'Nothing k [] c e
-  -> q x
-  -> e
-parBasicListOrd oneSparkMax numThreads u a r qx =
+  -> MR.MapFoldT 'Nothing x e
+parBasicListOrdF oneSparkMax numThreads u a r =
   let g                        = MRP.parReduceGathererOrd (pure @[])
       (MR.MapGather _ mapStep) = MR.uagMapAllGatherEachFold g u a
-  in  MRP.parallelMapReduce oneSparkMax numThreads g mapStep r qx
+  in  MRP.parallelMapReduceF oneSparkMax numThreads g mapStep r

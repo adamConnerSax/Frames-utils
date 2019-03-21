@@ -14,7 +14,7 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Control.MapReduce.Parallel
-  ( parallelMapReduce
+  ( parallelMapReduceF
   , defaultParReduceGatherer
   , parReduceGathererOrd
   , parReduceGathererHashableL
@@ -54,16 +54,13 @@ defaultParReduceGatherer
   -> MR.Gatherer PS.NFData (Seq.Seq (k, c)) k c d
 defaultParReduceGatherer = parReduceGathererHashableL
 
--- | split input into n chunks, spark each separately
--- use a || foldMap to gather
--- optionally use a || reduction scheme.  This is controlled by the gatherer
-parallelMapReduce
-  :: forall h x q gt k y z ce e
+
+parallelMapReduceF
+  :: forall h x gt k y z ce e
    . ( Monoid e
      , ce e
      , PS.NFData gt
      , Functor (MR.MapFoldT 'Nothing x)
-     , Foldable q
      , Foldable h
      , Monoid gt
      )
@@ -72,18 +69,20 @@ parallelMapReduce
   -> MR.Gatherer ce gt k y (h z)
   -> MR.MapStep 'Nothing x gt
   -> MR.Reduce 'Nothing k h z e
-  -> q x
-  -> e
-parallelMapReduce oneSparkMax numThreads gatherer mapStep reduceStep qx =
-  let chunkedH :: [[x]] = L.divvy numThreads numThreads $ FL.fold FL.list qx -- list divvied into n sublists
-      mapped :: [gt]    = parMapEach (FL.fold (MR.mapFold mapStep)) chunkedH -- list of n gt
-      merged :: gt      = parFoldMonoid oneSparkMax mapped
-      reduced           = case reduceStep of
-        MR.Reduce f -> MR.gFoldMapWithKey gatherer f merged
-        MR.ReduceFold f ->
-          MR.gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx) merged
-  in  reduced
-{-# INLINABLE parallelMapReduce #-}
+  -> MR.MapFoldT 'Nothing x e
+parallelMapReduceF oneSparkMax numThreads gatherer mapStep reduceStep =
+  let
+    chunkedF :: FL.Fold x [[x]] = fmap (L.divvy numThreads numThreads) FL.list -- list divvied into n sublists
+    mappedF :: FL.Fold x [gt] =
+      fmap (parMapEach (FL.fold (MR.mapFold mapStep))) chunkedF -- list of n gt
+    mergedF :: FL.Fold x gt = fmap (parFoldMonoid oneSparkMax) mappedF
+    reducedF                = case reduceStep of
+      MR.Reduce f -> fmap (MR.gFoldMapWithKey gatherer f) mergedF
+      MR.ReduceFold f ->
+        fmap (MR.gFoldMapWithKey gatherer (\k hx -> FL.fold (f k) hx)) mergedF
+  in
+    reducedF
+{-# INLINABLE parallelMapReduceF #-}
 
 
 parMapEach :: PS.NFData b => (a -> b) -> [a] -> [b]
