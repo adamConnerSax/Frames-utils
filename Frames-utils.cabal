@@ -35,9 +35,7 @@ common deps
 library
   import: deps
   ghc-options: -Wall -O2 -funbox-strict-fields
-  exposed-modules: Frames.Folds
-                 , Frames.MapReduce
-                 , Frames.Transform
+  exposed-modules: Frames.Transform
                  , Frames.ScatterMerge
                  , Frames.KMeans
                  , Frames.Regression
@@ -60,8 +58,9 @@ library
                   , blaze-colonnade
                   , bytestring
                   , colonnade
-                  , discrimination
+                  , discrimination                  
                   , foldl-statistics
+                  , Frames-map-reduce
                   , groups
                   , hashable
                   , histogram-fill
@@ -117,6 +116,7 @@ executable MapReduce
   ghc-options: -Wall -O2 -threaded -rtsopts "-with-rtsopts=-N" -funbox-strict-fields 
   build-depends: base
                , data-default
+               , Frames-map-reduce
                , Frames-utils
                , hmatrix
                , knit-haskell
@@ -145,5 +145,5 @@ benchmark bench-all
   other-modules:       Bench.MapReduce
   ghc-options:         -O2 -threaded "-with-rtsopts=-N" -funbox-strict-fields -fno-warn-unused-binds -fno-warn-unused-matches 
   main-is:             BenchAll.hs
-  build-depends:       Frames-utils, base, criterion, deepseq
+  build-depends:       Frames-map-reduce, Frames-utils, map-reduce-folds, base, criterion, deepseq
   default-language:    Haskell2010                 

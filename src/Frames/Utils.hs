@@ -18,23 +18,16 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Utils
-  ( FType
-  , DblX
-  , DblY
-  , goodDataCount
+  ( goodDataCount
   , goodDataByKey
-  , filterField
-  , filterMaybeField
+  , filterOnField
+  , filterOnMaybeField
   , CField
   , CFieldOf
   , RealField
   , RealFieldOf
   , TField
   , TFieldOf
-  , TwoColData
-  , ThreeColData
-  , ThreeDTransformable
-  , KeyedRecord
   )
 where
 
@@ -50,11 +43,11 @@ import qualified Data.Vinyl.XRec               as V
 import           Frames                         ( (:.) )
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
 
--- THe functions below should move.  To MaybeUtils?  What about filterField?
--- returns a map, keyed by F.Record ks, of (number of rows, number of rows with all cols parsed)
--- required TypeApplications for ks
+-- | Given a set of records with possibly missing fields
+-- that is a Rec (Maybe :. ElField), and a subset of columns (the `ks`) to use as a key,
+-- count the number of rows attached to each key and the number where are all columns have data.
+-- The key columns must exist in al rows or this will error out.
 goodDataByKey
   :: forall ks rs
    . (ks F.⊆ rs, Ord (F.Record ks))
@@ -68,60 +61,51 @@ goodDataByKey =
         (MR.assign (fromJust . getKey) id)
         (MR.Reduce $ \k -> M.singleton k . FL.fold goodDataCount)
 
+-- | Given a `Rec (Maybe :. ElField)` count total number of rows
+-- and number of rows where all columns have data (all are `Just`)
 goodDataCount :: FL.Fold (F.Rec (Maybe F.:. F.ElField) rs) (Int, Int)
 goodDataCount =
   (,) <$> FL.length <*> FL.prefilter (isJust . F.recMaybe) FL.length
 
-filterField
+-- | Turn a function from the field type of one field in a record to Bool
+-- into a function (F.Record rs -> Bool). Useful for filtering.
+filterOnField
   :: forall k rs
    . (V.KnownField k, F.ElemOf rs k)
   => (V.Snd k -> Bool)
   -> F.Record rs
   -> Bool
-filterField test = test . F.rgetField @k
+filterOnField test = test . F.rgetField @k
 
-filterMaybeField
+-- | Turn a function from the field type of one field in a record to Bool
+-- into a function from a `(Rec (Maybe :. ElField) -> Bool)`
+-- Returns `False` for `Nothing`.
+filterOnMaybeField
   :: forall k rs
    . (F.ElemOf rs k, V.IsoHKD F.ElField k)
   => (V.HKD F.ElField k -> Bool)
   -> F.Rec (Maybe :. F.ElField) rs
   -> Bool
-filterMaybeField test = maybe False test . V.toHKD . F.rget @k
+filterOnMaybeField test = maybe False test . V.toHKD . F.rget @k
 
+-- | Constraint type to make it easier to specify that a field exists and has a specific constraint
+-- often used to specify a numerical type of certain fields (Num, Real, RealFrac) so they can be used
+-- in various numerical calculations
+type CField c x = (V.KnownField x, c (V.Snd x))
 
-type FType x = V.Snd x
+-- | Class to easily extend the CField constraint to a set of fields in a record
+class (CField c x, F.ElemOf rs x) => CFieldOf c rs x
+instance (CField c x, F.ElemOf rs x) => CFieldOf c rs x
 
-type DblX = "double_x" F.:-> Double
-type DblY = "double_y" F.:-> Double
-
-type UseCols ks x y w = ks V.++ '[x,y,w]
-type CField c x = (V.KnownField x, c (FType x))
-type RealField x = CField Real x -- (V.KnownField x, Real (FType x))
-
-type TField t x = (V.KnownField x, t ~ V.Snd x)
-
-
--- This thing is...unfortunate. Is there something built into Frames or Vinyl that would do this?
-class (CField c x, F.ElemOf rs x {-x V.∈ rs-}) => CFieldOf c rs x
-instance (CField c x, F.ElemOf rs x{- x V.∈ rs -}) => CFieldOf c rs x
-
+-- | Frequently used specific version of CField
+type RealField x = CField Real x
 class (RealField x, x V.∈ rs) => RealFieldOf rs x
 instance (RealField x, x V.∈ rs) => RealFieldOf rs x
 
-class (TField t x, F.ElemOf rs x {-x V.∈ rs-}) => TFieldOf t rs x
-instance (TField t x, F.ElemOf rs x{- x V.∈ rs -}) => TFieldOf t rs x
+-- | Constraint type to specify the specific type of a known field.
+-- Used like CField but when the type must be speicific, like a Double or an Int
+type TField t x = (V.KnownField x, t ~ V.Snd x)
 
-
-
-type TwoColData x y = F.AllConstrained (RealFieldOf [x,y]) '[x, y]
-type ThreeColData x y z = ([x,z] F.⊆ [x,y,z], [y,z] F.⊆ [x,y,z], [x,y] F.⊆ [x,y,z], F.AllConstrained (RealFieldOf [x,y,z]) '[x, y, z])
-
-type KeyedRecord ks rs = (ks F.⊆ rs, Ord (F.Record ks))
-
-type ThreeDTransformable rs ks x y w = (ThreeColData x y w, FI.RecVec (ks V.++ [x,y,w]),
-                                        KeyedRecord ks rs,
-                                        ks F.⊆ (ks V.++ [x,y,w]), (ks V.++ [x,y,w]) F.⊆ rs,
-                                        F.ElemOf (ks V.++ [x,y,w]) x, F.ElemOf (ks V.++ [x,y,w]) y, F.ElemOf (ks V.++ [x,y,w]) w)
-
-
-
+-- | Class to extend the TField constraint to a set of fields in a record
+class (TField t x, F.ElemOf rs x) => TFieldOf t rs x
+instance (TField t x, F.ElemOf rs x) => TFieldOf t rs x

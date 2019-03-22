@@ -50,23 +50,23 @@ import qualified Frames.Melt          as F
 import qualified Data.Vector as V
 
 
-type Binnable x w =  (V.KnownField x, Real (FU.FType x),
-                      V.KnownField w, Real (FU.FType w))
+type Binnable x w =  (V.KnownField x, Real (V.Snd x),
+                      V.KnownField w, Real (V.Snd w))
 
 -- NB: Bins are unscaled; scaling function to be applied after binning  
 data BinsWithRescale a = BinsWithRescale { bins :: [a],  shift :: a, scale :: Double} -- left in a form where a need not be a type that supports division 
                      
-binField :: forall x w. Binnable x w => Int -> MR.RescaleType (FU.FType x) -> FL.Fold (F.Record '[x,w]) (BinsWithRescale (FU.FType x))
+binField :: forall x w. Binnable x w => Int -> MR.RescaleType (V.Snd x) -> FL.Fold (F.Record '[x,w]) (BinsWithRescale (V.Snd x))
 binField numBins rt =
-  let process :: [(FU.FType x, FU.FType w)] -> F.Record '[x,w] -> [(FU.FType x, FU.FType w)]  
+  let process :: [(V.Snd x, V.Snd w)] -> F.Record '[x,w] -> [(V.Snd x, V.Snd w)]  
       process l r  = V.runcurryX (\x w -> (x, w) : l) r
-      extract :: MR.RescaleType (FU.FType x) -> [(FU.FType x, FU.FType w)] -> BinsWithRescale (FU.FType x)
+      extract :: MR.RescaleType (V.Snd x) -> [(V.Snd x, V.Snd w)] -> BinsWithRescale (V.Snd x)
       extract rt' l =
         let compFst (x,_) (x',_) = compare x x'
             scaleInfo = FL.fold (MR.rescale rt') (fst <$> l)
             (totalWeight, listWithSummedWeights) = List.mapAccumL (\sw (x,w) -> (sw+w, (x,w,sw+w))) 0 $ List.sortBy compFst l
             weightPerBin :: Double = (realToFrac totalWeight)/(fromIntegral numBins)
-            lowerBounds :: [(b, FU.FType w, FU.FType w)] -> [b] -> [b]
+            lowerBounds :: [(b, V.Snd w, V.Snd w)] -> [b] -> [b]
             lowerBounds x bs = case List.null x of
               True -> bs
               False ->
@@ -77,23 +77,27 @@ binField numBins rt =
         in BinsWithRescale (lowerBounds listWithSummedWeights []) (fst scaleInfo) (snd scaleInfo)
   in FL.Fold process [] (extract rt)
 
-type BinnableKeyedRecord rs ks x w = (FU.TwoColData x w, FU.KeyedRecord ks rs, '[x,w] F.⊆ rs)
+type BinnableKeyedRecord rs ks x w = (F.AllConstrained (FU.CFieldOf Real [x,w]) '[x, w], ks F.⊆ rs, Ord (F.Record ks))
   
-binFields :: forall ks x w rs. BinnableKeyedRecord rs ks x w
-           => Int -> MR.RescaleType (FU.FType x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (FU.FType x)))
+binFields :: forall ks x w rs. (BinnableKeyedRecord rs ks x w, '[x,w] F.⊆ rs)
+           => Int -> MR.RescaleType (V.Snd x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (V.Snd x)))
 binFields n rt = MR.mapRListFOrd MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
 
 -- NB: a can't be less than the 0th element because we build it that way.  So we drop it
 sortedListToBinLookup' :: Ord a => [a] -> a -> Int
 sortedListToBinLookup' as a = let xs = tail as in 1 + (fromMaybe (List.length xs) $ List.findIndex (>a) xs)
 
-scatterMerge :: forall ks x y w rs. (FU.ThreeDTransformable rs ks x y w, F.ElemOf rs x, F.ElemOf rs y, F.ElemOf rs w)
-              => (Double -> FU.FType x) -- when we put the averaged data back in the record with original types we need to convert back
-              -> (Double -> FU.FType y)
+scatterMerge :: forall ks x y w rs. ( F.AllConstrained (FU.CFieldOf Real [x,y,w]) '[x, y, w]
+                                    , [x,y,w] F.⊆ rs
+                                    , Ord (F.Record ks)
+                                    , ks F.⊆ rs
+                                    , FI.RecVec (ks V.++ [x,y,w]))
+              => (Double -> V.Snd x) -- when we put the averaged data back in the record with original types we need to convert back
+              -> (Double -> V.Snd y)
               -> Int
               -> Int
-              -> MR.RescaleType (FU.FType x)
-              -> MR.RescaleType (FU.FType y)
+              -> MR.RescaleType (V.Snd x)
+              -> MR.RescaleType (V.Snd y)
               -> FL.Fold (F.Record rs) (F.FrameRec (ks V.++ [x, y, w]))
 scatterMerge toX toY numBinsX numBinsY rtX rtY = 
   let doOne = scatterMergeOne numBinsX numBinsY rtX rtY
@@ -102,13 +106,13 @@ scatterMerge toX toY numBinsX numBinsY rtX rtY =
   in MR.mapRListFOrd MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.Reduce $ \_ xws -> doOne xws) 
 
   
-scatterMergeOne :: forall x y w f. (FU.ThreeColData x y w, Foldable f)
+scatterMergeOne :: forall x y w f. (F.AllConstrained (FU.CFieldOf Real [x,y,w]) '[x, y, w], Foldable f)
                 => Int
                 -> Int
-                -> MR.RescaleType (FU.FType x)
-                -> MR.RescaleType (FU.FType y)
+                -> MR.RescaleType (V.Snd x)
+                -> MR.RescaleType (V.Snd y)
                 -> f (F.Record '[x,y,w])
-                -> [(Double, Double, FU.FType w)]
+                -> [(Double, Double, V.Snd w)]
 scatterMergeOne numBinsX numBinsY rtX rtY dataRows =
   let xBinF = PF.lmap (F.rcast @[x,w]) $ binField numBinsX rtX
       yBinF = PF.lmap (F.rcast @[y,w]) $ binField numBinsY rtY
@@ -116,11 +120,11 @@ scatterMergeOne numBinsX numBinsY rtX rtY dataRows =
       binningInfo (BinsWithRescale bs shft scle) = (sortedListToBinLookup' bs, (\x -> realToFrac (x - shft)/scle))
       (binX, scaleX) = binningInfo xBins
       (binY, scaleY) = binningInfo yBins
-      binAndScale :: F.Record '[x,y,w] -> ((Int, Int), Double, Double, FU.FType w)
+      binAndScale :: F.Record '[x,y,w] -> ((Int, Int), Double, Double, V.Snd w)
       binAndScale = V.runcurryX (\x y w -> ((binX x, binY y),scaleX x, scaleY y, w))
       getKey (k,_,_,_) = k
       getData (_,x,y,w) = (x,y,w)
-      wgtdSumF :: FL.Fold (Double, Double, FU.FType w) (Double, Double, FU.FType w)
+      wgtdSumF :: FL.Fold (Double, Double, V.Snd w) (Double, Double, V.Snd w)
       wgtdSumF =
         let f (wX, wY, totW) (x, y, w) = let w' = realToFrac w in (wX + w' * x, wY + w' * y, totW + w)
         in FL.Fold f (0, 0 , 0) (\(wX, wY, totW) -> let tw = realToFrac totW in (wX/tw, wY/tw, totW))
@@ -137,10 +141,14 @@ type instance FI.VectorFor Bin2DT = V.Vector
 instance F.ShowCSV Bin2DT where
   showCSV = T.pack . show
 
+type DblX = "double_x" F.:-> Double
+type DblY = "double_y" F.:-> Double
+  
+
 
 type OutKeyCols ks = ks V.++ '[Bin2D]
-type BinnedDblCols ks w = ks V.++ '[Bin2D, FU.DblX, FU.DblY, w]
-type BinnedDblColsC ks w = (Bin2D ∈ BinnedDblCols ks w, FU.DblX ∈ BinnedDblCols ks w, FU.DblY ∈ BinnedDblCols ks w, w ∈ BinnedDblCols ks w)
+type BinnedDblCols ks w = ks V.++ '[Bin2D, DblX, DblY, w]
+type BinnedDblColsC ks w = (Bin2D ∈ BinnedDblCols ks w, DblX ∈ BinnedDblCols ks w, DblY ∈ BinnedDblCols ks w, w ∈ BinnedDblCols ks w)
 type BinnedResultCols ks x y w = ks V.++ '[Bin2D, x, y, w]
 type UseCols ks x y w = ks V.++ [x, y, w]
 type UseColsC ks x y w = (ks F.⊆ UseCols ks x y w, x ∈ UseCols ks x y w, y ∈ UseCols ks x y w, w ∈ UseCols ks x y w)
@@ -157,15 +165,15 @@ type ScatterMergeable' rs ks x y w = (ks F.⊆ rs,
                                       ((OutKeyCols ks) V.++ '[x,y,w]) ~ (BinnedResultCols ks x y w))
 
 scatterMerge' :: forall ks x y w rs. ( ScatterMergeable' rs ks x y w
-                                     , F.ElemOf [Bin2D, FU.DblX, FU.DblY, w] w
+                                     , F.ElemOf [Bin2D, DblX, DblY, w] w
                                      , ks F.⊆ (BinnedDblCols ks w)
                                      , FI.RecVec (UseCols ks x y w)
                                      )
               
-             => (Double -> FU.FType x) -- when we put the averaged data back in the record with original types we need to convert back
-             -> (Double -> FU.FType y)
-             -> M.Map (F.Record ks) (BinsWithRescale (FU.FType x))
-             -> M.Map (F.Record ks) (BinsWithRescale (FU.FType y))
+             => (Double -> V.Snd x) -- when we put the averaged data back in the record with original types we need to convert back
+             -> (Double -> V.Snd y)
+             -> M.Map (F.Record ks) (BinsWithRescale (V.Snd x))
+             -> M.Map (F.Record ks) (BinsWithRescale (V.Snd y))
              -> FL.Fold (F.Record rs) (F.FrameRec (UseCols ks x y w))
 scatterMerge' toX toY xBins yBins =
   let binningInfo :: Real c => BinsWithRescale c -> (c -> Int, c -> Double)
@@ -178,35 +186,35 @@ scatterMerge' toX toY xBins yBins =
             xyw = F.rcast @[x,y,w] r
             (xBF, xSF) = fromMaybe (const 0, realToFrac) $ M.lookup key xBinF
             (yBF, ySF) = fromMaybe (const 0, realToFrac) $ M.lookup key yBinF
-            binnedAndScaled :: F.Record '[Bin2D, FU.DblX, FU.DblY, w] = V.runcurryX (\x y w -> Bin2D (xBF x, yBF y) &: xSF x &: ySF y &: w &: V.RNil) xyw
+            binnedAndScaled :: F.Record '[Bin2D, DblX, DblY, w] = V.runcurryX (\x y w -> Bin2D (xBF x, yBF y) &: xSF x &: ySF y &: w &: V.RNil) xyw
         in key V.<+> binnedAndScaled 
-      wgtdSum :: (Double, Double, FU.FType w) -> F.Record [FU.DblX, FU.DblY, w] -> (Double, Double, FU.FType w)
+      wgtdSum :: (Double, Double, V.Snd w) -> F.Record [DblX, DblY, w] -> (Double, Double, V.Snd w)
       wgtdSum (wX, wY, totW) r = V.runcurryX (\x y w -> let w' = realToFrac w in (wX + (w' * x), wY + (w' * y), totW + w)) r
       makeXYW :: (V.Snd x, V.Snd y, V.Snd w) -> F.Record [x,y,w]
       makeXYW (x,y,w) =  x &: y &: w &: V.RNil
-      extractF :: FL.Fold (F.Record [Bin2D,FU.DblX, FU.DblY, w]) ([(V.Snd x, V.Snd y, FU.FType w)])
+      extractF :: FL.Fold (F.Record [Bin2D,DblX, DblY, w]) ([(V.Snd x, V.Snd y, V.Snd w)])
       extractF = MR.basicListF @Ord MR.noUnpack (MR.splitOnKeys @'[Bin2D])
         (MR.ReduceFold $ const $ FL.Fold wgtdSum (0,0,0) (\(wX, wY, totW) -> let totW' = realToFrac totW in [(toX (wX/totW'), toY (wY/totW'), totW)]))
   in MR.mapRListFOrd
      (MR.simpleUnpack $ binRow . F.rcast @(UseCols ks x y w))
-     (MR.assignKeysAndData @ks @[Bin2D,FU.DblX,FU.DblY,w])
+     (MR.assignKeysAndData @ks @[Bin2D,DblX,DblY,w])
      (MR.makeRecsWithKey makeXYW $ MR.ReduceFold $ const $ extractF)
 
-type BinMap ks x = M.Map (F.Record ks) (BinsWithRescale (FU.FType x))
+type BinMap ks x = M.Map (F.Record ks) (BinsWithRescale (V.Snd x))
 
 buildScatterMerge :: forall ks x y w rs. ( BinnableKeyedRecord rs ks x w
                                          , BinnableKeyedRecord rs ks y w
                                          , ScatterMergeable' rs ks x y w
-                                         , F.ElemOf [Bin2D, FU.DblX, FU.DblY, w] w
+                                         , F.ElemOf [Bin2D, DblX, DblY, w] w
                                          , ks F.⊆ (BinnedDblCols ks w)
                                          , FI.RecVec (UseCols ks x y w)
                                          )
                   => Int
                   -> Int
-                  -> MR.RescaleType (FU.FType x)
-                  -> MR.RescaleType (FU.FType y)
-                  -> (Double -> FU.FType x)
-                  -> (Double -> FU.FType y)
+                  -> MR.RescaleType (V.Snd x)
+                  -> MR.RescaleType (V.Snd y)
+                  -> (Double -> V.Snd x)
+                  -> (Double -> V.Snd y)
                   -> (FL.Fold (F.Record rs) (BinMap ks x, BinMap ks y),
                       (BinMap ks x, BinMap ks y) -> FL.Fold (F.Record rs) (F.FrameRec (UseCols ks x y w)))
 buildScatterMerge xNumBins yNumBins rtX rtY toX toY =

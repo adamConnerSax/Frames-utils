@@ -17,12 +17,27 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-|
+Module      : Frames.Folds
+Description : Types and functions to simplify folding over Vinyl/Frames records. Leans heavily on the foldl package. 
+Copyright   : (c) Adam Conner-Sax 2019
+License     : BSD
+Maintainer  : adam_conner_sax@yahoo.com
+Stability   : experimental
+-}
 module Frames.Folds
-  ( FoldRecord(..)
-  , recFieldF
-  , sequenceRecFold
+  (
+    -- * Types
+    EndoFold
+    -- ** Types to act as "interpretation functors" for records of folds
   , FoldEndo(..)
+  , FoldRecord(..)
+  -- * functions for building records of folds
+  , recFieldF
+  -- * functions for turning records of folds into folds of records
+  , sequenceRecFold
   , sequenceEndoFolds
+  -- * functions using constraints to extend an endo-fold across a record
   , foldAll
   , foldAllConstrained
   , foldAllMonoid
@@ -42,23 +57,17 @@ import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 
 
--- | Folding tools
--- Given a foldable h, `Fold a b` represents a fold over `(h a)` producing a `b` 
--- If we have an endo-fold, `Fold a a`, we can get a `Fold (ElField '(s, a)) (ElField '(s,a))`
+-- | A Type synonym for folds like sum or, often, average.
+type EndoFold a = FL.Fold a a
+
+-- | Turn and EndoFold a into an EndoFold (ElField '(s, a))
 fieldFold
-  :: (V.KnownField t, a ~ V.Snd t)
-  => FL.Fold a a
-  -> FL.Fold (F.ElField t) (F.ElField t)
+  :: (V.KnownField t, a ~ V.Snd t) => EndoFold a -> EndoFold (F.ElField t)
 fieldFold = P.dimap (\(V.Field x) -> x) V.Field
 {-# INLINABLE fieldFold #-}
 
--- | A Type synonym to help us remember when the folds are "monoidal"
-type EndoFold a = FL.Fold a a
-
--- | We need types to act as "intepretation functors" for records of folds
-
--- | Wrapper or Endo-folds of plain types for ElFields
-newtype FoldEndo t = FoldEndo { unFoldEndo :: EndoFold (V.Snd t) }  -- type FoldEndo a = FL.Fold a a
+-- | Wrapper for Endo-folds of the field types of ElFields
+newtype FoldEndo t = FoldEndo { unFoldEndo :: EndoFold (V.Snd t) }
 
 -- | Wrapper for endo-folds on an interpretation f.  Usually f ~ ElField 
 newtype FoldFieldEndo f a = FoldFieldEndo { unFoldFieldEndo :: EndoFold (f a) } -- type FoldFieldEndo f a = FoldEndo (f a)
@@ -66,36 +75,36 @@ newtype FoldFieldEndo f a = FoldFieldEndo { unFoldFieldEndo :: EndoFold (f a) } 
 -- | Wrapper for folds from a record to an interpreted field.  Usually f ~ ElField
 newtype FoldRecord f rs a = FoldRecord { unFoldRecord :: FL.Fold (F.Record rs) (f a) }
 
--- how do we build FoldRecords?
+-- | Helper for building a 'FoldRecord' from a given fold and function of the record
 recFieldF
   :: forall t rs a
    . V.KnownField t
-  => FL.Fold a (V.Snd t)
-  -> (F.Record rs -> a)
-  -> FoldRecord V.ElField rs t
+  => FL.Fold a (V.Snd t) -- ^ A fold from some type a to the field type of an ElField 
+  -> (F.Record rs -> a) -- ^ a function to get the a value from the input record
+  -> FoldRecord V.ElField rs t -- ^ the resulting 'FoldRecord'-wrapped fold 
 recFieldF fld fromRec = FoldRecord $ P.dimap fromRec V.Field fld
 {-# INLINABLE recFieldF #-}
 
+-- | special case of 'recFieldF' for the case when the function from the record to the folded type
+-- is just retrieving the value in a field.
 fieldToFieldFold
   :: forall x y rs
    . (V.KnownField x, V.KnownField y, F.ElemOf rs x)
-  => FL.Fold (V.Snd x) (V.Snd y)
-  -> FoldRecord F.ElField rs y
-fieldToFieldFold = FoldRecord . P.dimap (F.rgetField @x) (V.Field)
+  => FL.Fold (V.Snd x) (V.Snd y) -- ^ the fold to be wrapped
+  -> FoldRecord F.ElField rs y -- ^ the wrapped fold
+fieldToFieldFold fld = recFieldF fld (F.rgetField @x)
 {-# INLINABLE fieldToFieldFold #-}
 
--- | Folds are contravariant in their input type.
--- So given a record of folds from records on a list of fields, we can fold over a records of a superset of fields via rcast
+-- | Expand a record of folds, each from the entire record to one field, into a record of folds each from a larger record to the smaller one.
 expandFoldInRecord
   :: forall rs as
    . (as F.⊆ rs, V.RMap as)
-  => F.Rec (FoldRecord F.ElField as) as
-  -> F.Rec (FoldRecord F.ElField rs) as
+  => F.Rec (FoldRecord F.ElField as) as -- ^ original fold 
+  -> F.Rec (FoldRecord F.ElField rs) as -- ^ resulting fold 
 expandFoldInRecord = V.rmap (FoldRecord . FL.premap F.rcast . unFoldRecord)
 {-# INLINABLE expandFoldInRecord #-}
 
 -- | Change a record of single field folds to a record of folds from the entire record to each field
--- This requires a class since it is a function on types
 class EndoFieldFoldsToRecordFolds rs where
   endoFieldFoldsToRecordFolds :: F.Rec (FoldFieldEndo F.ElField) rs -> F.Rec (FoldRecord F.ElField rs) rs
 
@@ -109,6 +118,7 @@ instance (EndoFieldFoldsToRecordFolds rs, rs F.⊆ (r ': rs), V.RMap rs) => Endo
   {-# INLINABLE endoFieldFoldsToRecordFolds #-}
 
 -- can we do all/some of this via F.Rec (Fold as) bs?
+-- | Turn a Record of folds into a fold over records
 sequenceRecFold
   :: forall as rs
    . F.Rec (FoldRecord F.ElField as) rs
@@ -143,7 +153,7 @@ liftFolds = V.rapply liftedFs
 {-# INLINABLE liftFolds #-}
 
 
--- | turn a record of folds over each field, into a fold over records 
+-- | turn a record of endo-folds over each field, into a fold over records 
 sequenceEndoFolds
   :: forall rs
    . ( V.RApply rs

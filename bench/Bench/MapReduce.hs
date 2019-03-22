@@ -30,6 +30,7 @@ import qualified Control.Foldl                 as FL
 import qualified Data.List                     as List
 import qualified Data.Profunctor               as P
 import qualified Data.Text                     as T
+import qualified Data.Sequence                 as Seq
 import qualified Data.Vinyl                    as V
 import qualified Data.Vector.Storable          as V
 import qualified Frames                        as F

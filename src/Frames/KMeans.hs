@@ -154,7 +154,7 @@ type WithScaled rs x y = F.Record (WithScaledCols rs x y)
 
 kMeansOne
   :: forall x y w f effs scaledX scaledY
-   . ( FU.ThreeColData x y w
+   . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , FU.TField Double scaledX
      , FU.TField Double scaledY
      , Foldable f
@@ -196,7 +196,7 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
 
 kMeansOneWithClusters
   :: forall x y w rs f effs scaledX scaledY
-   . ( FU.ThreeColData x y w
+   . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , Foldable f
      , Functor f
      , FU.TField Double scaledX
@@ -273,7 +273,7 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
 -- as a reduce for mapReduce
 kMeansOneWCReduce
   :: forall ks x y w rs f effs scaledX scaledY
-   . ( FU.ThreeColData x y w
+   . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , Foldable f
      , Functor f
      , FU.TField Double scaledX
