@@ -55,11 +55,6 @@ library
                  , Math.Rescale
                  , Math.Regression.Regression
                  , Math.Regression.LeastSquares
-                 , Control.MapReduce
-                 , Control.MapReduce.Core
-                 , Control.MapReduce.Gatherer
-                 , Control.MapReduce.Simple
-                 , Control.MapReduce.Parallel
 
   build-depends:    aeson-pretty
                   , blaze-colonnade
@@ -75,6 +70,7 @@ library
                   , lens
                   , logging-effect
                   , lucid-colonnade
+                  , map-reduce-folds
                   , mltool
                   , mmorph
                   , mtl
@@ -125,6 +121,7 @@ executable MapReduce
                , hmatrix
                , knit-haskell
                , lucid
+               , map-reduce-folds
                , mtl
                , here
                , text

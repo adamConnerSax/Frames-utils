@@ -1,4 +1,4 @@
-packages: . ./knit-haskell ../hvega/hvega
+packages: . ./knit-haskell ./map-reduce-folds ../hvega/hvega
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 benchmarks: true
