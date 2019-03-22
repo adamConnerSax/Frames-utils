@@ -60,17 +60,7 @@ library
                  , Control.MapReduce.Gatherer
                  , Control.MapReduce.Simple
                  , Control.MapReduce.Parallel
-                 , Control.Monad.Freer.Logger
-                 , Control.Monad.Freer.Docs
-                 , Control.Monad.Freer.Html
-                 , Control.Monad.Freer.Random
-                 , Control.Monad.Freer.PandocMonad
-                 , Control.Monad.Freer.Pandoc
-                 , Html.Lucid.Report
-                 , Html.Blaze.Report
-                 , Text.Pandoc.Report
-  -- other-modules:
-  -- other-extensions:  
+
   build-depends:    aeson-pretty
                   , blaze-colonnade
                   , bytestring
@@ -81,6 +71,7 @@ library
                   , hashable
                   , histogram-fill
                   , hmatrix-gsl
+                  , knit-haskell
                   , lens
                   , logging-effect
                   , lucid-colonnade
@@ -109,11 +100,12 @@ executable FrameRegressions
   import: deps
   ghc-options: -O0 -Wall
   build-depends: base
-               , data-default
+               , data-default               
                , foldl
                , Frames-utils
                , Frames
                , hmatrix
+               , knit-haskell
                , lucid
                , mmorph
                , mtl
@@ -131,6 +123,7 @@ executable MapReduce
                , data-default
                , Frames-utils
                , hmatrix
+               , knit-haskell
                , lucid
                , mtl
                , here

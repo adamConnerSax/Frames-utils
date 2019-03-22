@@ -11,8 +11,8 @@ module Html.Lucid.Report
   )
 where
 
-import           Control.Monad.Morph        (generalize, hoist, lift)
-import           Control.Monad.Trans        (lift)
+--import           Control.Monad.Morph        (generalize, hoist, lift)
+--import           Control.Monad.Trans        (lift)
 import qualified Data.Aeson.Encode.Pretty   as A
 import qualified Data.ByteString.Lazy.Char8 as BS
 import           Data.Monoid                ((<>))
