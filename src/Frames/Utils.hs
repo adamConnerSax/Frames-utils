@@ -56,7 +56,7 @@ goodDataByKey
        (M.Map (F.Record ks) (Int, Int))
 goodDataByKey =
   let getKey = F.recMaybe . F.rcast @ks
-  in  MR.basicListF @Ord
+  in  MR.basicListFold @Ord
         MR.noUnpack
         (MR.assign (fromJust . getKey) id)
         (MR.Reduce $ \k -> M.singleton k . FL.fold goodDataCount)
