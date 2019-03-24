@@ -103,8 +103,8 @@ type AllCols = [Label,Y,X,Weight]
 
 -- First some unpackings
 noUnpack = MR.noUnpack
-filterLabel ls = MR.filter (\r -> (F.rgetField @Label r) `List.elem` ls)
-filterMinX minX = MR.filter ((>= minX) . F.rgetField @X)
+filterLabel ls = MR.filterUnpack (\r -> (F.rgetField @Label r) `List.elem` ls)
+filterMinX minX = MR.filterUnpack ((>= minX) . F.rgetField @X)
 editLabel f r = F.rputField @Label (f (F.rgetField @Label r)) r -- this would be better with lenses!!
 unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 
@@ -136,11 +136,11 @@ mrAvgXYByLabel gm =
   MR.mapReduceGF gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 -- use the simple version
-mrAvgXYByLabelPMS n = MR.parBasicListHashableF 1000
-                                               n
-                                               noUnpack
-                                               assignToLabels
-                                               (MR.foldAndAddKey averageF)
+mrAvgXYByLabelPMS n = MR.parBasicListHashableFold 1000
+                      n
+                      noUnpack
+                      assignToLabels
+                      (MR.foldAndAddKey averageF)
 
 -- construct it directly so we can compare different gatherer implementations
 mrAvgXYByLabelPM n gm =
