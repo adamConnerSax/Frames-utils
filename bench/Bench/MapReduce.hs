@@ -64,8 +64,10 @@ benchAvgXYByLabel numThreadsToUse dat = bgroup
     $ nf (FL.fold $ mrAvgXYByLabel (MRP.parReduceGathererHashableL pure)) dat
   , bench "parallel map/reduce (seq -> strict hash map)"
   $ nf
-      (FL.fold $ mrAvgXYByLabelPM numThreadsToUse
-                                  (MRP.parReduceGathererHashableS pure)
+      ( FL.fold
+      $ (mrAvgXYByLabelPM numThreadsToUse
+                          (MRP.parReduceGathererHashableS (pure @[]))
+        )
       )
   $ dat
   , bench "parallel map/reduce (seq -> lazy hash map)"
@@ -133,20 +135,23 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r))
 -- put them together
 --mrAvgXYByLabel :: MR.GroupMap -> FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
 mrAvgXYByLabel gm =
-  MR.mapReduceGF gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
+  MR.mapReduceFrameFold gm noUnpack assignToLabels (MR.foldAndAddKey averageF)
 
 -- use the simple version
 mrAvgXYByLabelPMS n = MR.parBasicListHashableFold 1000
-                      n
-                      noUnpack
-                      assignToLabels
-                      (MR.foldAndAddKey averageF)
+                                                  n
+                                                  noUnpack
+                                                  assignToLabels
+                                                  (MR.foldAndAddKey averageF)
 
 -- construct it directly so we can compare different gatherer implementations
-mrAvgXYByLabelPM n gm =
-  let (MR.MapGather _ mapStep) =
-        MR.uagMapAllGatherEachFold gm noUnpack assignToLabels
-  in  MRP.parallelMapReduceF @[] 1000 n gm mapStep (MR.foldAndAddKey averageF)
+mrAvgXYByLabelPM n gm = MRP.parallelMapReduceFold 1000
+                                                  n
+                                                  MR.uagMapAllGatherEachFold
+                                                  gm
+                                                  noUnpack
+                                                  assignToLabels
+                                                  (MR.foldAndAddKey averageF)
 
 {-
 mrAvgXYByLabelStrict :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)

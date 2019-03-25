@@ -302,8 +302,8 @@ kMeansOneWCReduce
   -> FL.Fold
        (F.Record '[y, w])
        (MR.ScaleAndUnscale (V.Snd y))
-  -> MR.Reduce
-       ( 'Just (FR.Eff effs))
+  -> MR.ReduceM
+       (FR.Eff effs)
        (F.Record ks)
        f
        (F.Record rs)
