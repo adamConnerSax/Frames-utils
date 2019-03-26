@@ -100,8 +100,8 @@ type AllCols = [Label,Y,X,Weight]
 
 -- First some unpackings
 noUnpack = MR.noUnpack
-filterLabel ls = MR.filter (\r -> (F.rgetField @Label r) `List.elem` ls)
-filterMinX minX = MR.filter ((>= minX) . F.rgetField @X)
+filterLabel ls = MR.filterUnpack (\r -> (F.rgetField @Label r) `List.elem` ls)
+filterMinX minX = MR.filterUnpack ((>= minX) . F.rgetField @X)
 editLabel f r = F.rputField @Label (f (F.rgetField @Label r)) r -- this would be better with lenses!!
 unpackDup = MR.Unpack $ \r -> [r, editLabel (<> "2") r]
 
@@ -122,14 +122,14 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.re
 
 -- put them together
 --mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapRListF noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+mrAvgXYByLabel = MR.mapReduceHashableFrameListFold noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 
 mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabelP = MR.parBasicListHashableF 1000 6 noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+mrAvgXYByLabelP = MR.parBasicListHashableFold 1000 6 noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 --  MR.MR.mapReduceGF (MRP.defaultParReduceGatherer pure) 
 
 mrMaxXYByLabelABC :: FL.Fold (F.Record AllCols) (F.FrameRec '[Label,ZM])
-mrMaxXYByLabelABC = MR.parBasicListHashableF 1000 6 (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
+mrMaxXYByLabelABC = MR.parBasicListHashableFold 1000 6 (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
 
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)
