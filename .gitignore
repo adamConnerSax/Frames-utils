@@ -12,3 +12,4 @@ TAGS
 .ghc*
 bench/*.html
 report.html
+*.prof
