@@ -34,6 +34,7 @@ import qualified Math.Rescale as MR
 
 import qualified Control.Foldl        as FL
 import qualified Data.List            as List
+import qualified Data.Foldable        as F
 import qualified Data.Map             as M
 import           Data.Maybe           (fromMaybe)
 import qualified Data.Text            as T
@@ -81,7 +82,7 @@ type BinnableKeyedRecord rs ks x w = (F.AllConstrained (FU.CFieldOf Real [x,w]) 
   
 binFields :: forall ks x w rs. (BinnableKeyedRecord rs ks x w, '[x,w] F.⊆ rs)
            => Int -> MR.RescaleType (V.Snd x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (V.Snd x)))
-binFields n rt = MR.mapReduceOrdFrameListFold MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
+binFields n rt = fmap (F.foldMap id) $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
 
 -- NB: a can't be less than the 0th element because we build it that way.  So we drop it
 sortedListToBinLookup' :: Ord a => [a] -> a -> Int
@@ -100,13 +101,14 @@ scatterMerge :: forall ks x y w rs. ( F.AllConstrained (FU.CFieldOf Real [x,y,w]
               -> MR.RescaleType (V.Snd y)
               -> FL.Fold (F.Record rs) (F.FrameRec (ks V.++ [x, y, w]))
 scatterMerge toX toY numBinsX numBinsY rtX rtY = 
-  let doOne = scatterMergeOne numBinsX numBinsY rtX rtY
+  let doOne :: forall h. (Foldable h, Functor h) => h (F.Record '[x,y,w]) -> [(Double, Double, V.Snd w)]
+      doOne = scatterMergeOne numBinsX numBinsY rtX rtY
       toRecord :: (Double, Double, V.Snd w) -> F.Record [x,y,w]
       toRecord (x', y', w') = toX x' &: toY y' &: w' &: V.RNil
-  in MR.mapReduceOrdFrameListFold MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.Reduce $ \_ xws -> doOne xws) 
+  in fmap (F.foldMap id) $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.processAndRelabel doOne (const id))
 
   
-scatterMergeOne :: forall x y w f. (F.AllConstrained (FU.CFieldOf Real [x,y,w]) '[x, y, w], Foldable f)
+scatterMergeOne :: forall x y w f. (F.AllConstrained (FU.CFieldOf Real [x,y,w]) '[x, y, w], Foldable f, Functor f)
                 => Int
                 -> Int
                 -> MR.RescaleType (V.Snd x)
@@ -128,7 +130,7 @@ scatterMergeOne numBinsX numBinsY rtX rtY dataRows =
       wgtdSumF =
         let f (wX, wY, totW) (x, y, w) = let w' = realToFrac w in (wX + w' * x, wY + w' * y, totW + w)
         in FL.Fold f (0, 0 , 0) (\(wX, wY, totW) -> let tw = realToFrac totW in (wX/tw, wY/tw, totW))
-      mapRFold = MR.basicListFold @Ord (MR.simpleUnpack binAndScale) (MR.assign getKey getData) (MR.Reduce $ \_ xyws -> [FL.fold wgtdSumF xyws])
+      mapRFold = MR.mapReduceFold (MR.simpleUnpack binAndScale) (MR.assign getKey getData) (MR.Reduce $ \_ xyws -> FL.fold wgtdSumF xyws)
   in FL.fold mapRFold dataRows
 
 
@@ -193,12 +195,12 @@ scatterMerge' toX toY xBins yBins =
       makeXYW :: (V.Snd x, V.Snd y, V.Snd w) -> F.Record [x,y,w]
       makeXYW (x,y,w) =  x &: y &: w &: V.RNil
       extractF :: FL.Fold (F.Record [Bin2D,DblX, DblY, w]) ([(V.Snd x, V.Snd y, V.Snd w)])
-      extractF = MR.basicListFold @Ord MR.noUnpack (MR.splitOnKeys @'[Bin2D])
+      extractF = fmap F.concat $ MR.mapReduceFold MR.noUnpack (MR.splitOnKeys @'[Bin2D])
         (MR.ReduceFold $ const $ FL.Fold wgtdSum (0,0,0) (\(wX, wY, totW) -> let totW' = realToFrac totW in [(toX (wX/totW'), toY (wY/totW'), totW)]))
-  in  MR.mapReduceOrdFrameListFold
-     (MR.simpleUnpack $ binRow . F.rcast @(UseCols ks x y w))
-     (MR.assignKeysAndData @ks @[Bin2D,DblX,DblY,w])
-     (MR.makeRecsWithKey makeXYW $ MR.ReduceFold $ const $ extractF)
+  in  fmap (F.foldMap id) $ MR.mapReduceFold
+      (MR.simpleUnpack $ binRow . F.rcast @(UseCols ks x y w))
+      (MR.assignKeysAndData @ks @[Bin2D,DblX,DblY,w])
+      (MR.makeRecsWithKey makeXYW $ MR.ReduceFold $ const extractF)
 
 type BinMap ks x = M.Map (F.Record ks) (BinsWithRescale (V.Snd x))
 

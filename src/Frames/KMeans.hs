@@ -195,7 +195,7 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
       clusters -- we drop empty clusters ??
 
 kMeansOneWithClusters
-  :: forall x y w rs f effs scaledX scaledY
+  :: forall x y w f rs effs scaledX scaledY
    . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , Foldable f
      , Functor f
@@ -217,8 +217,10 @@ kMeansOneWithClusters
   -> FL.Fold (F.Record '[y, w]) (MR.ScaleAndUnscale (V.Snd y))
   -> Int
   -> Int
-  -> (  Int
-     -> f (F.Record '[scaledX, scaledY, w])
+  -> (  forall h
+      . (Foldable h, Functor h)
+     => Int
+     -> h (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
@@ -272,10 +274,10 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
 
 -- as a reduce for mapReduce
 kMeansOneWCReduce
-  :: forall ks x y w rs f effs scaledX scaledY
+  :: forall ks x y w rs effs scaledX scaledY
    . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
-     , Foldable f
-     , Functor f
+--     , Foldable f
+--     , Functor f
      , FU.TField Double scaledX
      , FU.TField Double scaledY
      , F.ElemOf rs x
@@ -292,8 +294,10 @@ kMeansOneWCReduce
      )
   => Int
   -> Int
-  -> (  Int
-     -> f (F.Record '[scaledX, scaledY, w])
+  -> (  forall h
+      . (Foldable h, Functor h)
+     => Int
+     -> h (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Distance
@@ -305,7 +309,6 @@ kMeansOneWCReduce
   -> MR.ReduceM
        (FR.Eff effs)
        (F.Record ks)
-       f
        (F.Record rs)
        ( M.Map
            (F.Record ks)
@@ -315,17 +318,19 @@ kMeansOneWCReduce
            ]
        )
 kMeansOneWCReduce numClusters numTries makeInitial distance weighted sunX sunY
-  = MR.ReduceM $ \k rows -> sequence $ M.singleton
-    k
-    (kMeansOneWithClusters @x @y @w sunX
-                                    sunY
-                                    numClusters
-                                    numTries
-                                    makeInitial
-                                    weighted
-                                    distance
-                                    rows
-    )
+  = let doOne
+          :: forall f
+           . (Foldable f, Functor f)
+          => f (F.Record rs)
+          -> FR.Eff effs [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+        doOne = kMeansOneWithClusters @x @y @w sunX
+                                               sunY
+                                               numClusters
+                                               numTries
+                                               makeInitial
+                                               weighted
+                                               distance
+    in  MR.ReduceM $ \k -> sequence . M.singleton k . doOne
 
 type IsCentroid = "is_centroid" F.:-> Bool
 type ClusterId = "cluster_id" F.:-> Int

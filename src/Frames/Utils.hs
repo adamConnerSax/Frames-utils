@@ -33,6 +33,7 @@ where
 
 import qualified Control.MapReduce             as MR
 import qualified Control.Foldl                 as FL
+import qualified Data.Foldable                 as F
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
                                                 , fromJust
@@ -56,7 +57,7 @@ goodDataByKey
        (M.Map (F.Record ks) (Int, Int))
 goodDataByKey =
   let getKey = F.recMaybe . F.rcast @ks
-  in  MR.basicListFold @Ord
+  in  fmap (F.foldMap id) $ MR.mapReduceFold
         MR.noUnpack
         (MR.assign (fromJust . getKey) id)
         (MR.Reduce $ \k -> M.singleton k . FL.fold goodDataCount)

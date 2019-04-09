@@ -1,4 +1,4 @@
-packages: . ./knit-haskell ./map-reduce-folds ./Frames-map-reduce ../hvega/hvega
+packages: . ./knit-haskell ./map-reduce-folds ./Frames-map-reduce ../hvega/hvega ../../Development/haskell/recursion-schemes
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 benchmarks: true
@@ -8,3 +8,5 @@ benchmarks: true
 --    location: https://github.com/adamConnerSax/hvega
 --    tag: 886fa6ab564a9a5abb5dc31f8f5c09cf2cf7a3fb
 --    subdir: hvega
+
+

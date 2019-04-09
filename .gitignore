@@ -13,3 +13,7 @@ TAGS
 bench/*.html
 report.html
 *.prof
+*.hp
+*.ps
+*.aux
+*.png

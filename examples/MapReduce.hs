@@ -81,7 +81,7 @@ asPandoc = do
     frame <- liftIO (noisyData vars yNoise coeffs >>= makeFrame vars)    
     P.addMarkDown mapReduceNotesMD
     testMapReduce frame (showText rows <> " rows, average of X and Y by label.") mrAvgXYByLabel
-    testMapReduce frame (showText rows <> " rows, average of X and Y by label. Parallel Reduce ?") mrAvgXYByLabelP
+--    testMapReduce frame (showText rows <> " rows, average of X and Y by label. Parallel Reduce ?") mrAvgXYByLabelP
     testMapReduce frame (showText rows <> " rows, filtered label, max of X and Y by label. Parallel Reduce ?") mrMaxXYByLabelABC
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/mapReduce.html" $ TL.toStrict  $ htmlAsText
@@ -122,14 +122,14 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.re
 
 -- put them together
 --mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapReduceHashableFrameListFold noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+mrAvgXYByLabel = MR.mapReduceFrameFold noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 
-mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabelP = MR.parBasicListHashableFold 1000 6 noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+--mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
+--mrAvgXYByLabelP = MR.parBasicListHashableFold 1000 6 noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 --  MR.MR.mapReduceGF (MRP.defaultParReduceGatherer pure) 
 
 mrMaxXYByLabelABC :: FL.Fold (F.Record AllCols) (F.FrameRec '[Label,ZM])
-mrMaxXYByLabelABC = MR.parBasicListHashableFold 1000 6 (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
+mrMaxXYByLabelABC = MR.mapReduceFrameFold 1000 6 (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
 
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)
