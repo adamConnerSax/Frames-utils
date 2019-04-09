@@ -165,8 +165,10 @@ kMeansOne
   => FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
   -> FL.Fold (F.Record '[y, w]) (MR.ScaleAndUnscale (V.Snd y))
   -> Int
-  -> (  Int
-     -> f (F.Record '[scaledX, scaledY, w])
+  -> (  forall h
+      . (Foldable h, Functor h)
+     => Int
+     -> h (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Weighted (F.Record '[scaledX, scaledY, w]) (V.Snd w)
@@ -217,19 +219,25 @@ kMeansOneWithClusters
   -> FL.Fold (F.Record '[y, w]) (MR.ScaleAndUnscale (V.Snd y))
   -> Int
   -> Int
-  -> (  forall h
+  -> (  Int
+     -> FL.FoldM
+          (FR.Eff effs)
+          (F.Record '[scaledX, scaledY, w])
+          [U.Vector Double]
+     ) -- initial centroids, monadic because may need randomness
+{-  (  forall h
       . (Foldable h, Functor h)
      => Int
      -> h (F.Record '[scaledX, scaledY, w])
      -> FR.Eff effs [U.Vector Double]
-     )  -- initial centroids, monadic because may need randomness
+     ) -}
   -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
   -> Distance
   -> f (F.Record rs)
   -> FR.Eff
        effs
        [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
-kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted distance dataRows
+kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted distance dataRows
   = Log.wrapPrefix "kMeansOneWithClusters" $ do
     let (sunX, sunY) = FL.fold
           ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF)
@@ -239,9 +247,10 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
         addXY r = addX r F.<+> addY r
         plusScaled = fmap (FT.mutate addXY) dataRows
     initials <- mapM
-      (const $ fmap (Centroids . V.fromList) $ makeInitial numClusters $ fmap
-        F.rcast
-        plusScaled
+      ( const
+      $ fmap (Centroids . V.fromList)
+      $ FL.foldM (makeInitialF numClusters)
+      $ fmap F.rcast plusScaled
       )
       (V.replicate numTries ()) -- here we can throw away the other cols
   --  let initialCentroids = Centroids $ V.fromList $ initial
@@ -276,8 +285,6 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitial weighted dist
 kMeansOneWCReduce
   :: forall ks x y w rs effs scaledX scaledY
    . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
---     , Foldable f
---     , Functor f
      , FU.TField Double scaledX
      , FU.TField Double scaledY
      , F.ElemOf rs x
@@ -294,11 +301,11 @@ kMeansOneWCReduce
      )
   => Int
   -> Int
-  -> (  forall h
-      . (Foldable h, Functor h)
-     => Int
-     -> h (F.Record '[scaledX, scaledY, w])
-     -> FR.Eff effs [U.Vector Double]
+  -> (  Int
+     -> FL.FoldM
+          (FR.Eff effs)
+          (F.Record '[scaledX, scaledY, w])
+          [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Distance
   -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
@@ -317,7 +324,7 @@ kMeansOneWCReduce
              )
            ]
        )
-kMeansOneWCReduce numClusters numTries makeInitial distance weighted sunX sunY
+kMeansOneWCReduce numClusters numTries makeInitialF distance weighted sunX sunY
   = let doOne
           :: forall f
            . (Foldable f, Functor f)
@@ -327,7 +334,7 @@ kMeansOneWCReduce numClusters numTries makeInitial distance weighted sunX sunY
                                                sunY
                                                numClusters
                                                numTries
-                                               makeInitial
+                                               makeInitialF
                                                weighted
                                                distance
     in  MR.ReduceM $ \k -> sequence . M.singleton k . doOne

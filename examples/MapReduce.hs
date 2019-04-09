@@ -40,7 +40,7 @@ import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc      as P
 
 import qualified Frames.MapReduce as MR
-import qualified Control.MapReduce.Parallel      as MRP
+--import qualified Control.MapReduce.Parallel      as MRP
 import qualified Frames.Folds                    as FF
 import qualified Frames.Transform                as FT
 import           Frames.Table                    (blazeTable
@@ -81,8 +81,7 @@ asPandoc = do
     frame <- liftIO (noisyData vars yNoise coeffs >>= makeFrame vars)    
     P.addMarkDown mapReduceNotesMD
     testMapReduce frame (showText rows <> " rows, average of X and Y by label.") mrAvgXYByLabel
---    testMapReduce frame (showText rows <> " rows, average of X and Y by label. Parallel Reduce ?") mrAvgXYByLabelP
-    testMapReduce frame (showText rows <> " rows, filtered label, max of X and Y by label. Parallel Reduce ?") mrMaxXYByLabelABC
+    testMapReduce frame (showText rows <> " rows, filtered label, max of X and Y by label.") mrMaxXYByLabelABC
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/mapReduce.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
@@ -122,24 +121,21 @@ maxXY = P.dimap (\r -> Prelude.max (F.rgetField @X r) (F.rgetField @Y r)) (FT.re
 
 -- put them together
 --mrAvgXYByLabel :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
-mrAvgXYByLabel = MR.mapReduceFrameFold noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
+mrAvgXYByLabel = MR.concatFold $ MR.mapReduceFold noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 
 --mrAvgXYByLabelP :: FL.Fold (F.Record AllCols) (F.FrameRec AllCols)
 --mrAvgXYByLabelP = MR.parBasicListHashableFold 1000 6 noUnpack (MR.splitOnKeys @'[Label]) (MR.foldAndAddKey averageF)
 --  MR.MR.mapReduceGF (MRP.defaultParReduceGatherer pure) 
 
 mrMaxXYByLabelABC :: FL.Fold (F.Record AllCols) (F.FrameRec '[Label,ZM])
-mrMaxXYByLabelABC = MR.mapReduceFrameFold 1000 6 (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
-
+mrMaxXYByLabelABC = MR.concatFold $ MR.mapReduceFold (filterLabel ["A","B","C"]) assignToLabels (MR.foldAndAddKey maxXY)
 
 noisyData :: [Double] -> Double -> LA.Vector R -> IO (LA.Vector R, LA.Matrix R)
 noisyData variances noiseObs coeffs = do
   -- generate random measurements
   let d = LA.size coeffs
       nObs = List.length variances
---  xs0 <- LA.cmap (\x-> x - 0.5) <$> LA.rand nObs (d-1) -- 0 centered uniformly distributed random numbers
   let xs0 :: Matrix R = LA.asColumn $ LA.fromList $ [-0.5 + (realToFrac i/realToFrac nObs) | i <- [0..(nObs-1)]]
---  xNoise <- LA.randn nObs (d-1) -- 0 centered normally (sigma=1) distributed random numbers
   let xsC = 1 LA.||| xs0
       ys0 = xsC LA.<> LA.asColumn coeffs
   yNoise <- fmap (List.head . LA.toColumns) (LA.randn nObs 1) -- 0 centered normally (sigma=1) distributed random numbers
@@ -156,7 +152,6 @@ makeFrame vars (ys, xs) = do
       makeRecord :: Int -> F.Record AllCols
       makeRecord n = T.pack [makeLabel n] F.&: ys `LA.atIndex` n F.&: xs `LA.atIndex` (n,1) F.&: vars List.!! n F.&: V.RNil -- skip bias column
   return $ F.toFrame $ makeRecord <$> rowIndex
-
 
 unweighted :: Int -> [Double]
 unweighted n = List.replicate n (1.0)
@@ -179,7 +174,7 @@ testMapReduce dataFrame title mrFold = do
       header _ _ = title
   P.addMarkDown $ "\n## " <> title 
   P.addBlaze $ blazeTable resFrame
---  return ()
+
 
 
 showText :: Show a => a -> T.Text

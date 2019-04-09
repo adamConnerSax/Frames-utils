@@ -49,6 +49,7 @@ import qualified Data.List                     as List
 import           Data.Maybe                     ( catMaybes
                                                 , fromMaybe
                                                 )
+import qualified Data.Profunctor               as P
 import           Data.Random                   as R
 import qualified Data.Random.Distribution.Categorical
                                                as R

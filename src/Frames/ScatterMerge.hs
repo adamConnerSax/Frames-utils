@@ -82,7 +82,7 @@ type BinnableKeyedRecord rs ks x w = (F.AllConstrained (FU.CFieldOf Real [x,w]) 
   
 binFields :: forall ks x w rs. (BinnableKeyedRecord rs ks x w, '[x,w] F.⊆ rs)
            => Int -> MR.RescaleType (V.Snd x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (V.Snd x)))
-binFields n rt = fmap (F.foldMap id) $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
+binFields n rt = MR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
 
 -- NB: a can't be less than the 0th element because we build it that way.  So we drop it
 sortedListToBinLookup' :: Ord a => [a] -> a -> Int
@@ -105,7 +105,7 @@ scatterMerge toX toY numBinsX numBinsY rtX rtY =
       doOne = scatterMergeOne numBinsX numBinsY rtX rtY
       toRecord :: (Double, Double, V.Snd w) -> F.Record [x,y,w]
       toRecord (x', y', w') = toX x' &: toY y' &: w' &: V.RNil
-  in fmap (F.foldMap id) $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.processAndRelabel doOne (const id))
+  in MR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.processAndRelabel doOne (const id))
 
   
 scatterMergeOne :: forall x y w f. (F.AllConstrained (FU.CFieldOf Real [x,y,w]) '[x, y, w], Foldable f, Functor f)
@@ -197,7 +197,7 @@ scatterMerge' toX toY xBins yBins =
       extractF :: FL.Fold (F.Record [Bin2D,DblX, DblY, w]) ([(V.Snd x, V.Snd y, V.Snd w)])
       extractF = fmap F.concat $ MR.mapReduceFold MR.noUnpack (MR.splitOnKeys @'[Bin2D])
         (MR.ReduceFold $ const $ FL.Fold wgtdSum (0,0,0) (\(wX, wY, totW) -> let totW' = realToFrac totW in [(toX (wX/totW'), toY (wY/totW'), totW)]))
-  in  fmap (F.foldMap id) $ MR.mapReduceFold
+  in  MR.concatFold $ MR.mapReduceFold
       (MR.simpleUnpack $ binRow . F.rcast @(UseCols ks x y w))
       (MR.assignKeysAndData @ks @[Bin2D,DblX,DblY,w])
       (MR.makeRecsWithKey makeXYW $ MR.ReduceFold $ const extractF)
