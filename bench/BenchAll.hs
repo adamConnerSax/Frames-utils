@@ -1,9 +1,9 @@
 import           Criterion.Main
 
-import           Bench.MapReduce                ( benchMapReduceIO )
+-- moved to map-reduce-folds package
+--import           Bench.MapReduce                ( benchMapReduceIO )
 
-benchesIO :: IO [Benchmark]
-benchesIO = sequence [benchMapReduceIO]
+benchesIO = sequence [] -- should have whatever bench routines come from imported bench modules
 
 main = benchesIO >>= defaultMain
 
