@@ -1,4 +1,4 @@
-packages: . ./knit-haskell ./map-reduce-folds ./Frames-map-reduce ../hvega/hvega ../../Development/haskell/recursion-schemes
+packages: . ./knit-haskell ../map-reduce-folds ./Frames-map-reduce ../hvega/hvega ../../Development/haskell/recursion-schemes
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 benchmarks: true
