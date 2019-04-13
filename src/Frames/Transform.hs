@@ -22,6 +22,9 @@ module Frames.Transform
   , dropColumns
   , retypeColumn
   , reshapeRowSimple
+  , FieldDefaults (..)
+  , DefaultRecord (..)
+  -- unused/deprecated
   , BinaryFunction(..)
   , bfApply
   , bfPlus
@@ -30,6 +33,8 @@ module Frames.Transform
   ) where
 
 --import qualified Control.Newtype as N
+import           Control.Applicative   ((<|>))
+import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
 import           Data.Vinyl.Functor   (Lift(..), Identity(..), Compose(..))
@@ -85,6 +90,39 @@ reshapeRowSimple classifiers newDataF r =
   let ids = F.rcast r :: F.Record ss
   in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
 
+--
+data FieldDefaults =
+  FieldDefaults
+  {
+    boolDefault :: Maybe Bool
+  , intDefault :: Maybe Int
+  , doubleDefault :: Maybe Double
+  , textDefault :: Maybe T.Text
+  }
+
+class DefaultField a where
+  defaultField :: (V.KnownField t, V.Snd t ~ a) => FieldDefaults -> (Maybe F.:. F.ElField) t -> (Maybe F.:. F.ElField) t
+
+instance DefaultField Bool where
+  defaultField d x = Compose $ fmap V.Field $ (fmap V.getField $ getCompose x) <|> (boolDefault d)
+  
+instance DefaultField Int where
+  defaultField d x = Compose $ fmap V.Field $ (fmap V.getField $ getCompose x) <|> (intDefault d)
+  
+instance DefaultField Double where
+  defaultField d x = Compose $ fmap V.Field $ (fmap V.getField $ getCompose x) <|> (doubleDefault d)
+
+instance DefaultField T.Text where
+  defaultField d x = Compose $ fmap V.Field $ (fmap V.getField $ getCompose x) <|> (textDefault d)
+
+class DefaultRecord rs where
+  defaultRecord :: FieldDefaults -> F.Rec (Maybe F.:. F.ElField) rs -> F.Rec (Maybe F.:. F.ElField) rs
+
+instance DefaultRecord '[] where
+  defaultRecord _ V.RNil = V.RNil
+
+instance (DefaultRecord rs, V.KnownField t, DefaultField (V.Snd t)) => DefaultRecord  (t ': rs) where
+  defaultRecord d (x V.:& xs) = defaultField d x V.:& defaultRecord d xs 
 
 -- for aggregations
 
