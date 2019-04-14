@@ -73,7 +73,7 @@ asPandoc = do
     Log.logLE Log.Info $ "Raw:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM)
     let fieldDefaults = FT.FieldDefaults Nothing (Just (-1)) Nothing Nothing
     exampleDataFrameM' <- liftIO $ fmap F.boxedFrame $ F.runSafeEffect $ P.toListM $ exampleDataP P.>-> P.map (FT.defaultRecord fieldDefaults)
-    Log.logLE Log.Info $ "Raw:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM')
+    Log.logLE Log.Info $ "Defaulting Int:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM')
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/transformations.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
