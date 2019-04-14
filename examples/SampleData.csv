@@ -1,0 +1,5 @@
+Name, Age, Height, HasChildren
+, 22, 1.5, False
+Jim,, 1.7, True
+Boris, 33, , False
+Natasha, 36, 1.7,  

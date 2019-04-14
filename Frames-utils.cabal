@@ -88,6 +88,14 @@ executable MapReduce
                  -funbox-strict-fields
     build-depends: Frames-utils -any
 
+executable Transforms
+    import: deps       
+    main-is: Transforms.hs
+    hs-source-dirs: examples
+    ghc-options: -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
+                 -funbox-strict-fields
+    build-depends: Frames-utils -any    
+
 test-suite test-frames-utils
     import: deps            
     type: exitcode-stdio-1.0
