@@ -82,3 +82,27 @@ asPandoc = do
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/transformations.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
+
+{-
+Output:
+
+Main [Informational] Raw:
+                     {Just Name :-> "", Just Age :-> 22, Just Height :-> 1.5, Just HasChildren :-> False}
+                     {Just Name :-> "Jim", Nothing, Just Height :-> 1.7, Just HasChildren :-> True}
+                     {Just Name :-> "Boris", Just Age :-> 33, Nothing, Just HasChildren :-> False}
+                     {Just Name :-> "Natasha", Just Age :-> 36, Just Height :-> 1.7, Nothing}
+Main [Informational] Raw after recMaybe:
+                     {Name :-> "", Age :-> 22, Height :-> 1.5, HasChildren :-> False}
+Main [Informational] Defaulting all but Double:
+                     {Just Name :-> "", Just Age :-> 22, Just Height :-> 1.5, Just HasChildren :-> False}
+                     {Just Name :-> "Jim", Just Age :-> -1, Just Height :-> 1.7, Just HasChildren :-> True}
+                     {Just Name :-> "Boris", Just Age :-> 33, Nothing, Just HasChildren :-> False}
+                     {Just Name :-> "Natasha", Just Age :-> 36, Just Height :-> 1.7, Just HasChildren :-> False}
+Main [Informational] Defaulted after recMaybe:
+                     {Name :-> "", Age :-> 22, Height :-> 1.5, HasChildren :-> False}
+                     {Name :-> "Jim", Age :-> -1, Height :-> 1.7, HasChildren :-> True}
+                     {Name :-> "Natasha", Age :-> 36, Height :-> 1.7, HasChildren :-> False}
+Main [Warning] IO Error (ignored): Couldn't find "pandoc-templates/minWithVega-pandoc.html"
+
+...done
+-}
