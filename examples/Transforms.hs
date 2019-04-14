@@ -21,6 +21,7 @@ import qualified Data.Vinyl                      as V
 import qualified Frames                          as F
 
 import           Data.List                        (intercalate, concat)
+import           Data.Maybe                       (catMaybes)
 import           Data.Text                        (Text)
 import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
@@ -70,10 +71,14 @@ asPandoc = do
     let exampleDataP :: F.MonadSafe m => P.Producer (FM.MaybeRow ExampleCols) m ()
         exampleDataP =  F.readTableMaybe "examples/SampleData.csv"
     exampleDataFrameM <- liftIO $ fmap F.boxedFrame $ F.runSafeEffect $ P.toListM $ exampleDataP
-    Log.logLE Log.Info $ "Raw:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM)
-    let fieldDefaults = FT.FieldDefaults Nothing (Just (-1)) Nothing Nothing
+    exampleDataFrame <- liftIO $ F.inCoreAoS $ exampleDataP P.>-> P.map F.recMaybe P.>-> P.concat 
+    Log.logLE Log.Info $ "Raw:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM)    
+    Log.logLE Log.Info $ "Raw after recMaybe:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrame)
+    let fieldDefaults = FT.FieldDefaults (Just False) (Just (-1)) Nothing (Just "N/A")
     exampleDataFrameM' <- liftIO $ fmap F.boxedFrame $ F.runSafeEffect $ P.toListM $ exampleDataP P.>-> P.map (FT.defaultRecord fieldDefaults)
-    Log.logLE Log.Info $ "Defaulting Int:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM')
+    exampleDataFrame' <- liftIO $ F.inCoreAoS $ exampleDataP P.>-> P.map (F.recMaybe . FT.defaultRecord fieldDefaults) P.>-> P.concat 
+    Log.logLE Log.Info $ "Defaulting all but Double:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM')
+    Log.logLE Log.Info $ "Defaulted after recMaybe:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrame')
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/transformations.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
