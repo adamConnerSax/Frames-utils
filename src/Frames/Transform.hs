@@ -58,16 +58,19 @@ transform f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
 mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs V.++ bs)
 mutate f xs = xs `F.rappend` f xs 
 
+-- | Create a record with one field from a value.  Use a TypeApplication to choose the field.
 recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
 recordSingleton a = a F.&: V.RNil
 
+-- | Drop a column from a record.  Just a specialization of rcast.
 dropColumn :: forall x rs. (F.RDelete x rs F.⊆ rs) => F.Record rs -> F.Record (F.RDelete x rs)
 dropColumn = F.rcast
 
+-- | Drop a set of columns from a record. Just a specialization of rcast.
 dropColumns :: forall xs rs. (RDeleteAll xs rs F.⊆ rs) => F.Record rs -> F.Record (RDeleteAll xs rs)
 dropColumns = F.rcast
 
--- change a column "name" at the type level
+-- |  change a column "name" at the type level
 retypeColumn :: forall x y rs. ( V.KnownField x
                                , V.KnownField y
                                , V.Snd x ~ V.Snd y
@@ -81,6 +84,9 @@ retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
 -- This is an anamorphic step.
 -- You could also use meltRow here.  That is also (Record as -> [Record bs])
 -- requires typeApplications for ss
+-- | Given a set of classifier fields cs, and a function which combines the classifier and the data, a row with fields ts,
+-- turn a list of classifier values and a data row into a list of rows, each with the classifier value, the result of applying the function
+-- and any other columns from the original row that you specify (the ss fields).
 reshapeRowSimple :: forall ss ts cs ds. (ss F.⊆ ts)
                  => [F.Record cs] -- list of classifier values
                  -> (F.Record cs -> F.Record ts -> F.Record ds)
@@ -91,6 +97,8 @@ reshapeRowSimple classifiers newDataF r =
   in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
 
 --
+-- | This type holds default values for the DefaultField and DefaultRecord classes to use. You can set a default with @Just@ or leave
+-- the value in that type field alone with @Nothing@
 data FieldDefaults =
   FieldDefaults
   {
@@ -100,6 +108,7 @@ data FieldDefaults =
   , textDefault :: Maybe T.Text
   }
 
+-- | Optionally set a (Maybe :. ElfField) to a default value, d, replacing @Nothing@ with @Just d@
 class DefaultField a where
   defaultField :: (V.KnownField t, V.Snd t ~ a) => FieldDefaults -> (Maybe F.:. F.ElField) t -> (Maybe F.:. F.ElField) t
 
@@ -115,6 +124,7 @@ instance DefaultField Double where
 instance DefaultField T.Text where
   defaultField d x = Compose $ fmap V.Field $ (fmap V.getField $ getCompose x) <|> (textDefault d)
 
+-- | apply defaultField to each field of a Rec (Maybe :. ElField)
 class DefaultRecord rs where
   defaultRecord :: FieldDefaults -> F.Rec (Maybe F.:. F.ElField) rs -> F.Rec (Maybe F.:. F.ElField) rs
 
