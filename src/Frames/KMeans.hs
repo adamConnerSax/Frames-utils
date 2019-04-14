@@ -54,8 +54,8 @@ import           Math.KMeans                    ( Weighted(..)
                                                 , linfdist
                                                 )
 
-import qualified Control.Monad.Freer           as FR
-import qualified Control.Monad.Freer.Logger    as Log
+import qualified Polysemy                      as P
+import qualified Knit.Effects.Logger           as Log
 
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as List
@@ -159,7 +159,7 @@ kMeansOne
      , FU.TField Double scaledY
      , Foldable f
      , Functor f
-     , Log.LogWithPrefixes effs
+     , Log.LogWithPrefixesLE effs
      , Show (V.Snd w)
      )
   => FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
@@ -169,12 +169,12 @@ kMeansOne
       . (Foldable h, Functor h)
      => Int
      -> h (F.Record '[scaledX, scaledY, w])
-     -> FR.Eff effs [U.Vector Double]
+     -> P.Semantic effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Weighted (F.Record '[scaledX, scaledY, w]) (V.Snd w)
   -> Distance
   -> f (F.Record '[x, y, w])
-  -> FR.Eff effs [(V.Snd x, V.Snd y, V.Snd w)]
+  -> P.Semantic effs [(V.Snd x, V.Snd y, V.Snd w)]
 kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
   Log.wrapPrefix "KMeansOne" $ do
     let (sunX, sunY) = FL.fold
@@ -213,7 +213,7 @@ kMeansOneWithClusters
      , V.ReifyConstraint Show F.ElField (rs V.++ '[scaledX, scaledY])
      , V.RecordToList (rs V.++ '[scaledX, scaledY])
      , Show (V.Snd w)
-     , Log.LogWithPrefixes effs
+     , Log.LogWithPrefixesLE effs
      )
   => FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
   -> FL.Fold (F.Record '[y, w]) (MR.ScaleAndUnscale (V.Snd y))
@@ -221,7 +221,7 @@ kMeansOneWithClusters
   -> Int
   -> (  Int
      -> FL.FoldM
-          (FR.Eff effs)
+          (P.Semantic effs)
           (F.Record '[scaledX, scaledY, w])
           [U.Vector Double]
      ) -- initial centroids, monadic because may need randomness
@@ -234,7 +234,7 @@ kMeansOneWithClusters
   -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
   -> Distance
   -> f (F.Record rs)
-  -> FR.Eff
+  -> P.Semantic
        effs
        [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
 kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted distance dataRows
@@ -297,13 +297,13 @@ kMeansOneWCReduce
      , V.ReifyConstraint Show F.ElField (rs V.++ '[scaledX, scaledY])
      , V.RecordToList (rs V.++ '[scaledX, scaledY])
      , Show (V.Snd w)
-     , Log.LogWithPrefixes effs
+     , Log.LogWithPrefixesLE effs
      )
   => Int
   -> Int
   -> (  Int
      -> FL.FoldM
-          (FR.Eff effs)
+          (P.Semantic effs)
           (F.Record '[scaledX, scaledY, w])
           [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
@@ -314,7 +314,7 @@ kMeansOneWCReduce
        (F.Record '[y, w])
        (MR.ScaleAndUnscale (V.Snd y))
   -> MR.ReduceM
-       (FR.Eff effs)
+       (P.Semantic effs)
        (F.Record ks)
        (F.Record rs)
        ( M.Map
@@ -329,7 +329,9 @@ kMeansOneWCReduce numClusters numTries makeInitialF distance weighted sunX sunY
           :: forall f
            . (Foldable f, Functor f)
           => f (F.Record rs)
-          -> FR.Eff effs [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+          -> P.Semantic
+               effs
+               [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
         doOne = kMeansOneWithClusters @x @y @w sunX
                                                sunY
                                                numClusters

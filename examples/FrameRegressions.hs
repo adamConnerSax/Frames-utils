@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE QuasiQuotes               #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 module Main where
 
 import qualified Control.Foldl                as FL
@@ -27,18 +28,21 @@ import           Numeric.LinearAlgebra        (R, Matrix)
 
 import qualified Frames.Regression            as FR
 import qualified Frames.VegaLite               as FV
-import qualified Html.Blaze.Report            as H
+
 import qualified Text.Blaze.Html5              as H
 import qualified Text.Blaze.Html5.Attributes   as HA
 import           Text.Blaze.Html              ((!))
 import qualified Text.Blaze.Html.Renderer.Text as BH
-import qualified Text.Pandoc.Report           as P
+
 import qualified Statistics.Types             as S
 
-import qualified Control.Monad.Freer.Logger   as Log
-import qualified Control.Monad.Freer          as FR
-import qualified Control.Monad.Freer.PandocMonad as FR
-import qualified Control.Monad.Freer.Pandoc as P
+import qualified Polysemy                      as P
+import qualified Knit.Effects.Logger           as Log
+import qualified Knit.Effects.Pandoc           as PE
+import qualified Knit.Effects.PandocMonad           as PM
+import qualified Knit.Report.Blaze             as RB
+import qualified Knit.Report.Pandoc           as PR
+
 import Data.String.Here
 
 templateVars = M.fromList
@@ -65,11 +69,11 @@ main = asPandoc
   
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = FR.runPandocAndLoggingToIO Log.logAll
+  let runAllP = PM.runPandocAndLoggingToIO Log.logAll
                 . Log.wrapPrefix "Main"
                 . fmap BH.renderHtml
-  htmlAsTextE <- runAllP $ P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF $ do
-    P.addMarkDown regressionNotesMD
+  htmlAsTextE <- runAllP $ PR.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars PR.mindocOptionsF $ do
+    PR.addMarkDown regressionNotesMD
     testMany
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/FrameRegressions.html" $ TL.toStrict  $ htmlAsText
@@ -151,17 +155,17 @@ testRegressions :: ( F.ColumnHeaders '[w]
                    , V.KnownField w
                    , Traversable f
                    , Foldable f
-                   , FR.Member P.ToPandoc effs
-                   , Log.LogWithPrefixes effs
-                   , FR.PandocEffects effs
-                   , MonadIO (FR.Eff effs))
+                   , P.Member PE.ToPandoc effs
+                   , Log.LogWithPrefixesLE effs
+                   , PM.PandocEffects effs
+                   , MonadIO (P.Semantic effs))
                 => Double
                 -> Double
                 -> Bool
                 -> Bool
                 -> T.Text
-                -> f (T.Text, (F.FrameRec AllCols -> FR.Eff effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
-                -> FR.Eff effs ()
+                -> f (T.Text, (F.FrameRec AllCols -> P.Semantic effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
+                -> P.Semantic effs ()
 testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   let title = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
@@ -175,26 +179,28 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
   results <- traverse (doOne frame) keyedFs
   let header _ _ = title
-  P.addMarkDown $ "\n## " <> title 
-  P.addBlaze $ do
+  PR.addMarkDown $ "\n## " <> title 
+  PR.addBlaze $ do
     H.div ! HA.style "display: block-inline" $ do
     FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultBlaze mempty
-    H.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
-    H.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
+    RB.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
+    RB.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
 --  return ()
 
 
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
-testMany :: ( FR.Member P.ToPandoc effs
-            , Log.LogWithPrefixes effs
-            , FR.PandocEffects effs
-            , MonadIO (FR.Eff effs)) =>  FR.Eff effs ()
+testMany :: ( P.Member PE.ToPandoc effs
+            , Log.LogWithPrefixesLE effs
+            , PM.PandocEffects effs
+            , MonadIO (P.Semantic effs)) =>  P.Semantic effs ()
 testMany = Log.wrapPrefix "Many" $ do
-  let toTestUW  =
+  let toTestUW :: _ -- that this is required is suspicious
+      toTestUW =
         [
           ("OLS", FR.ordinaryLeastSquares)
         , ("TLS", FR.totalLeastSquares)
         ]
+      toTestW :: _ -- that this is required is suspicious
       toTestW =
         [
           ("WOLS", FR.weightedLeastSquares)

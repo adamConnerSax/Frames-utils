@@ -24,8 +24,8 @@ import qualified Frames.Utils                  as FU
 import qualified Frames.VegaLite.Utils         as FV
 import qualified Math.Regression.Regression    as MR
 import qualified Math.Regression.LeastSquares  as MR
-import qualified Control.Monad.Freer.Logger    as Log
-import qualified Control.Monad.Freer           as FR
+import qualified Polysemy                      as P
+import qualified Knit.Effects.Logger           as Log
 
 import qualified Lucid                         as LH
 import qualified Text.Blaze.Html               as BH
@@ -328,7 +328,7 @@ leastSquaresByMinimization wc guess dat =
 
 ordinaryLeastSquares
   :: forall y wc as rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -341,7 +341,7 @@ ordinaryLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as Unweighted rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as Unweighted rs)
 ordinaryLeastSquares dat = do
   let (mA, vB)  = prepRegression @y @as dat
       withConst = asBool @wc
@@ -349,7 +349,7 @@ ordinaryLeastSquares dat = do
 
 weightedLeastSquares
   :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -364,7 +364,7 @@ weightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
 weightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -373,7 +373,7 @@ weightedLeastSquares dat = do
 -- special case when weights come from observations being population averages of different populations
 popWeightedLeastSquares
   :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -388,7 +388,7 @@ popWeightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
 popWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -400,7 +400,7 @@ popWeightedLeastSquares dat = do
 -- special case when we know residuals are heteroscedastic with variances proportional to given numbers
 varWeightedLeastSquares
   :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -415,7 +415,7 @@ varWeightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
 varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -425,7 +425,7 @@ varWeightedLeastSquares dat = do
 
 totalLeastSquares
   :: forall y wc as rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -438,7 +438,7 @@ totalLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as Unweighted rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as Unweighted rs)
 totalLeastSquares dat = do
   let (mA, vB)  = prepRegression @y @as dat
       withConst = asBool @wc
@@ -447,7 +447,7 @@ totalLeastSquares dat = do
 
 weightedTLS
   :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -462,7 +462,7 @@ weightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
 weightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -470,7 +470,7 @@ weightedTLS dat = do
 
 popWeightedTLS
   :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -485,7 +485,7 @@ popWeightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
 popWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -495,7 +495,7 @@ popWeightedTLS dat = do
 
 varWeightedTLS
   :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixes effs
+   . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -510,7 +510,7 @@ varWeightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> FR.Eff effs (FrameRegressionResult y wc as w rs)
+  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
 varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc

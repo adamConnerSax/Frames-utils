@@ -24,10 +24,11 @@ import           Data.Text                        (Text)
 import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
 import qualified Text.Blaze.Html.Renderer.Text   as BH
-import qualified Text.Pandoc.Report              as P
 
-import qualified Control.Monad.Freer.Logger      as Log
-import qualified Control.Monad.Freer.PandocMonad as FR
+import qualified Knit.Effects.Logger           as Log
+import qualified Knit.Effects.PandocMonad           as PM
+import qualified Knit.Report.Pandoc           as RP
+
 
 import qualified Frames.Transform                as FT
 import qualified Frames.MaybeUtils          as FM
@@ -59,10 +60,10 @@ main = asPandoc
 
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = FR.runPandocAndLoggingToIO Log.logAll
+  let runAllP = PM.runPandocAndLoggingToIO Log.logAll
                 . Log.wrapPrefix "Main"
                 . fmap BH.renderHtml
-  htmlAsTextE <- runAllP $ P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF $ do
+  htmlAsTextE <- runAllP $ RP.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars RP.mindocOptionsF $ do
     let exampleDataP :: F.MonadSafe m => P.Producer (FM.MaybeRow ExampleCols) m ()
         exampleDataP =  F.readTableMaybe "examples/SampleData.csv" -- create the Pipe
     exampleDataFrameM <- liftIO $ fmap F.boxedFrame $ F.runSafeEffect $ P.toListM $ exampleDataP 

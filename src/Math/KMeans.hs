@@ -38,9 +38,8 @@ module Math.KMeans
   )
 where
 
-import qualified Control.Monad.Freer           as FR
-import qualified Control.Monad.Freer.Logger    as Log
-
+import qualified Polysemy                      as P
+import qualified Knit.Effects.Logger           as Log
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as Foldable
@@ -49,7 +48,6 @@ import qualified Data.List                     as List
 import           Data.Maybe                     ( catMaybes
                                                 , fromMaybe
                                                 )
-import qualified Data.Profunctor               as P
 import           Data.Random                   as R
 import qualified Data.Random.Distribution.Categorical
                                                as R
@@ -77,12 +75,12 @@ emptyCluster = Cluster []
 
 weightedKMeans
   :: forall a w f effs
-   . (Show a, Log.LogWithPrefixes effs, Foldable f, Real w, Eq a, Show w)
+   . (Show a, Log.LogWithPrefixesLE effs, Foldable f, Real w, Eq a, Show w)
   => Centroids -- initial guesses at centers
   -> Weighted a w -- location/weight from data
   -> Distance
   -> f a
-  -> FR.Eff effs (Clusters a, Int)
+  -> P.Semantic effs (Clusters a, Int)
 weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
   -- put them all in one cluster just to start.  Doesn't matter since we have initial centroids
   let

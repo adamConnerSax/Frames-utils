@@ -37,6 +37,7 @@ common deps
                 map-reduce-folds                  >= 0.3.0.0 && < 0.4.0.0,
                 mltool                            >= 0.2.0 && < 0.3,
                 pipes                             >= 4.3.9 && < 4.4,
+                polysemy                          >= 0.1.0.0 && < 0.2.0.0,
                 profunctors                       >= 5.3 && < 5.4,
                 random-fu                         >= 0.2.7 && < 0.3,
                 readable                          >= 0.3.1 && < 0.4,
@@ -94,7 +95,7 @@ executable Transforms
     hs-source-dirs: examples
     ghc-options: -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
                  -funbox-strict-fields
-    build-depends: Frames-utils -any    
+    build-depends: Frames-utils -any
 
 test-suite test-frames-utils
     import: deps            
