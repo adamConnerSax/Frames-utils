@@ -1,6 +1,6 @@
 cabal-version: 2.2.0
 name: Frames-utils
-version: 0.1.0.0
+version: 0.2.0.0
 license: BSD-3-Clause
 license-file: LICENSE
 maintainer: adam_conner_sax@yahoo.com
@@ -37,7 +37,7 @@ common deps
                 map-reduce-folds                  >= 0.3.0.0 && < 0.4.0.0,
                 mltool                            >= 0.2.0 && < 0.3,
                 pipes                             >= 4.3.9 && < 4.4,
-                polysemy                          >= 0.1.0.0 && < 0.2.0.0,
+                polysemy                          >= 0.1.1.0 && < 0.2.0.0,
                 profunctors                       >= 5.3 && < 5.4,
                 random-fu                         >= 0.2.7 && < 0.3,
                 readable                          >= 0.3.1 && < 0.4,
