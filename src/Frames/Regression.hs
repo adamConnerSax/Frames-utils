@@ -327,7 +327,7 @@ leastSquaresByMinimization wc guess dat =
 
 
 ordinaryLeastSquares
-  :: forall y wc as rs f effs
+  :: forall effs y wc as rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
@@ -372,7 +372,7 @@ weightedLeastSquares dat = do
 
 -- special case when weights come from observations being population averages of different populations
 popWeightedLeastSquares
-  :: forall y wc as w rs f effs
+  :: forall effs y wc as w rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
@@ -399,7 +399,7 @@ popWeightedLeastSquares dat = do
 
 -- special case when we know residuals are heteroscedastic with variances proportional to given numbers
 varWeightedLeastSquares
-  :: forall y wc as w rs f effs
+  :: forall effs y wc as w rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
@@ -424,7 +424,7 @@ varWeightedLeastSquares dat = do
     <$> MR.weightedLS withConst mA vB vWvar
 
 totalLeastSquares
-  :: forall y wc as rs f effs
+  :: forall effs y wc as rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
@@ -446,7 +446,7 @@ totalLeastSquares dat = do
 
 
 weightedTLS
-  :: forall y wc as w rs f effs
+  :: forall effs y wc as w rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
@@ -469,7 +469,7 @@ weightedTLS dat = do
   FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConst mA vB vW
 
 popWeightedTLS
-  :: forall y wc as w rs f effs
+  :: forall effs y wc as w rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs
@@ -494,7 +494,7 @@ popWeightedTLS dat = do
     <$> MR.weightedTLS withConst mA vB vWpop
 
 varWeightedTLS
-  :: forall y wc as w rs f effs
+  :: forall effs y wc as w rs f
    . ( Log.LogWithPrefixesLE effs
      , Foldable f
      , as F.⊆ rs

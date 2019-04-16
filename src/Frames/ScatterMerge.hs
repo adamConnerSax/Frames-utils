@@ -105,7 +105,7 @@ scatterMerge toX toY numBinsX numBinsY rtX rtY =
       doOne = scatterMergeOne numBinsX numBinsY rtX rtY
       toRecord :: (Double, Double, V.Snd w) -> F.Record [x,y,w]
       toRecord (x', y', w') = toX x' &: toY y' &: w' &: V.RNil
-  in MR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.processAndRelabel doOne (const id))
+  in MR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,y,w]) (MR.makeRecsWithKey toRecord $ MR.processAndLabel doOne (const id))
 
   
 scatterMergeOne :: forall x y w f. (F.AllConstrained (FU.CFieldOf Real [x,y,w]) '[x, y, w], Foldable f, Functor f)
