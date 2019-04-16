@@ -34,7 +34,7 @@ common deps
                 lens                              >= 4.17 && < 4.18,
                 lucid                             >= 2.9.11 && < 2.10,
                 lucid-colonnade                   >= 1.0.1 && < 1.1,
-                map-reduce-folds                  >= 0.3.0.0 && < 0.4.0.0,
+                map-reduce-folds                  >= 0.1.0.0 && < 0.2.0.0,
                 mltool                            >= 0.2.0 && < 0.3,
                 pipes                             >= 4.3.9 && < 4.4,
                 polysemy                          >= 0.1.1.0 && < 0.2.0.0,
