@@ -36,12 +36,17 @@ import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import qualified Statistics.Types             as S
 
+import qualified Knit.Report                  as K
+import qualified Knit.Report.Other.Blaze      as KB
+
+{-
 import qualified Polysemy                      as P
 import qualified Knit.Effects.Logger           as Log
 import qualified Knit.Effects.Pandoc           as PE
 import qualified Knit.Effects.PandocMonad           as PM
 import qualified Knit.Report.Blaze             as RB
 import qualified Knit.Report.Pandoc           as PR
+-}
 
 import Data.String.Here
 
@@ -69,11 +74,9 @@ main = asPandoc
   
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = PM.runPandocAndLoggingToIO Log.logAll
-                . Log.wrapPrefix "Main"
-                . fmap BH.renderHtml
-  htmlAsTextE <- runAllP $ PR.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars PR.mindocOptionsF $ do
-    PR.addMarkDown regressionNotesMD
+  let pandocWriterConfig = K.PandocWriterConfig (Just "pandoc-templates/minWithVega-pandoc.html")  templateVars K.mindocOptionsF
+  htmlAsTextE <- K.knitHtml (Just "FrameRegressions.Main") K.logAll pandocWriterConfig $ do
+    K.addMarkDown regressionNotesMD
     testMany
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/FrameRegressions.html" $ TL.toStrict  $ htmlAsText
@@ -155,17 +158,16 @@ testRegressions :: ( F.ColumnHeaders '[w]
                    , V.KnownField w
                    , Traversable f
                    , Foldable f
-                   , P.Member PE.ToPandoc effs
-                   , Log.LogWithPrefixesLE effs
-                   , PM.PandocEffects effs
-                   , MonadIO (P.Semantic effs))
+                   , K.Member K.ToPandoc effs
+                   , K.PandocEffects effs
+                   , MonadIO (K.Semantic effs))
                 => Double
                 -> Double
                 -> Bool
                 -> Bool
                 -> T.Text
-                -> f (T.Text, (F.FrameRec AllCols -> P.Semantic effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
-                -> P.Semantic effs ()
+                -> f (T.Text, (F.FrameRec AllCols -> K.Semantic effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
+                -> K.Semantic effs ()
 testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   let title = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
@@ -179,21 +181,18 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
   results <- traverse (doOne frame) keyedFs
   let header _ _ = title
-  PR.addMarkDown $ "\n## " <> title 
-  PR.addBlaze $ do
+  K.addMarkDown $ "\n## " <> title 
+  K.addBlaze $ do
     H.div ! HA.style "display: block-inline" $ do
       FR.prettyPrintRegressionResults id results S.cl95 FR.prettyPrintRegressionResultBlaze mempty
-      RB.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
-      RB.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
---  return ()
-
+      KB.placeVisualization (vizId <> "_fits") $ FV.keyedLayeredFrameScatterWithFit title id results S.cl95 frame
+      KB.placeVisualization (vizId <> "_regresssionCoeffs") $ FV.regressionCoefficientPlotMany id "Parameters" ["intercept","x"] (fmap (\(k,frr) -> (k, FR.regressionResult frr)) results) S.cl95
 
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
-testMany :: ( P.Member PE.ToPandoc effs
-            , Log.LogWithPrefixesLE effs
-            , PM.PandocEffects effs
-            , MonadIO (P.Semantic effs)) =>  P.Semantic effs ()
-testMany = Log.wrapPrefix "Many" $ do
+testMany :: ( K.Member K.ToPandoc effs
+            , K.PandocEffects effs
+            , MonadIO (K.Semantic effs)) =>  K.Semantic effs ()
+testMany = K.wrapPrefix "Many" $ do
   let toTestUW :: _ -- that this is required is suspicious
       toTestUW =
         [
@@ -215,85 +214,3 @@ testMany = Log.wrapPrefix "Many" $ do
   testRegressions @Weight 0.5 0.0 True False "many7" toTestW
   testRegressions @Weight 0.3 0.1 True False "many8" toTestW
 
-{-
-
-testRegression :: ( F.ColumnHeaders '[w]
-                  , V.KnownField w
-                  , FR.Members '[Log.Logger, Blaze] effs
-                  , MonadIO (FR.Eff effs))
-               => Double
-               -> Double
-               -> Bool
-               -> Bool
-               -> T.Text
-               -> (F.FrameRec AllCols -> FR.Eff effs (FR.FrameRegressionResult Y True '[X] w AllCols))
-               -> FR.Eff effs ()
-testRegression yNoise xNoise weighted offset vizId f = do
-  let scopeT = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
-               <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
-               <> " (" <> (if weighted then "cone weights" else "unweighted") <> (if offset then ", w/offsets" else "") <> ")"
-      vars = if weighted then coneWeighted 100 1 0.1 else unweighted 100
-      wgts = varListToWeights vars
-      offsetM = if offset then (Just offsets) else Nothing
-  frame <- liftIO (buildRegressable vars offsetM yNoise coeffs xNoise >>= makeFrame vars)
-  result <- f frame
-  let header _ _ = scopeT
-  blaze $ FR.prettyPrintRegressionResultBlaze header result S.cl95
-  blaze $ H.placeVisualization vizId $ FV.frameScatterWithFit scopeT (Just vizId) result S.cl95 frame
-  Log.log Log.Info $ FR.prettyPrintRegressionResult header result S.cl95
-  return ()
-
---const3 f x y z = f x y
-
-
-
-
-testOLS :: Log.Logger (H.HtmlT IO) ()
-testOLS =  Log.wrapPrefix "OLS" $ do
-  let regress = FR.ordinaryLeastSquares
-  htmlLift $ Log.log Log.Info "Ordinary Least Squares"
-  testRegression 0 0 False False "OLS1" regress
-  testRegression 0.1 0 False False "OLS2" regress
-  testRegression 0.5 0 False False "OLS3" regress
---  testRegression 0.1 0 False True "OLS4" regress
-  testRegression 0.3 0.3 False False "OLS5" regress
-  testRegression 0.3 0 True False "OLS6" regress
-  testRegression 0.3 0.3 True False "OLS7" regress
-
-testWOLS :: Log.Logger (H.HtmlT IO) ()
-testWOLS =  Log.wrapPrefix "WOLS" $ do
-  let regress = FR.weightedLeastSquares
-  htmlLift $ Log.log Log.Info "Weighted Ordinary Least Squares"
-  testRegression @Weight 0 0 True False "WOLS1" regress
-  testRegression @Weight 0.1 0 True False "WOLS2" regress
-  testRegression @Weight 0.1 0 False False "WOLS3" regress
-  testRegression @Weight 0.3 0 True False "WOLS4" regress
-  testRegression @Weight 0.1 0.1 True False "WOL5" regress
---  testRegression @Weight 0.1 0.1 True True "WOLS6" regress
-  testRegression @Weight 0.3 0.3 True False "WOLS7" regress
-
-testTLS :: Log.Logger (H.HtmlT IO) ()
-testTLS = Log.wrapPrefix "TLS" $ do
-  let regress = FR.totalLeastSquares
-  htmlLift $ Log.log Log.Info "Total Least Squares"
-  testRegression 0 0 False False "TLS1" regress
-  testRegression 0.1 0 False False "TLS2" regress
-  testRegression 0.5 0 False False "TLS3" regress
---  testRegression 0.1 0 False True "TLS4" regress
-  testRegression 0.3 0.3 False False "TLS5" regress
-  testRegression 0.3 0 True False "TLS6" regress
-  testRegression 0.3 0.3 True False "TLS7" regress
-
-testWTLS :: Log.Logger (H.HtmlT IO) ()
-testWTLS =  Log.wrapPrefix "WTLS" $ do
-  let regress = FR.weightedTLS
-  htmlLift $ Log.log Log.Info "Weighted Total Least Squares"
-  testRegression @Weight 0 0 True False "WTLS1" regress
-  testRegression @Weight 0.1 0 True False "WTLS2" regress
-  testRegression @Weight 0.1 0 False False "WTLS3" regress
-  testRegression @Weight 0.3 0 True False "WTLS4" regress
-  testRegression @Weight 0.1 0.1 True False "WTLS5" regress
---  testRegression @Weight 0.1 0.1 True True "WTLS6" regress
-  testRegression @Weight 0.3 0.3 True False "WTLS7" regress
-
--}

@@ -33,15 +33,9 @@ import           Numeric.LinearAlgebra            (R
 
 import qualified Text.Blaze.Html.Renderer.Text   as BH
 
-import qualified Polysemy                      as P
-import qualified Knit.Effects.Logger           as Log
-import qualified Knit.Effects.Pandoc           as PE
-import qualified Knit.Effects.PandocMonad           as PM
-import qualified Knit.Report.Pandoc           as RP
-
+import qualified Knit.Report                   as K
 
 import qualified Frames.MapReduce as MR
---import qualified Control.MapReduce.Parallel      as MRP
 import qualified Frames.Folds                    as FF
 import qualified Frames.Transform                as FT
 import           Frames.Table                    (blazeTable
@@ -71,16 +65,14 @@ main = asPandoc
   
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = PM.runPandocAndLoggingToIO Log.logAll
-                . Log.wrapPrefix "Main"
-                . fmap BH.renderHtml
-  htmlAsTextE <- runAllP $ RP.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars RP.mindocOptionsF $ do
+  let pandocWriterConfig = K.PandocWriterConfig (Just "pandoc-templates/minWithVega-pandoc.html")  templateVars K.mindocOptionsF
+  htmlAsTextE <- K.knitHtml (Just "MapReduce.Main") K.logAll pandocWriterConfig $ do
     let rows :: Int = 20000
         vars = unweighted rows
         yNoise = 1.0
-    Log.logLE Log.Info "Creating data"    
+    K.logLE K.Info "Creating data"    
     frame <- liftIO (noisyData vars yNoise coeffs >>= makeFrame vars)    
-    RP.addMarkDown mapReduceNotesMD
+    K.addMarkDown mapReduceNotesMD
     testMapReduce frame (showText rows <> " rows, average of X and Y by label.") mrAvgXYByLabel
     testMapReduce frame (showText rows <> " rows, filtered label, max of X and Y by label.") mrMaxXYByLabelABC
   case htmlAsTextE of
@@ -160,21 +152,20 @@ unweighted n = List.replicate n (1.0)
 coeffs :: LA.Vector R = LA.fromList [1.0, 2.2]
 
 testMapReduce :: ( RecordColonnade as
-                 , P.Member PE.ToPandoc effs
-                 , Log.LogWithPrefixesLE effs
-                 , PM.PandocEffects effs
-                 , MonadIO (P.Semantic effs)
+                 , K.Member K.ToPandoc effs
+                 , K.PandocEffects effs
+                 , MonadIO (K.Semantic effs)
                  , Show (F.Record as))
               => F.FrameRec AllCols
               -> T.Text 
               -> FL.Fold (F.Record AllCols) (F.FrameRec as)
-              -> P.Semantic effs ()
+              -> K.Semantic effs ()
 testMapReduce dataFrame title mrFold = do
-  Log.logLE Log.Info $ "Doing map-reduce fold: " <> title    
+  K.logLE K.Info $ "Doing map-reduce fold: " <> title    
   let resFrame = FL.fold mrFold dataFrame
       header _ _ = title
-  RP.addMarkDown $ "\n## " <> title 
-  RP.addBlaze $ blazeTable resFrame
+  K.addMarkDown $ "\n## " <> title 
+  K.addBlaze $ blazeTable resFrame
 
 
 

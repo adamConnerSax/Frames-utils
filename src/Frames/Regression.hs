@@ -25,7 +25,7 @@ import qualified Frames.VegaLite.Utils         as FV
 import qualified Math.Regression.Regression    as MR
 import qualified Math.Regression.LeastSquares  as MR
 import qualified Polysemy                      as P
-import qualified Knit.Effects.Logger           as Log
+import qualified Knit.Effect.Logger            as Log
 
 import qualified Lucid                         as LH
 import qualified Text.Blaze.Html               as BH

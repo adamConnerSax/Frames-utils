@@ -15,7 +15,7 @@ import qualified Math.HMatrixUtils             as HU
 
 import qualified Colonnade                     as C
 import qualified Polysemy                      as P
-import qualified Knit.Effects.Logger           as Log
+import qualified Knit.Effect.Logger            as Log
 
 import qualified Data.List                     as List
 import           Data.Maybe                     ( fromMaybe )

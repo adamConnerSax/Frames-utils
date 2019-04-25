@@ -11,7 +11,7 @@
 
 module Math.HMatrixUtils where
 
-import qualified Knit.Effects.Logger           as KL
+import qualified Knit.Effect.Logger            as KL
 import qualified Data.Text                     as T
 
 import qualified Numeric.LinearAlgebra         as LA

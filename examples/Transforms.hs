@@ -25,10 +25,13 @@ import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
 import qualified Text.Blaze.Html.Renderer.Text   as BH
 
+import qualified Knit.Report           as K
+
+{-
 import qualified Knit.Effects.Logger           as Log
 import qualified Knit.Effects.PandocMonad           as PM
 import qualified Knit.Report.Pandoc           as RP
-
+-}
 
 import qualified Frames.Transform                as FT
 import qualified Frames.MaybeUtils          as FM
@@ -60,22 +63,20 @@ main = asPandoc
 
 asPandoc :: IO ()
 asPandoc = do
-  let runAllP = PM.runPandocAndLoggingToIO Log.logAll
-                . Log.wrapPrefix "Main"
-                . fmap BH.renderHtml
-  htmlAsTextE <- runAllP $ RP.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars RP.mindocOptionsF $ do
+  let pandocWriterConfig = K.PandocWriterConfig (Just "pandoc-templates/minWithVega-pandoc.html")  templateVars K.mindocOptionsF
+  htmlAsTextE <- K.knitHtml (Just "Transforms.Main") K.logAll pandocWriterConfig $ do
     let exampleDataP :: F.MonadSafe m => P.Producer (FM.MaybeRow ExampleCols) m ()
         exampleDataP =  F.readTableMaybe "examples/SampleData.csv" -- create the Pipe
     exampleDataFrameM <- liftIO $ fmap F.boxedFrame $ F.runSafeEffect $ P.toListM $ exampleDataP 
     exampleDataFrame <- liftIO $ F.inCoreAoS $ exampleDataP P.>-> P.map F.recMaybe P.>-> P.concat  
-    Log.logLE Log.Info $ "Raw:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM)    
-    Log.logLE Log.Info $ "Raw after recMaybe:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrame)
+    K.logLE K.Info $ "Raw:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM)    
+    K.logLE K.Info $ "Raw after recMaybe:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrame)
     
     let fieldDefaults = FT.FieldDefaults (Just False) (Just (-1)) Nothing (Just "N/A")
     exampleDataFrameM' <- liftIO $ fmap F.boxedFrame $ F.runSafeEffect $ P.toListM $ exampleDataP P.>-> P.map (FT.defaultRecord fieldDefaults)
     exampleDataFrame' <- liftIO $ F.inCoreAoS $ exampleDataP P.>-> P.map (F.recMaybe . FT.defaultRecord fieldDefaults) P.>-> P.concat 
-    Log.logLE Log.Info $ "Defaulting all but Double:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM')
-    Log.logLE Log.Info $ "Defaulted after recMaybe:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrame')
+    K.logLE K.Info $ "Defaulting all but Double:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrameM')
+    K.logLE K.Info $ "Defaulted after recMaybe:\n" <> (T.pack $ intercalate "\n" $ fmap show $ FL.fold FL.list exampleDataFrame')
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "examples/html/transformations.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err

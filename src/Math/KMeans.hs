@@ -39,7 +39,7 @@ module Math.KMeans
 where
 
 import qualified Polysemy                      as P
-import qualified Knit.Effects.Logger           as Log
+import qualified Knit.Effect.Logger            as Log
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as Foldable
