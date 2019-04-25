@@ -27,12 +27,6 @@ import qualified Text.Blaze.Html.Renderer.Text   as BH
 
 import qualified Knit.Report           as K
 
-{-
-import qualified Knit.Effects.Logger           as Log
-import qualified Knit.Effects.PandocMonad           as PM
-import qualified Knit.Report.Pandoc           as RP
--}
-
 import qualified Frames.Transform                as FT
 import qualified Frames.MaybeUtils          as FM
 import           Frames.Table                    (blazeTable
