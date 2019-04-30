@@ -154,12 +154,12 @@ coeffs :: LA.Vector R = LA.fromList [1.0, 2.2]
 testMapReduce :: ( RecordColonnade as
                  , K.Member K.ToPandoc effs
                  , K.PandocEffects effs
-                 , MonadIO (K.Semantic effs)
+                 , MonadIO (K.Sem effs)
                  , Show (F.Record as))
               => F.FrameRec AllCols
               -> T.Text 
               -> FL.Fold (F.Record AllCols) (F.FrameRec as)
-              -> K.Semantic effs ()
+              -> K.Sem effs ()
 testMapReduce dataFrame title mrFold = do
   K.logLE K.Info $ "Doing map-reduce fold: " <> title    
   let resFrame = FL.fold mrFold dataFrame

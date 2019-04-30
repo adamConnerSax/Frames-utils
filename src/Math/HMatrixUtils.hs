@@ -30,7 +30,7 @@ checkEqualVectors
   -> T.Text
   -> Vector R
   -> Vector R
-  -> KL.Semantic effs ()
+  -> KL.Sem effs ()
 checkEqualVectors nA nB vA vB = if (LA.size vA == LA.size vB)
   then return ()
   else
@@ -50,7 +50,7 @@ checkMatrixVector
   -> T.Text
   -> Matrix R
   -> Vector R
-  -> KL.Semantic effs ()
+  -> KL.Sem effs ()
 checkMatrixVector nA nB mA vB = if (snd (LA.size mA) == LA.size vB)
   then return ()
   else
@@ -70,7 +70,7 @@ checkVectorMatrix
   -> T.Text
   -> Vector R
   -> Matrix R
-  -> KL.Semantic effs ()
+  -> KL.Sem effs ()
 checkVectorMatrix nA nB vA mB = if (LA.size vA == fst (LA.size mB))
   then return ()
   else

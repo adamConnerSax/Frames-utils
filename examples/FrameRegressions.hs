@@ -160,14 +160,14 @@ testRegressions :: ( F.ColumnHeaders '[w]
                    , Foldable f
                    , K.Member K.ToPandoc effs
                    , K.PandocEffects effs
-                   , MonadIO (K.Semantic effs))
+                   , MonadIO (K.Sem effs))
                 => Double
                 -> Double
                 -> Bool
                 -> Bool
                 -> T.Text
-                -> f (T.Text, (F.FrameRec AllCols -> K.Semantic effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
-                -> K.Semantic effs ()
+                -> f (T.Text, (F.FrameRec AllCols -> K.Sem effs (FR.FrameRegressionResult Y True '[X] w AllCols)))
+                -> K.Sem effs ()
 testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
   let title = "Sy=" <> showText yNoise <> " gaussian noise added to ys & "
                <> "Sx=" <> showText xNoise <> " gaussian noise added to xs"
@@ -191,7 +191,7 @@ testRegressions  yNoise xNoise weighted offset vizId keyedFs = do
 -- I can't test the weighted and unweighted on the same things because those algos return different types in their results.  Which, maybe, is a good point.
 testMany :: ( K.Member K.ToPandoc effs
             , K.PandocEffects effs
-            , MonadIO (K.Semantic effs)) =>  K.Semantic effs ()
+            , MonadIO (K.Sem effs)) =>  K.Sem effs ()
 testMany = K.wrapPrefix "Many" $ do
   let toTestUW :: _ -- that this is required is suspicious
       toTestUW =

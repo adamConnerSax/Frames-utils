@@ -341,7 +341,7 @@ ordinaryLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as Unweighted rs)
+  -> P.Sem effs (FrameRegressionResult y wc as Unweighted rs)
 ordinaryLeastSquares dat = do
   let (mA, vB)  = prepRegression @y @as dat
       withConst = asBool @wc
@@ -364,7 +364,7 @@ weightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
+  -> P.Sem effs (FrameRegressionResult y wc as w rs)
 weightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -388,7 +388,7 @@ popWeightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
+  -> P.Sem effs (FrameRegressionResult y wc as w rs)
 popWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -415,7 +415,7 @@ varWeightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
+  -> P.Sem effs (FrameRegressionResult y wc as w rs)
 varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -438,7 +438,7 @@ totalLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as Unweighted rs)
+  -> P.Sem effs (FrameRegressionResult y wc as Unweighted rs)
 totalLeastSquares dat = do
   let (mA, vB)  = prepRegression @y @as dat
       withConst = asBool @wc
@@ -462,7 +462,7 @@ weightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
+  -> P.Sem effs (FrameRegressionResult y wc as w rs)
 weightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -485,7 +485,7 @@ popWeightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
+  -> P.Sem effs (FrameRegressionResult y wc as w rs)
 popWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -510,7 +510,7 @@ varWeightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Semantic effs (FrameRegressionResult y wc as w rs)
+  -> P.Sem effs (FrameRegressionResult y wc as w rs)
 varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc

@@ -169,12 +169,12 @@ kMeansOne
       . (Foldable h, Functor h)
      => Int
      -> h (F.Record '[scaledX, scaledY, w])
-     -> P.Semantic effs [U.Vector Double]
+     -> P.Sem effs [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Weighted (F.Record '[scaledX, scaledY, w]) (V.Snd w)
   -> Distance
   -> f (F.Record '[x, y, w])
-  -> P.Semantic effs [(V.Snd x, V.Snd y, V.Snd w)]
+  -> P.Sem effs [(V.Snd x, V.Snd y, V.Snd w)]
 kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
   Log.wrapPrefix "KMeansOne" $ do
     let (sunX, sunY) = FL.fold
@@ -221,7 +221,7 @@ kMeansOneWithClusters
   -> Int
   -> (  Int
      -> FL.FoldM
-          (P.Semantic effs)
+          (P.Sem effs)
           (F.Record '[scaledX, scaledY, w])
           [U.Vector Double]
      ) -- initial centroids, monadic because may need randomness
@@ -234,7 +234,7 @@ kMeansOneWithClusters
   -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
   -> Distance
   -> f (F.Record rs)
-  -> P.Semantic
+  -> P.Sem
        effs
        [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
 kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted distance dataRows
@@ -303,7 +303,7 @@ kMeansOneWCReduce
   -> Int
   -> (  Int
      -> FL.FoldM
-          (P.Semantic effs)
+          (P.Sem effs)
           (F.Record '[scaledX, scaledY, w])
           [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
@@ -314,7 +314,7 @@ kMeansOneWCReduce
        (F.Record '[y, w])
        (MR.ScaleAndUnscale (V.Snd y))
   -> MR.ReduceM
-       (P.Semantic effs)
+       (P.Sem effs)
        (F.Record ks)
        (F.Record rs)
        ( M.Map
@@ -329,9 +329,7 @@ kMeansOneWCReduce numClusters numTries makeInitialF distance weighted sunX sunY
           :: forall f
            . (Foldable f, Functor f)
           => f (F.Record rs)
-          -> P.Semantic
-               effs
-               [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+          -> P.Sem effs [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
         doOne = kMeansOneWithClusters @x @y @w sunX
                                                sunY
                                                numClusters
