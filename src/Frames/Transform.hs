@@ -49,6 +49,11 @@ import           GHC.TypeLits         (KnownSymbol, Symbol)
 fieldEndo :: forall x rs. (V.KnownField x, ElemOf rs x) => (Snd x -> Snd x) -> F.Record rs -> F.Record rs
 fieldEndo f r = F.rputField @x (f $ F.rgetField @x r) r
 
+{-
+f :: KnownSymbol s => (s,(a -> b)) -> F.Rec ((->) a) ['(s,b)]
+f (_, fieldFunc) = fieldFunc V.:& V.RNil
+-}
+
 -- | replace subset with a calculated different set of fields
 transform :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
              => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs V.++ bs)

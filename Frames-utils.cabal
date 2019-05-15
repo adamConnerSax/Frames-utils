@@ -17,7 +17,7 @@ common deps
                 blaze-colonnade                   >= 1.2.2 && < 1.3,
                 blaze-html                        >= 0.9.1 && < 0.10,
                 colonnade                         >= 1.2.0 && < 1.3,
-                containers                        >=0.6.0.1 && <0.7,
+                containers                        >= 0.5.0.0 && <0.7,
                 discrimination                    >= 0.3 && < 0.4,
                 foldl                             >= 1.4.5 && < 1.5,
                 foldl-statistics                  >= 0.1.5 && < 0.2,
@@ -30,7 +30,7 @@ common deps
                 hmatrix                           >= 0.19.0 && < 0.20,
                 hmatrix-gsl                       >= 0.19.0 && < 0.20,
                 hvega                             >= 0.1.0 && <= 0.2.0.0,
-                knit-haskell                      >= 0.1.0.0 && < 0.3.0.0,
+                knit-haskell                      >= 0.1.0.0 && < 0.4.0.0,
                 lens                              >= 4.17 && < 4.18,
                 lucid                             >= 2.9.11 && < 2.10,
                 lucid-colonnade                   >= 1.0.1 && < 1.1,
@@ -75,16 +75,18 @@ library
     ghc-options: -Wall -O2 -funbox-strict-fields
     build-depends:
 
-executable FrameRegressions
-    import: deps
+test-suite FrameRegressions
+    import: deps           
+    type: exitcode-stdio-1.0       
     main-is: FrameRegressions.hs
     hs-source-dirs: examples
     ghc-options: -O0 -Wall
     build-depends: Frames-utils -any
     default-language: Haskell2010
     
-executable MapReduce
-    import: deps       
+test-suite MapReduce
+    import: deps                  
+    type: exitcode-stdio-1.0                  
     main-is: MapReduce.hs
     hs-source-dirs: examples
     ghc-options: -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
@@ -92,8 +94,9 @@ executable MapReduce
     build-depends: Frames-utils -any
     default-language: Haskell2010
     
-executable Transforms
-    import: deps       
+test-suite Transforms
+    import: deps                  
+    type: exitcode-stdio-1.0                  
     main-is: Transforms.hs
     hs-source-dirs: examples
     ghc-options: -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
