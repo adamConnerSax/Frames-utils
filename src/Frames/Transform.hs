@@ -16,12 +16,14 @@ module Frames.Transform
   (
     mutate    
   , transform
+  , transformMaybe
   , fieldEndo
   , recordSingleton
   , dropColumn
   , dropColumns
   , retypeColumn
   , reshapeRowSimple
+  , reshapeRowSimpleOnOne
   , FieldDefaults (..)
   , DefaultRecord (..)
   -- unused/deprecated
@@ -59,6 +61,10 @@ transform :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
              => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs V.++ bs)
 transform f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
 
+transformMaybe :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs, V.RMap (RDeleteAll as rs))
+               => (F.Record as -> F.Rec (Maybe F.:. F.ElField) bs) -> F.Record rs -> F.Rec (Maybe F.:. F.ElField) (RDeleteAll as rs V.++ bs)
+transformMaybe f xs = V.rmap (Compose . Just) (F.rcast @(RDeleteAll as rs) xs) `V.rappend` f (F.rcast xs) 
+
 -- | append calculated subset 
 mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs V.++ bs)
 mutate f xs = xs `F.rappend` f xs 
@@ -86,6 +92,7 @@ retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
 
 
 
+
 -- This is an anamorphic step.
 -- You could also use meltRow here.  That is also (Record as -> [Record bs])
 -- requires typeApplications for ss
@@ -93,13 +100,22 @@ retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
 -- turn a list of classifier values and a data row into a list of rows, each with the classifier value, the result of applying the function
 -- and any other columns from the original row that you specify (the ss fields).
 reshapeRowSimple :: forall ss ts cs ds. (ss F.⊆ ts)
-                 => [F.Record cs] -- list of classifier values
-                 -> (F.Record cs -> F.Record ts -> F.Record ds)
-                 -> F.Record ts
-                 -> [F.Record (ss V.++ cs V.++ ds)]                
+                 => [F.Record cs] -- ^ list of classifier values
+                 -> (F.Record cs -> F.Record ts -> F.Record ds) -- ^ map classifier value and data to new shape
+                 -> F.Record ts -- ^ original data
+                 -> [F.Record (ss V.++ cs V.++ ds)] -- ^ reshaped data                               
 reshapeRowSimple classifiers newDataF r = 
   let ids = F.rcast r :: F.Record ss
   in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r  
+
+reshapeRowSimpleOnOne :: forall ss c ts ds. (ss F.⊆ ts, V.KnownField c)
+                      => [V.Snd c] -- ^ list of classifier values
+                      -> (V.Snd c -> F.Record ts -> F.Record ds) -- ^ map classifier values to new shape
+                      -> F.Record ts -- ^ original data
+                      -> [F.Record (ss V.++ '[c] V.++ ds)] -- ^ reshaped data                
+reshapeRowSimpleOnOne classifiers newDataF =
+  let toRec x = V.Field x V.:& V.RNil 
+  in reshapeRowSimple @ss @ts @'[c] (fmap toRec classifiers) (\fc -> newDataF (F.rgetField @c fc))
 
 --
 -- | This type holds default values for the DefaultField and DefaultRecord classes to use. You can set a default with @Just@ or leave

@@ -52,6 +52,7 @@ library
     import: deps    
     exposed-modules:
                     Frames.Transform
+                    Frames.Constraints
                     Frames.Conversion
                     Frames.ScatterMerge
                     Frames.KMeans
