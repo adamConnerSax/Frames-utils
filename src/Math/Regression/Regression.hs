@@ -195,7 +195,7 @@ goodnessOfFit
   -> Vector R
   -> Maybe (Vector R)
   -> Vector R
-  -> P.Semantic effs (FitStatistics R)
+  -> P.Sem effs (FitStatistics R)
 goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
   let
     n  = LA.size vB
@@ -236,7 +236,7 @@ eickerHeteroscedasticityEstimator
   => Matrix R
   -> Vector R
   -> Vector R
-  -> P.Semantic effs (Matrix R)
+  -> P.Sem effs (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
   HU.checkVectorMatrix "b" "A" vB mA
   HU.checkVectorMatrix "b'" "A" vB' mA

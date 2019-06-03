@@ -80,7 +80,7 @@ weightedKMeans
   -> Weighted a w -- location/weight from data
   -> Distance
   -> f a
-  -> P.Semantic effs (Clusters a, Int)
+  -> P.Sem effs (Clusters a, Int)
 weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
   -- put them all in one cluster just to start.  Doesn't matter since we have initial centroids
   let

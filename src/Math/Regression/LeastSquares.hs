@@ -47,7 +47,7 @@ ordinaryLS
   => Bool
   -> Matrix R
   -> Vector R
-  -> P.Semantic effs (RE.RegressionResult R)
+  -> P.Sem effs (RE.RegressionResult R)
 ordinaryLS withConstant mA vB = do
   let mAwc   = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
       (n, p) = LA.size mAwc
@@ -72,7 +72,7 @@ weightedLS
   -> Matrix R
   -> Vector R
   -> Vector R
-  -> P.Semantic effs (RE.RegressionResult R)
+  -> P.Sem effs (RE.RegressionResult R)
 weightedLS withConstant mA vB vW = do
   HU.checkEqualVectors "b" "w" vB vW
   let mW     = LA.diag vW
@@ -102,7 +102,7 @@ totalLS
   => Bool
   -> Matrix R
   -> Vector R
-  -> P.Semantic effs (RE.RegressionResult R)
+  -> P.Sem effs (RE.RegressionResult R)
 totalLS withConstant mA vB = do
   let mAwc   = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
       (n, p) = LA.size mAwc
@@ -132,7 +132,7 @@ weightedTLS
   -> Matrix R
   -> Vector R
   -> Vector R
-  -> P.Semantic effs (RE.RegressionResult R)
+  -> P.Sem effs (RE.RegressionResult R)
 weightedTLS withConstant mA vB vW = do
   HU.checkEqualVectors "b" "w" vB vW
   let mW     = LA.diag vW

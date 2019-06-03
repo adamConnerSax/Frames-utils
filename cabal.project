@@ -1,4 +1,4 @@
-packages: . ../hvega/hvega 
+packages: . ../hvega/hvega
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 benchmarks: true
