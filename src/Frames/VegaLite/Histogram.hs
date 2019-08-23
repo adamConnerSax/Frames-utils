@@ -40,10 +40,11 @@ import qualified Graphics.Vega.VegaLite        as GV
 import qualified Data.Histogram                as H
 import qualified Data.Histogram.Fill           as H
 
-gvTitle :: Text -> GV.PropertySpec
 #if MIN_VERSION_hvega(0,4,0)
+gvTitle :: Text -> GV.PropertySpec
 gvTitle x = GV.title x []
 #else
+gvTitle :: Text -> (VLProperty, VLSpec)
 gvTitle = GV.title
 #endif
 

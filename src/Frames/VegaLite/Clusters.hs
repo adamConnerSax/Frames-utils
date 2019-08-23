@@ -25,10 +25,12 @@ import qualified Data.Vinyl.TypeLevel   as V
 import qualified Frames                 as F
 import qualified Graphics.Vega.VegaLite as GV
 
-gvTitle :: Text -> GV.PropertySpec
+
 #if MIN_VERSION_hvega(0,4,0)
+gvTitle :: Text -> GV.PropertySpec
 gvTitle x = GV.title x []
 #else
+gvTitle :: Text -> Text -> (VLProperty, VLSpec)
 gvTitle = GV.title
 #endif
 
