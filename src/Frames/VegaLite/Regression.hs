@@ -44,6 +44,7 @@ import Text.Printf (printf)
 
 import qualified Statistics.Types               as S
 
+gvTitle :: Text -> GV.PropertySpec
 #if MIN_VERSION_hvega(0,4,0)
 gvTitle x = GV.title x []
 #else
