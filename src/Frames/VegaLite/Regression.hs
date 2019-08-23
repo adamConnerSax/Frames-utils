@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -42,6 +43,13 @@ import qualified Data.List              as List
 import Text.Printf (printf)
 
 import qualified Statistics.Types               as S
+
+#if MIN_VERSION_hvega(0,4,0)
+gvTitle x = GV.title x []
+#else
+gvTitle = GV.title
+#endif
+
   
 -- | Plot regression coefficents with error bars
 -- | Flex version handles a foldable of results so we can, e.g., 
@@ -86,7 +94,7 @@ regressionCoefficientPlotFlex haveLegend printKey title names results cl =
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
         [
-          GV.title title
+          gvTitle title
         , (GV.transform . calcEstConf) []
         , GV.layer [estSpec, confSpec]
         , dat
@@ -132,7 +140,7 @@ frameScatterWithFit title fitNameM frr cl frame =
   let configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
       swfSpec = GV.layer [scatterPlotSpec fitNameM frr cl frame]
-  in GV.toVegaLite [configuration [], swfSpec, GV.title title]
+  in GV.toVegaLite [configuration [], swfSpec, gvTitle title]
 
 keyedLayeredFrameScatterWithFit :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f, Foldable g, Functor g) 
   => T.Text -> (k -> T.Text) -> g (k, a) -> S.CL Double -> f (F.Record rs) -> GV.VegaLite
@@ -141,7 +149,7 @@ keyedLayeredFrameScatterWithFit title keyText keyedFits cl dat =
       specs = FL.fold FL.list (fmap toSpec keyedFits)
       configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
-  in GV.toVegaLite [configuration [], GV.layer specs, GV.title title]
+  in GV.toVegaLite [configuration [], GV.layer specs, gvTitle title]
 
 instance ( V.KnownField x
          , Real (V.Snd x)
@@ -248,7 +256,7 @@ scatterWithFit err fit axisLabelsM title frame =
   let configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
       swfSpec = GV.specification $ scatterWithFitSpec @x @y @rs @as @f err fit axisLabelsM frame
-  in GV.toVegaLite [configuration [], swfSpec, GV.title title]
+  in GV.toVegaLite [configuration [], swfSpec, gvTitle title]
   
 scatterWithFitSpec :: forall x y rs as f. ( ScatterFitConstraints x y
                                           , as F.⊆ rs
@@ -275,7 +283,7 @@ scatterWithFit' axisLabelsM title fitLbl dat =
   let configuration = GV.configure
         . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
       swfSpec = GV.specification $ scatterWithFitSpec' @x @y @ye @fy @fye axisLabelsM fitLbl dat
-  in GV.toVegaLite [configuration [], swfSpec, GV.title title]
+  in GV.toVegaLite [configuration [], swfSpec, gvTitle title]
 
 -- TODO: Add xErrors as well, in scatter and in fit
 scatterWithFitSpec' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]

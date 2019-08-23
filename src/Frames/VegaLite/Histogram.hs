@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -38,6 +39,12 @@ import qualified Graphics.Vega.VegaLite        as GV
 
 import qualified Data.Histogram                as H
 import qualified Data.Histogram.Fill           as H
+
+#if MIN_VERSION_hvega(0,4,0)
+gvTitle x = GV.title x []
+#else
+gvTitle = GV.title
+#endif
 
 -- | Histograms
 -- | Single, stacked, side-by-side, and faceted
@@ -87,7 +94,7 @@ singleHistogram title yLabelM nBins minM maxM addOutOfRange rows
           . GV.configuration (GV.View [GV.ViewWidth width, GV.ViewHeight 800])
           . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
-        [GV.title title, dat, (GV.encoding . hEnc) [], hBar, configuration []]
+        [gvTitle title, dat, (GV.encoding . hEnc) [], hBar, configuration []]
     in
       vl
 
@@ -163,7 +170,7 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows
           . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 800])
           . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
-        [GV.title title, dat, (GV.encoding . hEnc) [], hBar, configuration []]
+        [gvTitle title, dat, (GV.encoding . hEnc) [], hBar, configuration []]
     in
       vl
 

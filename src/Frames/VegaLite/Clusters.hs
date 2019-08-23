@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -23,6 +24,13 @@ import           Data.Text              (Text)
 import qualified Data.Vinyl.TypeLevel   as V
 import qualified Frames                 as F
 import qualified Graphics.Vega.VegaLite as GV
+
+#if MIN_VERSION_hvega(0,4,0)
+gvTitle x = GV.title x []
+#else
+gvTitle = GV.title
+#endif
+
 
 -- TODO: A nicer interface to all this
 
@@ -87,7 +95,7 @@ clustersWithClickIntoVL xAxisTitle yAxisTitle title pointEncoding calcFields ext
       onlySelectedCluster = GV.transform . GV.filter (GV.FSelection "detail")
       topSpec = GV.asSpec
                 [
-                  GV.title (title <> " (Clustered)")
+                  gvTitle (title <> " (Clustered)")
                 , (GV.encoding . posEncodingT . pointEncoding) []
                 , GV.mark GV.Point []
                 , onlyCentroid []
@@ -95,7 +103,7 @@ clustersWithClickIntoVL xAxisTitle yAxisTitle title pointEncoding calcFields ext
                 ]
       bottomSpec = GV.asSpec
                    [
-                     GV.title (title <> " (cluster detail)")
+                     gvTitle (title <> " (cluster detail)")
                    , labeledPoints
                    , onlySelectedCluster []
                    ]
