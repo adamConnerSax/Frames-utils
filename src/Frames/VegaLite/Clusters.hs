@@ -30,7 +30,7 @@ import qualified Graphics.Vega.VegaLite as GV
 gvTitle :: Text -> GV.PropertySpec
 gvTitle x = GV.title x []
 #else
-gvTitle :: Text -> Text -> (VLProperty, VLSpec)
+gvTitle :: Text -> (GV.VLProperty, GV.VLSpec)
 gvTitle = GV.title
 #endif
 

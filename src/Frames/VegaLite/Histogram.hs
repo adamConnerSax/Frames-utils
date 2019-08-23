@@ -44,7 +44,7 @@ import qualified Data.Histogram.Fill           as H
 gvTitle :: Text -> GV.PropertySpec
 gvTitle x = GV.title x []
 #else
-gvTitle :: Text -> (VLProperty, VLSpec)
+gvTitle :: Text -> (GV.VLProperty, GV.VLSpec)
 gvTitle = GV.title
 #endif
 
