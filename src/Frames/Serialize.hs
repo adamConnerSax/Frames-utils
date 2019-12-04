@@ -1,14 +1,17 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Serialize
   (
+    -- * Types
+    SElField(..)
     -- * Record coercions
-    toS
+  , toS
   , fromS
   )
 where
@@ -23,8 +26,12 @@ import           Data.Serialize                as S
 import           GHC.Generics (Generic,Rep)
 import           GHC.TypeLits (KnownSymbol)
 
-newtype SElField t = SElField { unSElField :: V.ElField t }
+newtype SElField t = SElField { unSElField :: V.ElField t } 
+deriving via (V.ElField '(s,a)) instance (KnownSymbol s, Show a) => Show (SElField '(s,a)) 
 deriving via (V.ElField '(s,a)) instance (KnownSymbol s) => Generic (SElField '(s,a)) 
+deriving via (V.ElField '(s,a)) instance Eq a => Eq (SElField '(s,a))
+deriving via (V.ElField '(s,a)) instance Ord a => Ord (SElField '(s,a))
+
 
 toS :: V.RMap rs => V.Rec V.ElField rs -> V.Rec SElField rs
 toS = V.rmap coerce

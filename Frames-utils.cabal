@@ -35,6 +35,7 @@ common deps
                 hvega                             >= 0.4.0 && < 0.5,
                 knit-haskell                      >= 0.7.0.0 && < 0.8,                
                 lens                              >= 4.17 && < 4.19,
+                log-domain                        <= 0.12,
                 lucid                             >= 2.9.11 && < 2.10,
                 lucid-colonnade                   >= 1.0.1 && < 1.1,
                 map-reduce-folds                  >= 0.1.0.0 && < 0.2,
