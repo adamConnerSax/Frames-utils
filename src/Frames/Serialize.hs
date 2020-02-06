@@ -1,5 +1,7 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,6 +12,8 @@ module Frames.Serialize
   (
     -- * Types
     SElField(..)
+  , RecSerialize
+  , RecBinary
     -- * Record coercions
   , toS
   , fromS
@@ -44,11 +48,14 @@ fromS = V.rmap coerce
 instance (S.Serialize (V.Snd t), V.KnownField t) => S.Serialize (SElField t)
 instance (B.Binary (V.Snd t), V.KnownField t) => B.Binary (SElField t)
 
-instance ( GSerializePut (Rep (V.Rec SElField rs))
-         , GSerializeGet (Rep (V.Rec SElField rs)) 
-         , Generic (V.Rec SElField rs)) => S.Serialize (V.Rec SElField rs)
+type RecSerialize rs = (GSerializePut (Rep (V.Rec SElField rs))
+                       , GSerializeGet (Rep (V.Rec SElField rs)) 
+                       , Generic (V.Rec SElField rs))
 
-instance ( GBinaryPut (Rep (V.Rec SElField rs))
-         , GBinaryGet (Rep (V.Rec SElField rs))
-         , Generic (V.Rec SElField rs)) => B.Binary (V.Rec SElField rs)
+instance RecSerialize rs => S.Serialize (V.Rec SElField rs)
 
+type RecBinary rs = (GBinaryPut (Rep (V.Rec SElField rs))
+                       , GBinaryGet (Rep (V.Rec SElField rs)) 
+                       , Generic (V.Rec SElField rs))
+
+instance RecBinary rs => B.Binary (V.Rec SElField rs)

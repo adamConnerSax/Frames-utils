@@ -19,6 +19,7 @@ module Frames.Transform
   , transformMaybe
   , fieldEndo
   , recordSingleton
+  , addColumn
   , dropColumn
   , dropColumns
   , retypeColumn
@@ -72,6 +73,10 @@ mutate f xs = xs `F.rappend` f xs
 -- | Create a record with one field from a value.  Use a TypeApplication to choose the field.
 recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
 recordSingleton a = a F.&: V.RNil
+
+-- | add a column
+addColumn :: forall t bs. (V.KnownField t) => V.Snd t -> F.Record bs -> F.Record (t ': bs)
+addColumn x r = recordSingleton x `V.rappend` r
 
 -- | Drop a column from a record.  Just a specialization of rcast.
 dropColumn :: forall x rs. (F.RDelete x rs F.⊆ rs) => F.Record rs -> F.Record (F.RDelete x rs)
