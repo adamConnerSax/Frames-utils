@@ -21,7 +21,7 @@ common deps
                 cereal                            >= 0.5.7 && < 0.6,
                 colonnade                         >= 1.2.0 && < 1.3,
                 containers                        >= 0.5.0.0 && <0.7,
-                discrimination                    >= 0.3 && < 0.4,
+                discrimination                    >= 0.3 && < 0.5,
                 foldl                             >= 1.4.5 && < 1.5,
                 foldl-statistics                  >= 0.1.5 && < 0.2,
                 Frames                            >= 0.6.1 && < 0.7,
