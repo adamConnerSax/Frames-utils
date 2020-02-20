@@ -4,4 +4,9 @@ with-compiler: /usr/local/bin/ghc
 benchmarks: true
 
 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: 153e6c046d60b1243b990324f696a350ed540e6f            
+
 
