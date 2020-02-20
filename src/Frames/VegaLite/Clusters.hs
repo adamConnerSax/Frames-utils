@@ -55,10 +55,10 @@ clustersWithClickIntoVL :: forall x y ic cid ml as. ( F.ColumnHeaders '[x]
                         => Text
                         -> Text
                         -> Text
-                        -> GV.BuildLabelledSpecs
-                        -> GV.BuildLabelledSpecs
-                        -> GV.BuildLabelledSpecs
-                        -> GV.BuildLabelledSpecs
+                        -> GV.BuildEncodingSpecs
+                        -> GV.BuildTransformSpecs
+                        -> GV.BuildSelectSpecs
+                        -> GV.BuildTransformSpecs
                         -> GV.Data
                         -> GV.VegaLite
 clustersWithClickIntoVL xAxisTitle yAxisTitle title pointEncoding calcFields extraSelection extraFilter dat =
