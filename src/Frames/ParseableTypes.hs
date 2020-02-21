@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RankNTypes           #-}
@@ -8,32 +7,33 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Frames.ParseableTypes
-  (
-    FrameDay(..)
+  ( FrameDay(..)
   , FrameLocalTime(..)
   , ColumnsWithDayAndLocalTime
   )
 where
 
-import           Control.Monad         (msum)
-import qualified Data.Readable         as R
-import qualified Data.Text             as T
-import qualified Data.Time.Calendar    as Time
-import qualified Data.Time.Format      as Time
-import qualified Data.Time.LocalTime   as Time
-import           Data.Typeable         (Typeable)
-import qualified Data.Vector           as V
-import qualified Frames                as F
-import qualified Frames.ColumnTypeable as F
-import qualified Frames.InCore         as F
-#if __GLASGOW_HASKELL__ < 808
---import           Control.Monad.Fail (MonadFail(fail))
-#endif  
+import           Control.Monad                  ( msum )
+import qualified Data.Readable                 as R
+import qualified Data.Text                     as T
+import qualified Data.Time.Calendar            as Time
+import qualified Data.Time.Format              as Time
+import qualified Data.Time.LocalTime           as Time
+import           Data.Typeable                  ( Typeable )
+import qualified Data.Vector                   as V
+import qualified Frames                        as F
+import qualified Frames.ColumnTypeable         as F
+import qualified Frames.InCore                 as F
 
 
 newtype FrameDay = FrameDay { unFrameDay :: Time.Day } deriving (Show, Eq, Ord, Typeable)
 
 type instance F.VectorFor FrameDay = V.Vector
+
+-- using parseTime instead of parseTimeM is depreecated.  But parseTimeM requires MonadFail
+-- and Readable and F.Parseable require MonadPlus and I can't see how to bridge it
+-- except maybe reflection (??) to add the MonadFail instance on the fly via
+-- fail _ = mzero
 
 instance R.Readable FrameDay where
   fromText t = fmap FrameDay $ do
@@ -45,7 +45,7 @@ instance R.Readable FrameDay where
           ]
     case parsedM of
       Just x -> return x
-      Nothing -> fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day") 
+      Nothing -> fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day")
 
 instance F.Parseable FrameDay where
 --  parse = fmap F.Definitely . R.fromText
@@ -62,7 +62,7 @@ instance R.Readable FrameLocalTime where
          ]
    case parsedM of
      Just x -> return x
-     Nothing -> fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime") 
+     Nothing -> fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime")
 
 instance F.Parseable FrameLocalTime where
 --  parse = fmap F.Definitely . R.fromText
