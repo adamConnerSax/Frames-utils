@@ -45,7 +45,7 @@ instance R.Readable FrameDay where
           ]
     case parsedM of
       Just x -> return x
-      Nothing -> fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day")
+      Nothing -> mzero --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day")
 
 instance F.Parseable FrameDay where
 --  parse = fmap F.Definitely . R.fromText
@@ -62,7 +62,7 @@ instance R.Readable FrameLocalTime where
          ]
    case parsedM of
      Just x -> return x
-     Nothing -> fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime")
+     Nothing -> mzero --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime")
 
 instance F.Parseable FrameLocalTime where
 --  parse = fmap F.Definitely . R.fromText

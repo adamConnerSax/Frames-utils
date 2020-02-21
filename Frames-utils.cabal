@@ -127,7 +127,7 @@ benchmark bench-all
     ghc-options: -O2 -threaded -with-rtsopts=-N -funbox-strict-fields
                  -fno-warn-unused-binds -fno-warn-unused-matches
     build-depends:
-        base >=4.11.1.0 && <4.13,
+        base >=4.11.1.0 && <5,
         blaze-html -any,
         containers >=0.6.0.1 && <0.7,
         Frames -any,
@@ -146,7 +146,6 @@ benchmark bench-all
         Frames-map-reduce -any,
         Frames-utils -any,
         map-reduce-folds -any,
-        base >=4.12.0.0 && <4.13,
         criterion -any,
         deepseq >=1.4.4.0 && <1.5
     default-language: Haskell2010

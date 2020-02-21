@@ -1,9 +1,37 @@
 packages: .
 jobs: 4
-with-compiler: /usr/local/bin/ghc
+with-compiler: ghc
 benchmarks: true
 
+allow-newer: hashable
+            
+-- ghc-8.8 forks
+             
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames
+  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/random-fu
+  tag: 81e67b5596c173720032f7fa83610c4e4138b839
+  subdir: random-fu
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/random-fu
+  tag: 81e67b5596c173720032f7fa83610c4e4138b839
+  subdir: random-source
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/random-fu
+  tag: 81e67b5596c173720032f7fa83610c4e4138b839
+  subdir: rvar
+    
+--- ghc-8.8 forks ends
+            
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
