@@ -13,7 +13,9 @@ module Frames.ParseableTypes
   )
 where
 
-import           Control.Monad                  ( msum )
+import           Control.Monad                  ( msum
+                                                , mzero
+                                                )
 import qualified Data.Readable                 as R
 import qualified Data.Text                     as T
 import qualified Data.Time.Calendar            as Time
