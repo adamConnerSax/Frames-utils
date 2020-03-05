@@ -67,6 +67,7 @@ library
                     Frames.ScatterMerge
                     Frames.Serialize
                     Frames.Utils
+                    Frames.SimpleJoins
                     Frames.VegaLite
                     Frames.VegaLite.Utils
                     Frames.VegaLite.Histogram
