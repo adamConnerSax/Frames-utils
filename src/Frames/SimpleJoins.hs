@@ -1,22 +1,21 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.SimpleJoins
   (
     appendFromKeyed
   , leftJoinM
+  , CanLeftJoinM 
   , leftJoinM3
+  , CanLeftJoinM3 
   ) where
 
 import qualified Control.Foldl as FL
@@ -41,10 +40,22 @@ appendFromKeyed source appendTo = do
   F.toFrame <$> traverse g (FL.fold FL.list appendTo)
 
 
+type CanLeftJoinM ks as bs = (FI.RecVec (as V.++ (F.RDeleteAll ks bs))
+                             , ks F.⊆ as
+                             , ks F.⊆ bs
+                             , as F.⊆ (as V.++ (F.RDeleteAll ks bs))
+                             , (F.RDeleteAll ks bs) F.⊆ bs
+                             , V.RMap as
+                             , V.RMap (as V.++ (F.RDeleteAll ks bs))
+                             , V.RecApplicative (F.RDeleteAll ks bs)
+                             , G.Grouping (F.Record ks)
+                             , FI.RecVec as
+                             , FI.RecVec (F.RDeleteAll ks bs)
+                             )
 -- I find this to be a more useful interface for the times when I need all join keys present in rhs
 leftJoinM
-  :: forall ks as bs.
-  (
+  :: forall ks as bs. CanLeftJoinM ks as bs
+{-  (
     FI.RecVec (as V.++ (F.RDeleteAll ks bs))
   , ks F.⊆ as
   , ks F.⊆ bs
@@ -56,16 +67,38 @@ leftJoinM
   , G.Grouping (F.Record ks)
   , FI.RecVec as
   , FI.RecVec (F.RDeleteAll ks bs)
-  )
+  ) -}
   => F.FrameRec as
   -> F.FrameRec bs
   -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs)))
 leftJoinM fa fb = fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fa fb
+
+
+type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ (F.RDeleteAll ks bs))
+                                 , ks F.⊆ as
+                                 , ks F.⊆ bs
+                                 , as F.⊆ (as V.++ (F.RDeleteAll ks bs))
+                                 , (F.RDeleteAll ks bs) F.⊆ bs
+                                 , V.RMap as
+                                 , V.RMap (as V.++ (F.RDeleteAll ks bs))
+                                 , V.RecApplicative (F.RDeleteAll ks bs)
+                                 , G.Grouping (F.Record ks)
+                                 , FI.RecVec as
+                                 , FI.RecVec (F.RDeleteAll ks bs)
+                                 , FI.RecVec ((as V.++ F.RDeleteAll ks bs) V.++ F.RDeleteAll ks cs)
+                                 , ks F.⊆ (as V.++ (F.RDeleteAll ks bs))
+                                 , ks F.⊆ cs
+                                 , (as V.++ F.RDeleteAll ks bs) F.⊆ (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))
+                                 , (F.RDeleteAll ks cs) F.⊆ cs
+                                 , V.RMap (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))
+                                 , V.RecApplicative (F.RDeleteAll ks cs)
+                                 , FI.RecVec (F.RDeleteAll ks cs)
+                                 )
   
 -- I've found this useful 
 leftJoinM3
-  :: forall ks as bs cs.
-  (
+  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
+{-  (
     FI.RecVec (as V.++ (F.RDeleteAll ks bs))
   , ks F.⊆ as
   , ks F.⊆ bs
@@ -85,7 +118,7 @@ leftJoinM3
   , V.RMap (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))
   , V.RecApplicative (F.RDeleteAll ks cs)
   , FI.RecVec (F.RDeleteAll ks cs)
-  )
+  ) -}
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
