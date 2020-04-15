@@ -13,6 +13,7 @@ module Frames.SimpleJoins
   (
     appendFromKeyed
   , leftJoinM
+  , leftJoinE
   , CanLeftJoinM 
   , leftJoinM3
   , CanLeftJoinM3 
@@ -22,6 +23,7 @@ import qualified Control.Foldl as FL
 import qualified Data.Vinyl           as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
 import qualified Data.Map as M
+import           Data.Maybe (isNothing)
 import qualified Frames               as F
 import qualified Frames.InCore as FI
 import qualified Frames.Melt as F
@@ -61,6 +63,19 @@ leftJoinM
 leftJoinM fa fb = fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fa fb
 
 
+leftJoinE
+  :: forall ks as bs. CanLeftJoinM ks as bs
+  => F.FrameRec as
+  -> F.FrameRec bs
+  -> Either [F.Record ks] (F.FrameRec (as V.++ (F.RDeleteAll ks bs)))
+leftJoinE fa fb =
+  let x = F.leftJoin @ks fa fb
+      y = fmap F.recMaybe x
+  in case sequence y of
+    Just z -> Right $ F.toFrame z
+    Nothing -> Left $ fmap (F.rcast @ks . fst) . filter (\(_, z) -> isNothing z) $ zip (FL.fold FL.list fa) y 
+
+
 type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ (F.RDeleteAll ks bs))
                                  , ks F.⊆ as
                                  , ks F.⊆ bs
@@ -91,5 +106,6 @@ leftJoinM3
   -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
 leftJoinM3 fa fb fc = do
   fab <-  leftJoinM @ks fa fb
-  fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fab fc
+  leftJoinM @ks fab fc
+--  fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fab fc
   

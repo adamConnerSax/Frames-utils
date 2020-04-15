@@ -23,8 +23,7 @@ import qualified Data.Vinyl           as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames               as F
 import qualified Frames.Melt          as F
-import           GHC.TypeLits    (KnownSymbol, symbolVal)
-
+import           GHC.TypeLits (symbolVal)
 
 recordFieldToColonnadeG :: forall x rs b. (V.KnownField x, F.ElemOf rs x) => (V.Snd x -> b) -> (String -> b) -> C.Colonnade C.Headed (F.Record rs) b
 recordFieldToColonnadeG valTo headerTo = C.headed (headerTo $ symbolVal (Proxy @(V.Fst x))) (valTo . F.rgetField @x)

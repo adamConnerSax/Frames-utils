@@ -9,8 +9,6 @@ module Frames.Conversion
     toList
   ) where
 
---import qualified Control.Newtype as N
-import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
 import           Data.Vinyl.Functor   (Identity(..), Const(..))
 import qualified Frames               as F

@@ -51,10 +51,7 @@ import           Data.Maybe                     ( catMaybes
 import           Data.Random                   as R
 import qualified Data.Random.Distribution.Categorical
                                                as R
-import qualified Data.Text                     as T
-import           Data.Traversable               ( sequenceA
-                                                , traverse
-                                                )
+
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Unboxed           as U
 

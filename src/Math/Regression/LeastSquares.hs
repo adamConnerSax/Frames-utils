@@ -18,10 +18,8 @@ import qualified Polysemy                      as P
 import qualified Knit.Effect.Logger            as Log
 
 import qualified Data.List                     as List
-import qualified Data.Text                     as T
 
 import           Numeric.LinearAlgebra          ( (#>)
-                                                , (<#)
                                                 , (<.>)
                                                 , (<\>)
                                                 )
@@ -115,9 +113,9 @@ totalLS withConstant mA vB = do
       sV22     = mV' LA.! p LA.! p
       vV12     = List.head $ LA.toColumns $ LA.subMatrix (0, p) (p, 1) mV' --LA.?? (LA.DropLast 1, LA.TakeLast 1)
       vX       = LA.scale (-1 / sV22) vV12 -- this is the TLS solution.  But in a shifted basis.??
-      mV2      = mV' LA.?? (LA.All, LA.TakeLast 1)
-      mABt     = mAB LA.<> mV2 LA.<> (LA.tr mV2)
-      mAt      = mABt LA.?? (LA.All, LA.DropLast 1)
+--      mV2      = mV' LA.?? (LA.All, LA.TakeLast 1)
+--      mABt     = mAB LA.<> mV2 LA.<> (LA.tr mV2)
+--      mAt      = mABt LA.?? (LA.All, LA.DropLast 1)
       vBfit    = mAwc #> vX --(mAwc - mAt) #> vX -- this is confusing.
       vU       = vB - vBfit
 --      (rSq, aRSq) = RE.goodnessOfFit p vB vU --(vB - mA #> vX)
@@ -148,10 +146,10 @@ weightedTLS withConstant mA vB vW = do
       sV22     = mV' LA.! p LA.! p
       vV12     = List.head $ LA.toColumns $ LA.subMatrix (0, p) (p, 1) mV' --LA.?? (LA.DropLast 1, LA.TakeLast 1)
       vX       = LA.scale (-1 / sV22) vV12 -- this is the WTLS solution.  But in a shifted basis.??
-      mV2      = mV' LA.?? (LA.All, LA.TakeLast 1)
-      mWABt    = mWAB LA.<> mV2 LA.<> (LA.tr mV2)
-      mWAt     = mWABt LA.?? (LA.All, LA.DropLast 1)
-      vBfit    = mAwc #> vX -- (mWA - mWAt) #> vX -- this is confusing
+--      mV2      = mV' LA.?? (LA.All, LA.TakeLast 1)
+--      mWABt    = mWAB LA.<> mV2 LA.<> (LA.tr mV2)
+--      mWAt     = mWABt LA.?? (LA.All, LA.DropLast 1)
+--      vBfit    = mAwc #> vX -- (mWA - mWAt) #> vX -- this is confusing
       vU       = vB - (mAwc #> vX)
       vWU      = mW #> vU
       sumW     = LA.sumElements vW
