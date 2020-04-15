@@ -16,6 +16,7 @@ module Frames.SimpleJoins
   , leftJoinE
   , CanLeftJoinM 
   , leftJoinM3
+  , leftJoinE3
   , CanLeftJoinM3 
   ) where
 
@@ -107,5 +108,13 @@ leftJoinM3
 leftJoinM3 fa fb fc = do
   fab <-  leftJoinM @ks fa fb
   leftJoinM @ks fab fc
---  fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fab fc
   
+leftJoinE3
+  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
+  => F.FrameRec as
+  -> F.FrameRec bs
+  -> F.FrameRec cs
+  -> Either [F.Record ks] (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
+leftJoinE3 fa fb fc = do
+  fab <-  leftJoinE @ks fa fb
+  leftJoinE @ks fab fc
