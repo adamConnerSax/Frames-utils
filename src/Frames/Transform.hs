@@ -26,10 +26,14 @@ module Frames.Transform
   , replaceColumn
   , dropColumns
   , retypeColumn
+  , ColMaker(..)
   , ReplacerList(..)
+  , (|++|)
+  , replaceSingle
+  , replaceMulti
+  , replaceName
+  , addCol
   , transformRL
-  , rlRename
-  , rlTransform
   , RetypeColumns(..)
   , reshapeRowSimple
   , reshapeRowSimpleOnOne
@@ -48,6 +52,7 @@ import           Control.Applicative   ((<|>))
 import           Data.Kind (Type)
 import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
+import qualified Data.Vinyl.Curry     as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
 import           Data.Vinyl.Functor   (Lift(..), Identity(..), Compose(..))
 import qualified Frames               as F
@@ -93,51 +98,54 @@ replaceColumn :: forall t t' rs. (V.KnownField t
               -> F.Record rs -> F.Record (RDelete t rs V.++ '[t'])
 replaceColumn f = F.rcast @(RDelete t rs V.++ '[t']) . mutate (recordSingleton @t' . f . F.rgetField @t)
 
+data ColMaker as t where
+  CMGeneral :: (V.IsoXRec F.ElField as, V.KnownField t) => V.CurriedX V.ElField as (V.Snd t) -> ColMaker as t
+  CMAdd :: V.KnownField t => V.Snd t -> ColMaker '[] t
+  CMSingle :: (V.KnownField t, V.KnownField t') => (V.Snd t -> V.Snd t') -> ColMaker '[t] t'
+  CMRename :: (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => ColMaker '[t] t'
 
-appendReplacement :: forall t t' as bs. (V.KnownField t, V.KnownField t')
-                  => (F.Record as -> F.Record bs) -> (V.Snd t -> V.Snd t') -> F.Record (t ': as) -> (F.Record (t' ': bs))
-appendReplacement replaceTail replaceHead (t V.:& xs) = (replaceHead $ V.getField t) F.&: (replaceTail xs)
+addColMaker
+  :: forall cs t as bs.
+  (
+    cs F.⊆ (cs V.++ as)
+  , as F.⊆ (cs V.++ as)  
+  )
+  => ColMaker cs t -> (F.Record as -> F.Record bs) -> F.Record (cs V.++ as) -> F.Record (t ': bs)
+addColMaker (CMGeneral f) makeTail xs = (V.runcurryX @V.ElField @cs @(V.Snd t) f $ F.rcast @cs xs) F.&: (makeTail $ F.rcast @as xs)
+addColMaker (CMAdd x) makeTail xs = x F.&: makeTail xs
+addColMaker (CMSingle f) makeTail (x V.:& xs) = (f $ V.getField x) F.&: makeTail xs
+addColMaker CMRename makeTail (x V.:& xs) = (V.getField x) F.&: makeTail xs
 
-doNothingToNothing :: F.Record '[] -> F.Record '[]
-doNothingToNothing = id
+replaceSingle :: forall t t' . (V.KnownField t, V.KnownField t') => (V.Snd t -> V.Snd t') -> ColMaker '[t] t'
+replaceSingle = CMSingle
 
--- appendReplacement (appendReplacement (appendReplacement doNothingToNothing replaceA) replaceB) replaceC
--- ((doNothingToNothing `appendReplacement` replaceA) `appendReplacement` replaceB) `appendReplacement` replaceC
+replaceMulti :: forall as t . (V.IsoXRec F.ElField as, V.KnownField t) => V.CurriedX V.ElField as (V.Snd t) -> ColMaker as t
+replaceMulti = CMGeneral
 
-newtype ColReplacer t t' = ColReplacer { unColReplacer :: V.Snd t -> V.Snd t' }
+replaceName :: forall t t' . (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => ColMaker '[t] t'
+replaceName = CMRename
+
+addCol :: forall t. V.KnownField t => V.Snd t -> ColMaker '[] t
+addCol = CMAdd
 
 data ReplacerList (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) where
   RLNil :: ReplacerList '[] '[]
-  RLCons :: (V.KnownField t, V.KnownField t') => ColReplacer t t' -> ReplacerList as bs -> ReplacerList (t ': as) (t' ': bs)
+  RLCons :: (V.KnownField t, cs F.⊆ (cs V.++ as), as F.⊆ (cs V.++ as))  => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
 
-rlRename :: forall t t'. (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => ColReplacer t t'
-rlRename = ColReplacer id
+(|++|) :: (V.KnownField t, cs F.⊆ (cs V.++ as), as F.⊆ (cs V.++ as))  => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
+(|++|) = RLCons
 
-rlTransform :: forall t t'. (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => (V.Snd t -> V.Snd t') -> ColReplacer t t'
-rlTransform f = ColReplacer f
-
-
+infixr 7 |++|
 
 buildReplacer :: ReplacerList as bs -> F.Record as -> F.Record bs
-buildReplacer RLNil = doNothingToNothing
-buildReplacer (rh `RLCons` rl) = appendReplacement (buildReplacer rl) (unColReplacer rh)
+buildReplacer RLNil = id
+buildReplacer (rh `RLCons` rl) = addColMaker rh (buildReplacer rl)
 
 
--- buildReplacer (f1 `rlTransform` @a @b` f2 `rlTransform @x @y` RLNil)   
+transformRL :: forall qs as bs rs . (as F.⊆ rs, RDeleteAll as rs F.⊆ rs, qs F.⊆ (RDeleteAll as rs V.++ bs), qs F.⊆ (rs V.++ bs))
+            => ReplacerList as bs -> F.Record rs -> F.Record qs --(RDeleteAll as rs V.++ bs)
+transformRL rl = F.rcast . mutate (buildReplacer rl . F.rcast) 
 
-
-transformRL :: (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
-            => ReplacerList as bs -> F.Record rs -> F.Record (RDeleteAll as rs V.++ bs)
-transformRL rl = transform (buildReplacer rl)
-
-
-
-{-
-data RowTransform (as :: [Symbol, Type]) (bs :: [Symbol, Type]) (x :: Type) where
-  ChangeColValue :: (V.KnownField t, ElemOf as t) => (V.Snd t -> V.Snd t) -> RowTransform as as x
-  ChangeColName :: (V.KnownField t, KnownSymbol s, ElemOf as t) => RowTransform as ((RDelete t as V.++ '[ '(s, V.Snd t)]))
--}
-  
 
 -- | add a column
 addColumn :: forall t bs. (V.KnownField t) => V.Snd t -> F.Record bs -> F.Record (t ': bs)
