@@ -50,7 +50,9 @@ module Frames.Transform
 --import qualified Control.Newtype as N
 import           Control.Applicative   ((<|>))
 import           Data.Kind (Type)
+import           Data.Proxy (Proxy(..))
 import qualified Data.Text            as T
+import qualified Data.Type.Bool       as Bool
 import qualified Data.Vinyl           as V
 import qualified Data.Vinyl.Curry     as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
@@ -102,29 +104,48 @@ replaceColumn f = F.rcast @(RDelete t rs V.++ '[t']) . mutate (recordSingleton @
 data ColMaker as t where
   CMGeneral :: (V.IsoXRec F.ElField as, V.KnownField t) => V.CurriedX V.ElField as (V.Snd t) -> ColMaker as t
   CMAdd :: V.KnownField t => V.Snd t -> ColMaker '[] t
-  CMSingle :: (V.KnownField t, V.KnownField t') => (V.Snd t -> V.Snd t') -> ColMaker '[t] t'
-  CMRename :: (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => ColMaker '[t] t'
+--  CMSingle :: (V.KnownField t, V.KnownField t') => (V.Snd t -> V.Snd t') -> ColMaker '[t] t'
+--  CMRename :: (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => ColMaker '[t] t'
+
+type family SameField (t :: (Symbol, Type)) (t' :: (Symbol, Type))  where
+  SameField x x = 'True
+  SameField _ _ = 'False
+  
+type family Member (t :: (Symbol, Type)) (bs :: [(Symbol, Type)]) :: Bool where
+  Member t '[] = 'False
+  Member t (x ': xs) = (SameField t x) Bool.|| (Member t xs)
+
+type family AddIf (t :: (Symbol, Type)) (bs :: [(Symbol, Type)]) (c :: Bool) :: [(Symbol, Type)] where
+  AddIf t bs True = (t ': bs)
+  AddIf _ bs False = bs
+
+type family AddIfAbsent (t :: (Symbol, Type)) (bs :: [(Symbol, Type)]) :: [(Symbol, Type)] where
+  AddIfAbsent t bs = AddIf t bs (Bool.Not (Member t bs))
+
+type family RecUnion (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) :: [(Symbol, Type)] where
+  RecUnion '[] bs = bs
+  RecUnion (t ': as) bs = RecUnion as (AddIfAbsent t bs) 
 
 addColMaker
   :: forall cs t as bs.
   (
-    cs F.⊆ (cs V.++ as)
-  , as F.⊆ (cs V.++ as)  
+    cs F.⊆ (RecUnion cs as)
+  , as F.⊆ (RecUnion cs as)  
   )
-  => ColMaker cs t -> (F.Record as -> F.Record bs) -> F.Record (cs V.++ as) -> F.Record (t ': bs)
+  => ColMaker cs t -> (F.Record as -> F.Record bs) -> F.Record (RecUnion cs as) -> F.Record (t ': bs)
 addColMaker (CMGeneral f) makeTail xs = (V.runcurryX @V.ElField @cs @(V.Snd t) f $ F.rcast @cs xs) F.&: (makeTail $ F.rcast @as xs)
 addColMaker (CMAdd x) makeTail xs = x F.&: makeTail xs
-addColMaker (CMSingle f) makeTail (x V.:& xs) = (f $ V.getField x) F.&: makeTail xs
-addColMaker CMRename makeTail (x V.:& xs) = (V.getField x) F.&: makeTail xs
+--addColMaker (CMSingle  f) makeTail xs = (f $ F.rgetField @t' xs) F.&: (makeTail $ F.rcast @as xs)
+--addColMaker CMRename makeTail (x V.:& xs) = (V.getField x) F.&: makeTail xs
 
 replaceSingle :: forall t t' . (V.KnownField t, V.KnownField t') => (V.Snd t -> V.Snd t') -> ColMaker '[t] t'
-replaceSingle = CMSingle
+replaceSingle = CMGeneral
 
 replaceMulti :: forall as t . (V.IsoXRec F.ElField as, V.KnownField t) => V.CurriedX V.ElField as (V.Snd t) -> ColMaker as t
 replaceMulti = CMGeneral
 
 replaceName :: forall t t' . (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t') => ColMaker '[t] t'
-replaceName = CMRename
+replaceName = CMGeneral id
 
 addCol :: forall t. V.KnownField t => V.Snd t -> ColMaker '[] t
 addCol = CMAdd
@@ -132,17 +153,33 @@ addCol = CMAdd
 
 data ReplacerList (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) where
   RLNil :: ReplacerList '[] '[]
-  RLCons :: (V.KnownField t, cs F.⊆ (cs V.++ as), as F.⊆ (cs V.++ as))  => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
+  RLCons :: (V.KnownField t, cs F.⊆ (RecUnion cs as), as F.⊆ (RecUnion cs as))
+    => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
 
-(|++|) :: (V.KnownField t, cs F.⊆ (cs V.++ as), as F.⊆ (cs V.++ as))  => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
+(|++|) :: (V.KnownField t, cs F.⊆ (RecUnion cs as), as F.⊆ (RecUnion cs as))
+       => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
 (|++|) = RLCons
 
 infixr 7 |++|
 
+{-  
+cmPlusNonEmptyRL
+  :: forall as bs as' bs' cs t.
+  (as ~ (RecUnion cs as')
+  , bs ~ (t ': bs')
+  , V.KnownField t
+  ) => ColMaker cs t -> ReplacerList as' bs' ->  F.Record (RecUnion cs as') -> F.Record (t ': bs')
+cmPlusNonEmptyRL rh rl = addColMaker @cs @t @as' @bs' rh (buildReplacer rl) 
+-}
 
-buildReplacer :: ReplacerList as bs -> F.Record as -> F.Record bs
-buildReplacer RLNil = id
-buildReplacer (rh `RLCons` rl) = addColMaker rh (buildReplacer rl)
+buildReplacer :: forall as bs as' cs (t :: (Symbol, Type)) .
+  (
+    as ~ RecUnion cs as'
+  )
+  => ReplacerList as bs -> F.Record as -> F.Record bs
+buildReplacer RLNil x = x
+buildReplacer (rh `RLCons` rl) (x :: F.Record as)
+  = addColMaker @cs @t @as' @_ rh (buildReplacer @as' @_ rl) x
 
 
 transformRL :: forall qs as bs rs . (as F.⊆ rs, RDeleteAll as rs F.⊆ rs, qs F.⊆ (RDeleteAll as rs V.++ bs), qs F.⊆ (rs V.++ bs))
