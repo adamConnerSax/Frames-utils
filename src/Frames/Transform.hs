@@ -98,6 +98,7 @@ replaceColumn :: forall t t' rs. (V.KnownField t
               -> F.Record rs -> F.Record (RDelete t rs V.++ '[t'])
 replaceColumn f = F.rcast @(RDelete t rs V.++ '[t']) . mutate (recordSingleton @t' . f . F.rgetField @t)
 
+
 data ColMaker as t where
   CMGeneral :: (V.IsoXRec F.ElField as, V.KnownField t) => V.CurriedX V.ElField as (V.Snd t) -> ColMaker as t
   CMAdd :: V.KnownField t => V.Snd t -> ColMaker '[] t
@@ -128,6 +129,7 @@ replaceName = CMRename
 addCol :: forall t. V.KnownField t => V.Snd t -> ColMaker '[] t
 addCol = CMAdd
 
+
 data ReplacerList (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) where
   RLNil :: ReplacerList '[] '[]
   RLCons :: (V.KnownField t, cs F.⊆ (cs V.++ as), as F.⊆ (cs V.++ as))  => ColMaker cs t -> ReplacerList as bs -> ReplacerList (cs V.++ as) (t ': bs)
@@ -136,6 +138,7 @@ data ReplacerList (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) where
 (|++|) = RLCons
 
 infixr 7 |++|
+
 
 buildReplacer :: ReplacerList as bs -> F.Record as -> F.Record bs
 buildReplacer RLNil = id
@@ -297,3 +300,102 @@ bfLHS = BinaryFunction const
 
 bfRHS :: BinaryFunction a
 bfRHS = BinaryFunction $ flip const
+
+
+{-
+class MapCurried f as where
+  mapCurried :: (a -> b) -> V.CurriedX f as a -> V.CurriedX f as b
+
+instance MapCurried f '[] where
+  mapCurried = id
+
+instance MapCurried f as => MapCurried f (t ': as) where
+  mapCurried fab cf = mapCurried @f @as fab . cf
+
+rearrangeZipWith :: forall a b c as bs f. (MapCurried f as, MapCurried f bs)
+                 => (a -> b -> c) -> V.CurriedX f as a -> V.CurriedX f bs b -> V.CurriedX f as (V.CurriedX f bs c)
+rearrangeZipWith combine ca cb =
+  let g :: x -> a -> (a, x)
+      g x a = (a, x)
+      x :: V.CurriedX f as (a, V.CurriedX f bs b)
+      x = mapCurried @f @as (g cb) ca -- V.CurriedX f as (a, V.CurriedX f bs b)
+      y = mapCurried @f @as (\(i, cb) -> mapCurried @f @bs (\j -> combine i j) cb) x
+  in y
+
+class UnNestCurried f as bs c where
+  unNestCurried :: V.CurriedX f as (V.CurriedX f bs c) -> V.CurriedX f (as V.++ bs) c
+
+instance (bs V.++ '[] ~ as) => UnNestCurried f '[] bs c where
+  unNestCurried g = g
+
+instance UnNestCurried f as bs c => UnNestCurried f (t': as) bs c where
+  unNestCurried f = \x -> unNestCurried @f @as @bs @c (f x)  
+  
+zipCurriedWith :: forall f as bs a b c. (UnNestCurried f as bs c, MapCurried f as, MapCurried f bs)
+  => (a -> b -> c) -> V.CurriedX f as a -> V.CurriedX f bs b -> V.CurriedX f (as V.++ bs) c
+zipCurriedWith combine ca cb = unNestCurried @f @as @bs @c $ rearrangeZipWith @a @b @c @as @bs @f combine ca cb 
+
+newtype ColMaker (as :: [(Symbol, Type)]) (t :: (Symbol, Type)) = ColMaker { unColMaker :: V.KnownField t => V.CurriedX F.ElField as (V.Snd t) }
+
+addColMaker
+  :: forall cs as bs t.
+     (V.KnownField t
+     , UnNestCurried F.ElField cs as (F.Record (t ': bs))
+     , MapCurried F.ElField cs
+     , MapCurried F.ElField as
+     ) 
+  => ColMaker cs t -> V.CurriedX F.ElField as (F.Record bs) -> V.CurriedX F.ElField (cs V.++ as) (F.Record (t ': bs))
+addColMaker (ColMaker cf) =  zipCurriedWith @F.ElField @cs @as @(V.Snd t) @(F.Record bs) @(F.Record (t ': bs)) (\x rb -> x F.&: rb) cf
+
+lastColMaker :: V.CurriedX F.ElField '[] (F.Record '[])
+lastColMaker = V.RNil
+
+(|++|) :: forall cs as bs t.
+          (V.KnownField t
+          , UnNestCurried F.ElField cs as (F.Record (t ': bs))
+          , MapCurried F.ElField cs
+          , MapCurried F.ElField as
+          ) 
+  => ColMaker cs t -> V.CurriedX F.ElField as (F.Record bs) -> V.CurriedX F.ElField (cs V.++ as) (F.Record (t ': bs))
+(|++|) = addColMaker @cs @as @bs @t 
+
+infixr 7 |++|
+
+transformFromCurried
+  :: forall qs as bs rs
+     . (as F.⊆ rs
+       , RDeleteAll as rs F.⊆ rs
+       , qs F.⊆ (RDeleteAll as rs V.++ bs)
+       , qs F.⊆ (rs V.++ bs)
+       , V.IsoXRec F.ElField as
+       )
+  =>  V.CurriedX F.ElField as (F.Record bs) -> F.Record rs -> F.Record qs --(RDeleteAll as rs V.++ bs)
+transformFromCurried cf =
+  let g :: F.Record as -> F.Record bs
+      g = V.runcurryX cf
+  in  F.rcast . mutate (g . F.rcast)
+
+
+cmPlusNonEmptyRL
+  :: forall as bs as' bs' cs t.
+     (as ~ (cs V.++ as')
+     , bs ~ (t ': bs')
+     , V.KnownField t
+     , UnNestCurried F.ElField cs as' (F.Record bs)
+     , MapCurried F.ElField cs
+     , MapCurried F.ElField bs'
+     , MapCurried F.ElField as'
+     ) => ColMaker cs t -> ReplacerList as' bs' ->  V.CurriedX F.ElField as (F.Record bs)
+cmPlusNonEmptyRL rh rl = addColMaker @cs @as' @bs' @t rh (buildReplacer rl) 
+
+buildReplacer
+  :: forall as bs.
+  ( 
+    MapCurried F.ElField bs
+  , MapCurried F.ElField as  
+  )
+  => ReplacerList as bs -> V.CurriedX F.ElField as (F.Record bs)
+buildReplacer RLNil = V.RNil
+buildReplacer ((rh :: ColMaker cs t) `RLCons` (rl :: ReplacerList as' bs')) = cmPlusNonEmptyRL @as @bs @as' @bs' @cs @t rh rl
+
+-}
