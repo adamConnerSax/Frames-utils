@@ -46,9 +46,7 @@ module Frames.Transform
 --import qualified Control.Newtype as N
 import           Control.Applicative   ((<|>))
 import           Data.Kind (Type)
-import           Data.Proxy (Proxy(..))
 import qualified Data.Text            as T
-import qualified Data.Type.Bool       as Bool
 import qualified Data.Vinyl           as V
 import qualified Data.Vinyl.Curry     as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)

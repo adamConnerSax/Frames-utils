@@ -20,7 +20,7 @@ module Frames.VegaLite.Histogram
   )
 where
 
-import qualified Frames.Utils                  as FU
+import qualified Frames.Misc                  as FU
 import qualified Frames.VegaLite.Utils         as FV
 
 import qualified Control.Foldl                 as FL

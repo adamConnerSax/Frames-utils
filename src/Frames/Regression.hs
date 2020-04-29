@@ -20,7 +20,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Frames.Regression where
 
-import qualified Frames.Utils                  as FU
+import qualified Frames.Misc                  as FU
 import qualified Frames.VegaLite.Utils         as FV
 import qualified Math.Regression.Regression    as MR
 import qualified Math.Regression.LeastSquares  as MR

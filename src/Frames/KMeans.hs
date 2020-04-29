@@ -39,7 +39,7 @@ module Frames.KMeans
   )
 where
 
-import qualified Frames.Utils                  as FU
+import qualified Frames.Misc                  as FU
 import qualified Frames.Transform              as FT
 import qualified Frames.MapReduce              as MR
 import qualified Math.Rescale                  as MR

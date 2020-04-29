@@ -29,7 +29,7 @@ module Frames.ScatterMerge
   ) where
 
 import qualified Frames.MapReduce   as MR
-import qualified Frames.Utils        as FU
+import qualified Frames.Misc        as FU
 import qualified Math.Rescale as MR
 
 import qualified Control.Foldl        as FL

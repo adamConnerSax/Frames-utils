@@ -17,7 +17,7 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Frames.Utils
+module Frames.Misc
   ( goodDataCount
   , goodDataByKey
   , filterOnField
