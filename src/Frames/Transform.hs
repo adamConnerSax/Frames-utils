@@ -55,6 +55,7 @@ import qualified Frames               as F
 import           Frames.Melt          (RDeleteAll, ElemOf)
 
 import           GHC.TypeLits         (KnownSymbol, Symbol)
+import Unsafe.Coerce (unsafeCoerce)
 
 -- |  mutation functions
 
@@ -111,7 +112,6 @@ addName = addOneFromOne @t @t' id
 addOneFromValue :: forall t rs. V.KnownField t => V.Snd t -> F.Record rs -> F.Record (t ': rs)
 addOneFromValue = (F.&:)
 
-
 -- | add a column
 addColumn :: forall t bs. (V.KnownField t) => V.Snd t -> F.Record bs -> F.Record (t ': bs)
 addColumn x r = recordSingleton x `V.rappend` r
@@ -129,9 +129,28 @@ retypeColumn :: forall x y rs. ( V.KnownField x
                                , V.KnownField y
                                , V.Snd x ~ V.Snd y
                                , ElemOf rs x
-                               , F.RDelete x rs F.⊆ rs)
+                               , F.RDelete x rs F.⊆ rs
+--                               , Rename (Fst x) (Fst y) rs ~ (RDelete '(Fst x, Snd y) rs ++ '[ '(Fst y, Snd y)]))
+                               )
   => F.Record rs -> F.Record (F.RDelete x rs V.++ '[y])
 retypeColumn = transform @rs @'[x] @'[y] (\r -> (F.rgetField @x r F.&: V.RNil))
+
+
+-- TODO: replace all of the renaming with this.  But it will add contraints everywhere (and remove a bunch and I've not time right now! -}
+{- From a vinyl PR.  This way os better -}
+-- | @Rename old new fields@ replaces the first occurence of the
+-- field label @old@ with @new@ in a list of @fields@. Used by
+-- 'rename'.
+type family Rename old new ts where
+  Rename old new '[] = '[]
+  Rename old new ('(old,x) ': xs) = '(new,x) ': xs
+  Rename old new ('(s,x) ': xs) = '(s,x) ': Rename old new xs
+
+-- | Replace a field label. Example:
+--
+-- @rename \@"name" \@"handle" (fieldRec (#name =: "Joe", #age =: (40::Int)))
+rename :: forall old new ts. V.Rec V.ElField ts -> V.Rec V.ElField (Rename old new ts)
+rename = unsafeCoerce
 
 
 -- take a type-level-list of (fromName, toName, type) and use it to rename columns in suitably typed record
@@ -157,6 +176,7 @@ instance (RetypeColumns cs rs
          ~ (RDeleteAll (FromRecList cs) (RDelete '(fs, t) rs) V.++ ('(ts, t) ': ToRecList cs))
          , ElemOf (RDeleteAll (FromRecList cs) rs ++ ToRecList cs) '(fs, t)
          , (RDelete '(fs, t) (RDeleteAll (FromRecList cs) rs ++ ToRecList cs)) F.⊆ (RDeleteAll (FromRecList cs) rs ++ ToRecList cs)
+         , Rename fs ts (RDeleteAll (FromRecList cs) rs ++ ToRecList cs) ~ (RDeleteAll (FromRecList cs) (RDelete '(fs, t) rs) ++ ('(ts, t) : ToRecList cs))
          )
     => RetypeColumns ('(fs, ts, t) ': cs) rs where
   retypeColumns = retypeColumn @'(fs, t) @'(ts, t) @(RDeleteAll (FromRecList cs) rs V.++ (ToRecList cs))  . retypeColumns @cs @rs
