@@ -17,7 +17,8 @@ module Frames.SimpleJoins
   , CanLeftJoinM 
   , leftJoinM3
   , leftJoinE3
-  , CanLeftJoinM3 
+  , CanLeftJoinM3
+  , MissingKeys(..)
   ) where
 
 import qualified Control.Foldl as FL
@@ -108,13 +109,20 @@ leftJoinM3
 leftJoinM3 fa fb fc = do
   fab <-  leftJoinM @ks fa fb
   leftJoinM @ks fab fc
-  
+
+data MissingKeys ks = FirstJoin [F.Record ks] | SecondJoin [F.Record ks]
+
+fromEithers :: Either [F.Record ks] (Either [F.Record ks] a) -> Either (MissingKeys ks) a
+fromEithers e = case e of
+  Left keys -> Left $ FirstJoin keys
+  Right e' -> either (Left . SecondJoin) Right e'
+
 leftJoinE3
   :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
-  -> Either [F.Record ks] (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
+  -> Either (MissingKeys ks) (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
 leftJoinE3 fa fb fc = do
-  fab <-  leftJoinE @ks fa fb
-  leftJoinE @ks fab fc
+  let fjE = leftJoinE @ks fa fb
+  fromEithers $ fmap (\fj -> leftJoinE @ks fj fc) fjE
