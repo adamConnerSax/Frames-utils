@@ -94,7 +94,7 @@ regressionCoefficientPlotFlex haveLegend printKey title names results cl =
       estSpec = GV.asSpec [(GV.encoding . estimateEnc) [], GV.mark GV.Point []]
       confSpec = GV.asSpec [(GV.encoding . estConfEnc) [], GV.mark GV.Rule []]
       configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
       vl = GV.toVegaLite
         [
           gvTitle title
@@ -141,7 +141,7 @@ frameScatterWithFit :: (Frame2DRegressionScatterFit rs a, Foldable f, Functor f)
                     => T.Text -> Maybe T.Text -> a -> S.CL Double -> f (F.Record rs) -> GV.VegaLite
 frameScatterWithFit title fitNameM frr cl frame =
   let configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
       swfSpec = GV.layer [scatterPlotSpec fitNameM frr cl frame]
   in GV.toVegaLite [configuration [], swfSpec, gvTitle title]
 
@@ -151,7 +151,7 @@ keyedLayeredFrameScatterWithFit title keyText keyedFits cl dat =
   let toSpec (k, a) = scatterPlotSpec (Just $ keyText k) a cl dat
       specs = FL.fold FL.list (fmap toSpec keyedFits)
       configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
   in GV.toVegaLite [configuration [], GV.layer specs, gvTitle title]
 
 instance ( V.KnownField x
@@ -257,7 +257,7 @@ scatterWithFit :: forall x y rs as f. ( ScatterFitConstraints x y
                => Error as -> FitToPlot as -> Maybe (T.Text, T.Text) -> Text -> f (F.Record rs) -> GV.VegaLite
 scatterWithFit err fit axisLabelsM title frame =
   let configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
       swfSpec = GV.specification $ scatterWithFitSpec @x @y @rs @as @f err fit axisLabelsM frame
   in GV.toVegaLite [configuration [], swfSpec, gvTitle title]
   
@@ -284,7 +284,7 @@ scatterWithFit' :: forall x y ye fy fye. ( F.ColumnHeaders '[x]
   => Maybe (T.Text, T.Text) -> Text -> Text -> GV.Data -> GV.VegaLite
 scatterWithFit' axisLabelsM title fitLbl dat =
   let configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
       swfSpec = GV.specification $ scatterWithFitSpec' @x @y @ye @fy @fye axisLabelsM fitLbl dat
   in GV.toVegaLite [configuration [], swfSpec, gvTitle title]
 -}
@@ -351,7 +351,7 @@ scatterWithFitSpec' axisLabelsM fitLbl dat =
         ]
       layers = GV.layer [ scatterSpec, scatterBarSpec, fitLineSpec, fitBandSpec]
       configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
       spec =
         GV.asSpec
         [

@@ -111,7 +111,7 @@ clustersWithClickIntoVL xAxisTitle yAxisTitle title pointEncoding calcFields ext
                    , onlySelectedCluster []
                    ]
       configuration = GV.configure
-        . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.Padding $ GV.PSize 50)
+        . GV.configuration (GV.ViewStyle [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 400]) . GV.configuration (GV.PaddingStyle $ GV.PSize 50)
 --        . GV.configuration (GV.Scale [GV.SCMinSize 100])
       vl = GV.toVegaLite $
         [ GV.description "Vega-lite"
