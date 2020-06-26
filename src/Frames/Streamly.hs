@@ -11,10 +11,11 @@ module Frames.Streamly
     , toTableMaybe
     , toTable
     , unquotedCSV
+    , runningCountF
     )
 where
 import qualified Streamly.Prelude              as Streamly
-import qualified Streamly.Internal.Prelude              as Streamly
+--import qualified Streamly.Internal.Prelude              as Streamly
 import           Streamly                       ( IsStream )
 import qualified Streamly.Data.Fold            as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold.Types as Streamly.Fold
@@ -31,8 +32,8 @@ import qualified Data.Vinyl                    as Vinyl
 import qualified Data.Vinyl.Functor            as Vinyl
 import           Data.Word                      ( Word8 )
 
-import qualified System.IO
-import qualified System.Clock
+--import qualified System.IO
+--import qualified System.Clock
 
 import qualified Frames.CSV                     as Frames 
 import qualified Frames.Rec                     as Frames

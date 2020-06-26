@@ -137,11 +137,14 @@ scatterMergeOne numBinsX numBinsY rtX rtY dataRows =
 -- All unused below but might be useful to have around.
 data Bin2DT = Bin2D (Int, Int) deriving (Show, Eq, Ord)
 
-F.declareColumn "Bin2D" ''Bin2DT
+
+--F.declareColumn "Bin2D" ''Bin2DT
+type Bin2D = "Bin2D" F.:-> Bin2DT
 
 type instance FI.VectorFor Bin2DT = V.Vector
 instance F.ShowCSV Bin2DT where
   showCSV = T.pack . show
+
 
 type DblX = "double_x" F.:-> Double
 type DblY = "double_y" F.:-> Double

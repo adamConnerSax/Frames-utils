@@ -14,7 +14,6 @@
 module Frames.MaybeUtils where
 
 import           Frames                         ( (:.)
-                                                , (&:)
                                                 )
 import qualified Frames                        as F
 import qualified Frames.CSV                    as F
@@ -22,16 +21,16 @@ import qualified Frames.ShowCSV                as F
 import qualified Frames.Melt                   as F
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( join )
-import           Control.Lens                   ( (%~) )
+--import           Control.Lens                   ( (%~) )
 import qualified Pipes                         as P
 import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.Derived            as V
+--import qualified Data.Vinyl.Derived            as V
 import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.Class.Method       as V
-import qualified Data.Vinyl.Core               as V
-import qualified Data.Vinyl.XRec               as V
+--import qualified Data.Vinyl.Class.Method       as V
+--import qualified Data.Vinyl.Core               as V
+--import qualified Data.Vinyl.XRec               as V
 import           Frames.InCore                  ( RecVec )
-import           Data.Vinyl.Curry               ( runcurryX )
+--import           Data.Vinyl.Curry               ( runcurryX )
 import qualified Data.Vinyl.Functor            as V
 import           Data.Proxy                     ( Proxy(..) )
 import           Data.Maybe                     ( fromMaybe

@@ -156,8 +156,8 @@ vegaLiteDate x = let (y,m,d) = DT.toGregorian x in [GV.DTYear (fromIntegral y), 
 
 vegaLiteTime :: DT.TimeOfDay -> [GV.DateTime]
 vegaLiteTime x =
-  let (sec, rem) = (DT.todSec x) `divMod'` 1
-      ms = (1000 * rem) `div'` 1
+  let (sec, remainder) = (DT.todSec x) `divMod'` 1
+      ms = (1000 * remainder) `div'` 1
   in [GV.DTHours (DT.todHour x), GV.DTMinutes (DT.todMin x), GV.DTSeconds sec, GV.DTMilliseconds ms]
 
 class ToVLDateTime x where

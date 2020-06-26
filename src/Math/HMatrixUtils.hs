@@ -12,6 +12,7 @@
 module Math.HMatrixUtils where
 
 import qualified Knit.Effect.Logger            as KL
+import qualified Knit.Report                   as K
 import qualified Data.Text                     as T
 
 import qualified Numeric.LinearAlgebra         as LA
@@ -25,12 +26,12 @@ textSize :: (LA.Container c e, Show (LA.IndexOf c)) => c e -> T.Text
 textSize = T.pack . show . LA.size
 
 checkEqualVectors
-  :: KL.Member (KL.Logger KL.LogEntry) effs
+  :: K.Member (KL.Logger KL.LogEntry) effs
   => T.Text
   -> T.Text
   -> Vector R
   -> Vector R
-  -> KL.Sem effs ()
+  -> K.Sem effs ()
 checkEqualVectors nA nB vA vB = if (LA.size vA == LA.size vB)
   then return ()
   else
@@ -45,12 +46,12 @@ checkEqualVectors nA nB vA vB = if (LA.size vA == LA.size vB)
     <> textSize vB
 
 checkMatrixVector
-  :: KL.Member (KL.Logger KL.LogEntry) effs
+  :: K.Member (KL.Logger KL.LogEntry) effs
   => T.Text
   -> T.Text
   -> Matrix R
   -> Vector R
-  -> KL.Sem effs ()
+  -> K.Sem effs ()
 checkMatrixVector nA nB mA vB = if (snd (LA.size mA) == LA.size vB)
   then return ()
   else
@@ -65,12 +66,12 @@ checkMatrixVector nA nB mA vB = if (snd (LA.size mA) == LA.size vB)
     <> textSize vB
 
 checkVectorMatrix
-  :: KL.Member (KL.Logger KL.LogEntry) effs
+  :: K.Member (KL.Logger KL.LogEntry) effs
   => T.Text
   -> T.Text
   -> Vector R
   -> Matrix R
-  -> KL.Sem effs ()
+  -> K.Sem effs ()
 checkVectorMatrix nA nB vA mB = if (LA.size vA == fst (LA.size mB))
   then return ()
   else

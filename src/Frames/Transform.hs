@@ -55,7 +55,7 @@ import qualified Frames               as F
 import           Frames.Melt          (RDeleteAll, ElemOf)
 
 import           GHC.TypeLits         (KnownSymbol, Symbol)
-import Unsafe.Coerce (unsafeCoerce)
+--import Unsafe.Coerce (unsafeCoerce)
 
 -- |  mutation functions
 
@@ -146,12 +146,13 @@ type family Rename old new ts where
   Rename old new ('(old,x) ': xs) = '(new,x) ': xs
   Rename old new ('(s,x) ': xs) = '(s,x) ': Rename old new xs
 
+{-
 -- | Replace a field label. Example:
 --
 -- @rename \@"name" \@"handle" (fieldRec (#name =: "Joe", #age =: (40::Int)))
 rename :: forall old new ts. V.Rec V.ElField ts -> V.Rec V.ElField (Rename old new ts)
 rename = unsafeCoerce
-
+-}
 
 -- take a type-level-list of (fromName, toName, type) and use it to rename columns in suitably typed record
 type family FromRecList (a :: [(Symbol, Symbol, Type)]) :: [(Symbol, Type)] where

@@ -17,7 +17,7 @@ module Math.Rescale
 
 import qualified Control.Foldl            as FL
 import qualified Control.Foldl.Statistics as FS
-import qualified Data.Foldable            as Foldable
+--import qualified Data.Foldable            as Foldable
 import           Data.Function            (on)
 import qualified Data.List                as List
 import qualified Data.Profunctor          as PF
@@ -33,43 +33,47 @@ data RescaleType a where
 rescale :: forall a. Num a  => RescaleType a -> FL.Fold a (a, Double)
 rescale RescaleNone = pure (0,1)
 rescale (RescaleGiven x) = pure x
-rescale (RescaleMean s) = (,) <$> pure 0 <*> (fmap ((/s) . realToFrac) FL.mean)
-rescale (RescaleNormalize s) =
+rescale (RescaleMean x) = (,) <$> pure 0 <*> (fmap ((/x) . realToFrac) FL.mean)
+rescale (RescaleNormalize x) =
   let folds = (,,) <$> FL.mean <*> FL.std <*> FL.length
       sc (_,sd,n) = if n == 1 then 1 else realToFrac sd
-      g f@(m,_,_) = (realToFrac m, (sc f)/s)
+      g f@(mean, _, _) = (realToFrac mean, (sc f)/x)
   in  g <$> folds
-rescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . listToMedian) FL.list) where
+rescale (RescaleMedian x) = (,) <$> pure 0 <*> (fmap ((/x) . listToMedian) FL.list) where
   listToMedian unsorted =
     let l = List.sort unsorted
         n = List.length l
     in case n of
       0 -> 1
-      _ -> let m = n `div` 2 in if (odd n) then realToFrac (l !! m) else realToFrac (l List.!! m + l List.!! (m - 1))/2.0
+      _ -> let middle = n `div` 2 in if (odd n) then realToFrac (l !! middle) else realToFrac (l List.!! middle + l List.!! (middle - 1))/2.0
 
+{-
 wgt :: (Real a, Real w) => (a , w) -> Double
 wgt  (x,y) = realToFrac x * realToFrac y
+-}
+toDoubles :: (Real a, Real b) => (a, b) -> (Double, Double)
+toDoubles (x, y) = (realToFrac x, realToFrac y)
 
-toDoubles (x,y) = (realToFrac x, realToFrac y)
 
-data WestMeanVar = WestMeanVar { wSum :: !Double, wSum2 :: !Double, m :: !Double, s :: !Double }
+data WestMeanVar = WestMeanVar !Double !Double !Double !Double 
 
-weightedRescale :: forall a w. (Real a, Real w)  => RescaleType a -> FL.Fold (a,w) (a, Double)
+
+weightedRescale :: forall a w. (Real a, RealFrac w)  => RescaleType a -> FL.Fold (a,w) (a, Double)
 weightedRescale RescaleNone = pure (0,1)
 weightedRescale (RescaleGiven x) = pure x
 weightedRescale (RescaleMean s) =
   let wmF = FL.premap toDoubles FS.meanWeighted
       f wm = (0, wm/s)
   in f <$> wmF
-weightedRescale (RescaleNormalize s) =
+weightedRescale (RescaleNormalize rnX) =
   let westMeanVarF = FL.Fold step (WestMeanVar 0 0 0 0) done
       step (WestMeanVar ws ws2 m s) (x, w) = WestMeanVar ws' ws2' m' s' where
         ws' = ws + w
         ws2' = ws2 + (w*w)
         m' = m + ((w/ws') * (x - m))
         s' = s + (w * (x - m) * (x - m'))
-      done (WestMeanVar ws ws2 m s) = (m, sqrt (s/ws))
-  in (\(m,sd) -> (realToFrac m, s/sd)) <$> FL.premap toDoubles westMeanVarF
+      done (WestMeanVar ws _ m s) = (m, sqrt (s/ws))
+  in (\(m,sd) -> (realToFrac m, rnX/sd)) <$> FL.premap toDoubles westMeanVarF
 {-
   let folds = (,,,) <$> PF.lmap toDoubles FS.meanWeighted <*> PF.lmap toDoubles FS.std <*> PF.lmap snd FL.sum <*> FL.length
       weightedMean x n tw =realToFrac n * realToFrac x/realToFrac tw
@@ -81,11 +85,11 @@ weightedRescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . realToFrac 
   listToMedian :: [(a,w)] -> a
   listToMedian unsorted =
     let l = List.sortBy (compare `on` fst) unsorted
-        tw = FL.fold (PF.lmap snd FL.sum) l
+        tw :: w = FL.fold (PF.lmap snd FL.sum) l
     in case (List.length l) of
       0 -> 1
       _ -> go 0 l where
-        mw = (realToFrac tw)/2
+        mw :: Double = (realToFrac tw) / 2
         go :: w -> [(a,w)] -> a
         go _ [] = 0 -- this shouldn't happen
         go wgtSoFar ((a,w) : was) = let wgtSoFar' = wgtSoFar + w in if realToFrac wgtSoFar' > mw then a else go wgtSoFar' was
@@ -96,13 +100,13 @@ scaleAndUnscaleHelper :: Real a => (Double -> a) -> ((a, Double), (a,Double)) ->
 scaleAndUnscaleHelper toA s = ScaleAndUnscale (csF s) (osF s) where
   csF ((csShift,csScale),_) a = realToFrac (a - csShift)/csScale
   uncsF ((csShift, csScale),_) x = (x * csScale) + realToFrac csShift
-  osF s@(_q,(osShift, osScale)) x = toA $ (uncsF s x - realToFrac osShift)/osScale
+  osF sc@(_q,(osShift, osScale)) x = toA $ (uncsF sc x - realToFrac osShift)/osScale
 
 scaleAndUnscale :: Real a => RescaleType a -> RescaleType a -> (Double -> a) -> FL.Fold a (ScaleAndUnscale a)
 scaleAndUnscale computeScale outScale toA = fmap (scaleAndUnscaleHelper toA) shifts where
   shifts = (,) <$> rescale computeScale <*> rescale outScale
 
-weightedScaleAndUnscale :: (Real a, Real w) => RescaleType a -> RescaleType a -> (Double -> a) -> FL.Fold (a,w) (ScaleAndUnscale a)
+weightedScaleAndUnscale :: (Real a, RealFrac w) => RescaleType a -> RescaleType a -> (Double -> a) -> FL.Fold (a,w) (ScaleAndUnscale a)
 weightedScaleAndUnscale computeScale outScale toA = fmap (scaleAndUnscaleHelper toA) shifts where
   shifts = (,) <$> weightedRescale computeScale <*> weightedRescale outScale
 

@@ -41,9 +41,9 @@ instance R.Readable FrameDay where
   fromText t = fmap FrameDay $ do
     let parsedM = msum
           [
-            Time.parseTime Time.defaultTimeLocale (Time.iso8601DateFormat Nothing) (T.unpack t)
-          , Time.parseTime Time.defaultTimeLocale "%D" (T.unpack t)
-          , Time.parseTime Time.defaultTimeLocale "%F" (T.unpack t)
+            Time.parseTimeM True Time.defaultTimeLocale (Time.iso8601DateFormat Nothing) (T.unpack t)
+          , Time.parseTimeM True Time.defaultTimeLocale "%D" (T.unpack t)
+          , Time.parseTimeM True Time.defaultTimeLocale "%F" (T.unpack t)
           ]
     case parsedM of
       Just x -> return x

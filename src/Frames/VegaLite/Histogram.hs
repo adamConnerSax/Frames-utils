@@ -93,7 +93,7 @@ singleHistogram title yLabelM nBins minM maxM addOutOfRange rows
       hEnc = encX . encY
       configuration =
         GV.configure
-          . GV.configuration (GV.View [GV.ViewWidth width, GV.ViewHeight 800])
+          . GV.configuration (GV.View [GV.ViewContinuousWidth width, GV.ViewContinuousHeight 800])
           . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
         [gvTitle title, dat, (GV.encoding . hEnc) [], hBar, configuration []]
@@ -169,7 +169,7 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows
           in  (encX . encY . encC . encF, hBar')
       configuration =
         GV.configure
-          . GV.configuration (GV.View [GV.ViewWidth 800, GV.ViewHeight 800])
+          . GV.configuration (GV.View [GV.ViewContinuousWidth 800, GV.ViewContinuousHeight 800])
           . GV.configuration (GV.Padding $ GV.PSize 50)
       vl = GV.toVegaLite
         [gvTitle title, dat, (GV.encoding . hEnc) [], hBar, configuration []]
