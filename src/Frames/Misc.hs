@@ -22,6 +22,7 @@ module Frames.Misc
   , goodDataByKey
   , filterOnField
   , filterOnMaybeField
+  , widenAndCalcF
   , CField
   , CFieldOf
   , RealField
@@ -88,6 +89,24 @@ filterOnMaybeField
   -> F.Rec (Maybe :. F.ElField) rs
   -> Bool
 filterOnMaybeField test = maybe False test . V.toHKD . F.rget @k
+
+
+-- | Take a set of rows that can be mapped to a key, combine rows with same key and put into a map
+-- then make a calculation from the map, which might fail if a key is missing.
+-- This generalizes the pattern required to turn long data wide and make a calculation on the
+-- wide data.
+-- E.g., Each row is keyed by a color (Red, Green, Blue) and logs intensity.  You want
+-- Sum(intensity(Green)) - Sum(intensity(Red)) + 2 * Avg(intensity(Blue))
+widenAndCalcF :: Ord k
+              => (F.Record as -> (k, a))
+              -> (FL.Fold a b)
+              -> (M.Map k b -> Maybe c)
+              -> FL.FoldM Maybe (F.Record as) c
+widenAndCalcF toKeyed combineF calc =
+  let f (k, a) = (k, [a])
+      g = calc . fmap (FL.fold combineF) . M.fromListWith (<>) . fmap (f . toKeyed)
+  in MR.postMapM g (FL.generalize FL.list)
+
 
 -- | Constraint type to make it easier to specify that a field exists and has a specific constraint
 -- often used to specify a numerical type of certain fields (Num, Real, RealFrac) so they can be used

@@ -6,8 +6,10 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.SimpleJoins
   (
@@ -111,6 +113,8 @@ leftJoinM3 fa fb fc = do
   leftJoinM @ks fab fc
 
 data MissingKeys ks = FirstJoin [F.Record ks] | SecondJoin [F.Record ks]
+
+deriving instance Show (F.Record ks) => Show (MissingKeys ks)
 
 fromEithers :: Either [F.Record ks] (Either [F.Record ks] a) -> Either (MissingKeys ks) a
 fromEithers e = case e of
