@@ -25,6 +25,8 @@ module Frames.KMeans
   , kMeansOneWithClusters
   , kMeansOneWCReduce
   , clusteredRows -- turn the output of the above into one set of labeled rows
+  , clusteredRowsFull -- turn the output of the above into two sets of labeled rows, one for centers one for input data
+  , ClusteredRowCols
   , IsCentroid
   , ClusterId
   , MarkLabel
@@ -343,7 +345,11 @@ type IsCentroid = "is_centroid" F.:-> Bool
 type ClusterId = "cluster_id" F.:-> Int
 type MarkLabel = "mark_label" F.:-> Text
 
-type ClusteredRow ks x y w = F.Record (ks V.++ [IsCentroid, ClusterId, MarkLabel] V.++ [x,y,w])
+--type ClusterCols = [IsCentroid, ClusterId, MarkLabel]
+
+type ClusteredRowCols ks x y w =  ks V.++ [IsCentroid, ClusterId, MarkLabel] V.++ [x,y,w]
+
+type ClusteredRow ks x y w = F.Record (ClusteredRowCols ks x y w)
 
 clusteredRows
   :: forall x y w ks rs
@@ -398,5 +404,56 @@ clusteredRows labelF m
           $ List.zip [1 ..] l
     in
       List.concat $ fmap (\(k, loc) -> doListOfClusters k loc) $ M.toList m
+
+
+clusteredRowsFull
+  :: forall x y w ks rs
+   . ( FU.RealFieldOf rs x
+     , FU.RealFieldOf rs y
+     , FU.RealFieldOf rs w     
+     )
+  => (F.Record rs -> Text) -- label for each row
+  -> M.Map (F.Record ks) [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+  -> ([F.Record (ks V.++ [ClusterId, x, y, w])], [F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)])
+clusteredRowsFull labelF m
+  = let
+      makeXYW :: (V.Snd x, V.Snd y, V.Snd w) -> F.Record '[x, y, w]
+      makeXYW (x, y, w) = x &: y &: w &: V.RNil
+      idAndLabelRow
+        :: Int -> Text -> F.Record '[ClusterId, MarkLabel]
+      idAndLabelRow cId l = cId &: l &: V.RNil
+      doCentroid
+        :: F.Record ks
+        -> Int
+        -> (V.Snd x, V.Snd y, V.Snd w)
+        -> F.Record (ks V.++ [ClusterId, x, y, w])
+      doCentroid k cId xyw =
+        let cIdRec :: F.Record '[ClusterId] = cId F.&: V.RNil
+        in k F.<+> cIdRec F.<+> makeXYW xyw
+      doClusteredRow
+        :: F.Record ks -> Int -> F.Record rs -> F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)
+      doClusteredRow k cId xs = (k F.<+> (idAndLabelRow cId (labelF xs))) F.<+> xs
+      doCluster
+        :: Int
+        -> F.Record ks
+        -> ((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])
+        -> ([F.Record (ks V.++ [ClusterId, x, y, w])], [F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)])
+      doCluster cId k (ctrd, rows) =
+        (pure @[] $ doCentroid k cId ctrd, (fmap (doClusteredRow k cId) rows))
+      doListOfClusters
+        :: F.Record ks
+        -> [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+        -> ([F.Record (ks V.++ [ClusterId, x, y, w])], [F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)])
+      crConcat ::  [([F.Record (ks V.++ [ClusterId, x, y, w])], [F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)])]
+               -> ([F.Record (ks V.++ [ClusterId, x, y, w])], [F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)])
+      crConcat xs =
+        let (as, bs) = unzip xs
+        in (List.concat as, List.concat bs)
+      doListOfClusters k l =
+        crConcat
+          $ fmap (\(cId, cluster) -> doCluster cId k cluster)
+          $ List.zip [1 ..] l
+    in
+      crConcat $ fmap (\(k, loc) -> doListOfClusters k loc) $ M.toList m
 
 
