@@ -16,9 +16,11 @@ module Frames.SimpleJoins
     appendFromKeyed
   , leftJoinM
   , leftJoinE
+  , leftJoinWithMissing
   , CanLeftJoinM 
   , leftJoinM3
   , leftJoinE3
+  , leftJoin3WithMissing
   , CanLeftJoinM3
   , MissingKeys(..)
   ) where
@@ -27,7 +29,7 @@ import qualified Control.Foldl as FL
 import qualified Data.Vinyl           as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
 import qualified Data.Map as M
-import           Data.Maybe (isNothing)
+import           Data.Maybe (isNothing, catMaybes)
 import qualified Frames               as F
 import qualified Frames.InCore as FI
 import qualified Frames.Melt as F
@@ -66,6 +68,20 @@ leftJoinM
   -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs)))
 leftJoinM fa fb = fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fa fb
 
+
+leftJoinWithMissing :: forall ks as bs. CanLeftJoinM ks as bs
+  => F.FrameRec as
+  -> F.FrameRec bs
+  -> (F.FrameRec (as V.++ (F.RDeleteAll ks bs)), [F.Record ks])
+leftJoinWithMissing  fa fb =
+  let x = F.leftJoin @ks fa fb
+      y = fmap F.recMaybe x
+  in case sequence y of
+    Just z -> (F.toFrame z, [])
+    Nothing ->
+      let missing = fmap (F.rcast @ks . fst) . filter (\(_, z) -> isNothing z) $ zip (FL.fold FL.list fa) y
+          present = F.toFrame $ catMaybes y
+      in (present, missing)
 
 leftJoinE
   :: forall ks as bs. CanLeftJoinM ks as bs
@@ -120,6 +136,17 @@ fromEithers :: Either [F.Record ks] (Either [F.Record ks] a) -> Either (MissingK
 fromEithers e = case e of
   Left keys -> Left $ FirstJoin keys
   Right e' -> either (Left . SecondJoin) Right e'
+
+leftJoin3WithMissing
+  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
+  => F.FrameRec as
+  -> F.FrameRec bs
+  -> F.FrameRec cs
+  -> ((F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))), [F.Record ks], [F.Record ks])
+leftJoin3WithMissing fa fb fc =
+  let (j1, m1) = leftJoinWithMissing @ks fa fb
+      (j2, m2) = leftJoinWithMissing @ks j1 fc
+  in (j2, m1, m2)
 
 leftJoinE3
   :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
