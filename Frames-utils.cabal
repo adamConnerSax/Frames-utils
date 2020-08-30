@@ -36,7 +36,7 @@ common deps
                 hmatrix                           >= 0.19.0 && < 0.20,
                 hmatrix-gsl                       >= 0.19.0 && < 0.20,
                 hvega                             >= 0.6.0 && < 0.11,
-                knit-haskell                      >= 0.7.0.0 && < 0.9,
+                knit-haskell                      >= 0.7.0.0 && < 0.10,
                 lens                              >= 4.17 && < 4.19,
                 log-domain                        <= 0.12,
                 lucid                             >= 2.9.11 && < 2.10,
