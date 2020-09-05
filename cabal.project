@@ -3,14 +3,14 @@ jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: hashable, random
+allow-newer: hashable, random, time
             
 -- ghc-8.8 forks
              
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames
-  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames
+--  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
 
 --source-repository-package
 --  type: git
