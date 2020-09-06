@@ -30,13 +30,16 @@ import qualified Data.Vector                   as V
 import qualified Frames                        as F
 import qualified Frames.ColumnTypeable         as F
 import qualified Frames.InCore                 as F
+import qualified Frames.ShowCSV as F
 
 import           GHC.Generics                   ( Generic )
 
 newtype FrameDay = FrameDay { unFrameDay :: Time.Day } deriving (Show, Eq, Ord, Typeable, Generic)
 
 type instance F.VectorFor FrameDay = V.Vector
-
+instance F.ShowCSV FrameDay where
+  showCSV = T.pack . show . unFrameDay
+  
 instance S.Serialize FrameDay where
   put = S.put . Time.toModifiedJulianDay . unFrameDay
   get = FrameDay . Time.ModifiedJulianDay <$> S.get
@@ -67,6 +70,8 @@ newtype FrameLocalTime = FrameLocalTime { unFrameLocalTime :: Time.LocalTime } d
 
 type instance F.VectorFor FrameLocalTime = V.Vector
 instance S.Serialize FrameLocalTime
+instance F.ShowCSV FrameLocalTime where
+  showCSV = T.pack . show . unFrameLocalTime
 
 instance R.Readable FrameLocalTime where
  fromText t = fmap FrameLocalTime $ do

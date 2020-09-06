@@ -73,6 +73,9 @@ library
                     Frames.ScatterMerge
                     Frames.Serialize
                     Frames.Streamly
+                    Frames.Streamly.InCore
+                    Frames.Streamly.CSV
+                    Frames.Streamly.Transform
                     Frames.Misc
                     Frames.SimpleJoins
                     Frames.VegaLite
