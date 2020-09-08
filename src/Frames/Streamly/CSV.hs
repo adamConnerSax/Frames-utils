@@ -13,6 +13,7 @@
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
@@ -36,9 +37,19 @@ module Frames.Streamly.CSV
     , streamCSV
     , streamToSV
     , streamSV
---    , listCSV -- so people need not learn streamly just to get csv they can work with
---    , streamPrintableCSV
---    , listPrintableCSV
+    , streamSV'
+      -- *  write Records to Text File
+    , writeCSV
+    , writeSV
+    , writeStreamSV
+    , writeCSV_Show
+    , writeSV_Show
+    , writeStreamSV_Show
+      -- * Utilities
+    , streamToList
+    , liftFieldRender
+    , liftFieldRender1
+    , writeLines
     )
 where
 
@@ -46,22 +57,20 @@ import qualified Streamly.Prelude                       as Streamly
 import qualified Streamly                               as Streamly
 import           Streamly                                ( IsStream )
 import qualified Streamly.Data.Fold                     as Streamly.Fold
-import qualified Streamly.Internal.Data.Fold            as Streamly.Fold
+import qualified Streamly.Data.Unicode.Stream           as Streamly.Unicode
+import qualified Streamly.Internal.FileSystem.File      as Streamly.File
+import qualified Streamly.Internal.Data.Unfold          as Streamly.Unfold
 import           Control.Monad.Catch                     ( MonadCatch )
-import           Control.Monad.IO.Class                  ( MonadIO(liftIO) )
-import qualified Streamly.Internal.FileSystem.File      as File
-import           Data.Kind (Constraint, Type)
+import           Control.Monad.IO.Class                  ( MonadIO )
+
 import           Data.Maybe                              (isNothing)
 import qualified Data.Text                              as T
-import qualified Data.Text.IO                           as T
-import qualified Streamly.Internal.Data.Unicode.Stream  as Streamly.Unicode
 
 import qualified Data.Vinyl                             as Vinyl
 import qualified Data.Vinyl.Functor                     as Vinyl
-import qualified Data.Vinyl.TypeLevel                     as Vinyl
+import qualified Data.Vinyl.TypeLevel                   as Vinyl
+import qualified Data.Vinyl.Class.Method                as Vinyl
 import           Data.Word                               ( Word8 )
-
-import qualified System.Clock
 
 import qualified Frames                                 as Frames
 import qualified Frames.CSV                             as Frames
@@ -76,13 +85,11 @@ streamToSV
      ( Frames.ColumnHeaders rs
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RApply rs
-     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
+     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
      , IsStream t
      )
      => T.Text -> t m (Frames.Record rs) -> t m T.Text
-streamToSV = streamSV' toTextRec where
-  toTextRec = Vinyl.rpureConstrained @(ConstrainedField Frames.ShowCSV) (Vinyl.Lift $ Vinyl.Const . Frames.showCSV . Vinyl.getField)
+streamToSV = streamSVClass @Frames.ShowCSV Frames.showCSV
 {-# INLINEABLE streamToSV #-}
 
 streamToCSV
@@ -90,8 +97,7 @@ streamToCSV
      ( Frames.ColumnHeaders rs
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RApply rs
-     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
+     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
      , IsStream t
      )
      => t m (Frames.Record rs) -> t m T.Text
@@ -104,8 +110,7 @@ streamSV
      , Foldable f
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RApply rs
-     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
+     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
      , IsStream t
      )
      => T.Text -> f (Frames.Record rs) -> t m T.Text
@@ -118,13 +123,36 @@ streamCSV
      , Foldable f
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RApply rs
-     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
+     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
      , IsStream t
      )
      => f (Frames.Record rs) -> t m T.Text
 streamCSV = streamSV ","
-  
+
+
+streamSVClass
+  :: forall c rs t m .
+      ( Vinyl.RecMapMethod c Vinyl.ElField rs
+      , Vinyl.RecordToList rs
+      , Frames.ColumnHeaders rs
+      , IsStream t
+      , Monad m
+     )
+  => (forall a. c a => a -> T.Text)
+  -> T.Text
+  -> t m (Frames.Record rs)
+  -> t m T.Text
+streamSVClass toText sep s =
+  (T.intercalate sep . fmap T.pack $ Frames.columnHeaders (Proxy :: Proxy (Frames.Record rs)))
+  `Streamly.cons`
+  (Streamly.map (T.intercalate sep . Vinyl.recordToList . Vinyl.rmapMethod @c aux) s)
+  where
+    aux :: (c (Vinyl.PayloadType Vinyl.ElField a))
+        => Vinyl.ElField a
+        -> Vinyl.Const T.Text a
+    aux (Vinyl.Field x) = Vinyl.Const $ toText x
+
+    
 -- | Given a record of functions to map each field to Text,
 -- transform a stream of records into a stream of lines of Text,
 -- headers first, with headers/fields separated by the given separator.
@@ -146,41 +174,125 @@ streamSV' toTextRec sep s =
   (Streamly.map (T.intercalate sep . Vinyl.recordToList . Vinyl.rapply toTextRec) s)
 {-# INLINEABLE streamSV' #-}
 
--- | Given a record of functions to map each field to Text,
--- transform a stream of records into a (lazy) list of lines of Text,
--- headers first, with headers/fields separated by the given separator.
-listSV'
-  :: forall rs m f.
-     (Vinyl.RecordToList rs
-     , Vinyl.RApply rs
-     , Frames.ColumnHeaders rs
-     , Monad m
-     )
-  => Frames.Rec (Vinyl.Lift (->) f (Vinyl.Const T.Text)) rs
-  -> T.Text
-  -> Streamly.SerialT m (Frames.Rec f rs)
-  -> m [T.Text]
-listSV' toTextRec sep = Streamly.toList . streamSV' toTextRec sep
-{-# INLINEABLE listSV' #-}
+-- | Convert a streamly stream into a (lazy) list
+streamToList :: (IsStream t, Monad m) => t m a -> m [a]
+streamToList = Streamly.toList . Streamly.adapt
+
+-- | lift a field rendering function into the right form to append to a Rec of renderers
+liftFieldRender :: Vinyl.KnownField t => (Vinyl.Snd t -> T.Text) -> Vinyl.Lift (->) Vinyl.ElField (Vinyl.Const T.Text) t
+liftFieldRender toText = Vinyl.Lift $ Vinyl.Const . toText . Vinyl.getField
+{-# INLINEABLE liftFieldRender #-}
+
+-- | lift a composed-field rendering function into the right form to append to a Rec of renderers
+-- | Perhaps to render a parsed file with @Maybe@ or @Either@ composed with @ElField@
+liftFieldRender1 :: (Functor f, Vinyl.KnownField t)
+                        => (f (Vinyl.Snd t) -> T.Text) -> Vinyl.Lift (->) (f Vinyl.:. Vinyl.ElField) (Vinyl.Const T.Text) t
+liftFieldRender1 toText = Vinyl.Lift $ Vinyl.Const . toText . fmap Vinyl.getField . Vinyl.getCompose
+{-# INLINEABLE liftFieldRender1 #-}
+
+-- | write a stream of @Text@ to a file, one line per stream item.
+
+-- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
+writeLines :: (Streamly.MonadAsync m, MonadCatch m, IsStream t) => FilePath -> t m T.Text -> m ()
+writeLines fp s = do
+  Streamly.fold (Streamly.File.write fp)
+    $ Streamly.Unicode.encodeUtf8
+    $ Streamly.adapt
+    $ Streamly.concatUnfold Streamly.Unfold.fromList
+    $ Streamly.map T.unpack
+    $ Streamly.intersperse "\n" s
 
 
-class (Vinyl.KnownField t, c (Vinyl.Snd t)) => ConstrainedField c t
-instance (Vinyl.KnownField t, c (Vinyl.Snd t)) => ConstrainedField c t
+-- | write a stream of @Records@ to a file, one line per @Record@.
+-- Use the 'Frames.ShowCSV' class to render each field to @Text@
 
-{-
-writeSV
+-- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
+writeStreamSV
   ::  forall rs m t.
    ( Frames.ColumnHeaders rs
-   , Monad m
-   , MonadIO m
+   , MonadCatch m
    , Vinyl.RecordToList rs
-   , Vinyl.RApply rs
-   , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
+   , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
    , IsStream t
+   , Streamly.MonadAsync m
    )
-  => T.Text -> FilePath -> t m (F.Record rs) -> m ()
-writeSV sep fp = Streamly.map T.unpack . Streamly.intersperse "\n" . streamToSV sep 
--}
+  => T.Text -> FilePath -> t m (Frames.Record rs) -> m ()
+writeStreamSV sep fp = writeLines fp . streamToSV sep 
+{-# INLINEABLE writeStreamSV #-}
+
+-- | write a foldable of @Records@ to a file, one line per @Record@.
+-- Use the 'Frames.ShowCSV' class to render each field to @Text@
+writeSV
+  ::  forall rs m f.
+   ( Frames.ColumnHeaders rs
+   , MonadCatch m
+   , Vinyl.RecordToList rs
+   , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+   , Streamly.MonadAsync m
+   , Foldable f
+   )
+  => T.Text -> FilePath -> f (Frames.Record rs) -> m ()
+writeSV sep fp = writeStreamSV sep fp . Streamly.fromFoldable @Streamly.AheadT
+{-# INLINEABLE writeSV #-}
+
+-- | write a foldable of @Records@ to a file, one line per @Record@.
+-- Use the 'Frames.ShowCSV' class to render each field to @Text@
+writeCSV
+  ::  forall rs m f.
+   ( Frames.ColumnHeaders rs
+   , MonadCatch m
+   , Vinyl.RecordToList rs
+   , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+   , Streamly.MonadAsync m
+   , Foldable f
+   )
+  => FilePath -> f (Frames.Record rs) -> m ()
+writeCSV fp = writeSV "," fp 
+{-# INLINEABLE writeCSV #-}
+
+-- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
+writeStreamSV_Show
+  ::  forall rs m t.
+   ( Frames.ColumnHeaders rs
+   , MonadCatch m
+   , Vinyl.RecordToList rs
+   , Vinyl.RecMapMethod Show Vinyl.ElField rs
+   , IsStream t
+   , Streamly.MonadAsync m
+   )
+  => T.Text -> FilePath -> t m (Frames.Record rs) -> m ()
+writeStreamSV_Show sep fp = writeLines fp . streamSVClass @Show (T.pack . show) sep
+{-# INLINEABLE writeStreamSV_Show #-}
+
+-- | write a foldable of @Records@ to a file, one line per @Record@.
+-- Use the 'Frames.ShowCSV' class to render each field to @Text@
+writeSV_Show
+  ::  forall rs m f.
+   ( Frames.ColumnHeaders rs
+   , MonadCatch m
+   , Vinyl.RecordToList rs
+   , Vinyl.RecMapMethod Show Vinyl.ElField rs
+   , Streamly.MonadAsync m
+   , Foldable f
+   )
+  => T.Text -> FilePath -> f (Frames.Record rs) -> m ()
+writeSV_Show sep fp = writeStreamSV_Show sep fp . Streamly.fromFoldable @Streamly.AheadT
+{-# INLINEABLE writeSV_Show #-}
+
+-- | write a foldable of @Records@ to a file, one line per @Record@.
+-- Use the 'Frames.ShowCSV' class to render each field to @Text@
+writeCSV_Show
+  ::  forall rs m f.
+   ( Frames.ColumnHeaders rs
+   , MonadCatch m
+   , Vinyl.RecordToList rs
+   , Vinyl.RecMapMethod Show Vinyl.ElField rs
+   , Streamly.MonadAsync m
+   , Foldable f
+   )
+  => FilePath -> f (Frames.Record rs) -> m ()
+writeCSV_Show fp = writeSV_Show "," fp 
+{-# INLINEABLE writeCSV_Show #-}
 
 -- Thanks to Tim Pierson for the functions below!
 
@@ -254,7 +366,7 @@ readTableEitherOpt opts src = do
     . Streamly.map T.pack
     . Streamly.splitOnSuffix (== '\n') Streamly.Fold.toList
     . Streamly.Unicode.decodeUtf8
-    $ File.toBytes src    
+    $ Streamly.File.toBytes src    
 {-# INLINEABLE readTableEitherOpt #-}
 
 
@@ -290,7 +402,7 @@ readTableOpt opts src =
   . handleHeader
   . Streamly.splitOnSuffix (== '\n') (fmap T.pack $ Streamly.Fold.toList)
   . Streamly.Unicode.decodeUtf8
-  $ File.toBytes src
+  $ Streamly.File.toBytes src
   where
     handleHeader | isNothing (Frames.headerOverride opts) = Streamly.drop 1
                  | otherwise                       = id
@@ -419,6 +531,7 @@ recEitherToMaybe = Vinyl.rmap (either (const (Vinyl.Compose Nothing)) (Vinyl.Com
 
 
 -- tracing fold
+{-
 runningCountF :: MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
 runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
   start = liftIO (T.putStr startMsg) >> return 0
@@ -428,5 +541,5 @@ runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done wher
     T.putStrLn $ countMsg n
     return (n+1)
   done _ = liftIO $ T.putStrLn endMsg
-
+-}
 
