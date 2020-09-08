@@ -5,6 +5,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,6 +15,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 -- all commented below are TBD
 module Frames.Streamly.CSV
     (
@@ -40,13 +43,14 @@ module Frames.Streamly.CSV
 where
 
 import qualified Streamly.Prelude                       as Streamly
---import qualified Streamly                               as Streamly
+import qualified Streamly                               as Streamly
 import           Streamly                                ( IsStream )
 import qualified Streamly.Data.Fold                     as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold            as Streamly.Fold
 import           Control.Monad.Catch                     ( MonadCatch )
 import           Control.Monad.IO.Class                  ( MonadIO(liftIO) )
 import qualified Streamly.Internal.FileSystem.File      as File
+import           Data.Kind (Constraint, Type)
 import           Data.Maybe                              (isNothing)
 import qualified Data.Text                              as T
 import qualified Data.Text.IO                           as T
@@ -54,7 +58,7 @@ import qualified Streamly.Internal.Data.Unicode.Stream  as Streamly.Unicode
 
 import qualified Data.Vinyl                             as Vinyl
 import qualified Data.Vinyl.Functor                     as Vinyl
---import qualified Data.Vinyl.TypeLevel                     as Vinyl
+import qualified Data.Vinyl.TypeLevel                     as Vinyl
 import           Data.Word                               ( Word8 )
 
 import qualified System.Clock
@@ -64,6 +68,7 @@ import qualified Frames.CSV                             as Frames
 import qualified Frames.ShowCSV                         as Frames 
 
 import Data.Proxy (Proxy (..))
+
   
 -- Do we need to match type-application order to Frames API?
 streamToSV
@@ -71,14 +76,13 @@ streamToSV
      ( Frames.ColumnHeaders rs
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+     , Vinyl.RApply rs
+     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
      , IsStream t
      )
      => T.Text -> t m (Frames.Record rs) -> t m T.Text
-streamToSV sep s =
-  (T.intercalate sep . fmap T.pack $ Frames.columnHeaders (Proxy :: Proxy (Frames.Record rs)))
-  `Streamly.cons`
-  (Streamly.map (T.intercalate sep . Frames.showFieldsCSV) s)  
+streamToSV = streamSV' toTextRec where
+  toTextRec = Vinyl.rpureConstrained @(ConstrainedField Frames.ShowCSV) (Vinyl.Lift $ Vinyl.Const . Frames.showCSV . Vinyl.getField)
 {-# INLINEABLE streamToSV #-}
 
 streamToCSV
@@ -86,7 +90,8 @@ streamToCSV
      ( Frames.ColumnHeaders rs
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+     , Vinyl.RApply rs
+     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
      , IsStream t
      )
      => t m (Frames.Record rs) -> t m T.Text
@@ -99,7 +104,8 @@ streamSV
      , Foldable f
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+     , Vinyl.RApply rs
+     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
      , IsStream t
      )
      => T.Text -> f (Frames.Record rs) -> t m T.Text
@@ -112,11 +118,54 @@ streamCSV
      , Foldable f
      , Monad m
      , Vinyl.RecordToList rs
-     , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+     , Vinyl.RApply rs
+     , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
      , IsStream t
      )
      => f (Frames.Record rs) -> t m T.Text
 streamCSV = streamSV ","
+  
+-- | Given a record of functions to map each field to Text,
+-- transform a stream of records into a stream of lines of Text,
+-- headers first, with headers/fields separated by the given separator.
+streamSV'
+  :: forall rs t m f.
+     (Vinyl.RecordToList rs
+     , Vinyl.RApply rs
+     , Frames.ColumnHeaders rs
+     , IsStream t
+     , Monad m
+     )
+  => Frames.Rec (Vinyl.Lift (->) f (Vinyl.Const T.Text)) rs
+  -> T.Text
+  -> t m (Frames.Rec f rs)
+  -> t m T.Text
+streamSV' toTextRec sep s = 
+  (T.intercalate sep . fmap T.pack $ Frames.columnHeaders (Proxy :: Proxy (Frames.Record rs)))
+  `Streamly.cons`
+  (Streamly.map (T.intercalate sep . Vinyl.recordToList . Vinyl.rapply toTextRec) s)
+{-# INLINEABLE streamSV' #-}
+
+-- | Given a record of functions to map each field to Text,
+-- transform a stream of records into a (lazy) list of lines of Text,
+-- headers first, with headers/fields separated by the given separator.
+listSV'
+  :: forall rs m f.
+     (Vinyl.RecordToList rs
+     , Vinyl.RApply rs
+     , Frames.ColumnHeaders rs
+     , Monad m
+     )
+  => Frames.Rec (Vinyl.Lift (->) f (Vinyl.Const T.Text)) rs
+  -> T.Text
+  -> Streamly.SerialT m (Frames.Rec f rs)
+  -> m [T.Text]
+listSV' toTextRec sep = Streamly.toList . streamSV' toTextRec sep
+{-# INLINEABLE listSV' #-}
+
+
+class (Vinyl.KnownField t, c (Vinyl.Snd t)) => ConstrainedField c t
+instance (Vinyl.KnownField t, c (Vinyl.Snd t)) => ConstrainedField c t
 
 {-
 writeSV
@@ -125,11 +174,12 @@ writeSV
    , Monad m
    , MonadIO m
    , Vinyl.RecordToList rs
-   , Vinyl.RecMapMethod Frames.ShowCSV Vinyl.ElField rs
+   , Vinyl.RApply rs
+   , Vinyl.RPureConstrained (ConstrainedField Frames.ShowCSV) rs
    , IsStream t
    )
   => T.Text -> FilePath -> t m (F.Record rs) -> m ()
-writeSV sep fp = . streamToSV sep 
+writeSV sep fp = Streamly.map T.unpack . Streamly.intersperse "\n" . streamToSV sep 
 -}
 
 -- Thanks to Tim Pierson for the functions below!
@@ -379,42 +429,4 @@ runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done wher
     return (n+1)
   done _ = liftIO $ T.putStrLn endMsg
 
-{-  
--- | Given a record of functions to map each field to Text,
--- transform a stream of records into a stream of lines of Text,
--- headers first, with headers/fields separated by the given separator.
-streamSV
-  :: forall rs t m f.
-     (Vinyl.RecordToList rs
-     , Vinyl.RApply (Vinyl.Unlabeled rs)
-     , Frames.ColumnHeaders rs
-     , IsStream t
-     , Monad m
-     )
-  => Frames.Rec (Vinyl.Lift (->) Vinyl.Identity (Vinyl.Const T.Text)) (Vinyl.Unlabeled rs)
-  -> T.Text
-  -> t m (Frames.Rec f rs)
-  -> t m T.Text
-streamSV toTextRec sep s = 
-  (T.intercalate sep . fmap T.pack $ Frames.columnHeaders (Proxy :: Proxy (Frames.Record rs)))
-  `Streamly.cons`
-  (Streamly.map (T.intercalate sep . Vinyl.recordToList . Vinyl.rapply toTextRec . Vinyl.rmap (Vinyl.Identity . Vinyl.getField)) s)
-{-# INLINEABLE streamSV #-}
 
--- | Given a record of functions to map each field to Text,
--- transform a stream of records into a (lazy) list of lines of Text,
--- headers first, with headers/fields separated by the given separator.
-listSV
-  :: forall rs m f.
-     (Vinyl.RecordToList rs
-     , Vinyl.RApply rs
-     , Frames.ColumnHeaders rs
-     , Monad m
-     )
-  => Frames.Rec (Vinyl.Lift (->) f (Vinyl.Const T.Text)) rs
-  -> T.Text
-  -> Streamly.SerialT m (Frames.Rec f rs)
-  -> m [T.Text]
-listSV toTextRec sep = Streamly.toList . streamSV toTextRec sep
-{-# INLINEABLE listSV #-}
--}
