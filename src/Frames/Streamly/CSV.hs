@@ -17,22 +17,24 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
--- all commented below are TBD
+
 module Frames.Streamly.CSV
     (
+      -- * read from File to Stream of Recs 
       readTable
     , readTableOpt
     , readTableMaybe
     , readTableMaybeOpt
     , readTableEither
     , readTableEitherOpt
+      -- * convert streaming Text to streaming Records
     , streamTable
     , streamTableOpt
     , streamTableMaybe  
     , streamTableMaybeOpt
     , streamTableEither
     , streamTableEitherOpt
-      -- * Produce (streaming) CSV output
+      -- * Produce (streaming) Text from Records
     , streamToCSV
     , streamCSV
     , streamToSV
@@ -50,6 +52,7 @@ module Frames.Streamly.CSV
     , liftFieldRender
     , liftFieldRender1
     , writeLines
+    , word8ToTextLines
     )
 where
 
@@ -79,7 +82,10 @@ import qualified Frames.ShowCSV                         as Frames
 import Data.Proxy (Proxy (..))
 
   
--- Do we need to match type-application order to Frames API?
+
+-- | Given a stream of @Records@, for which all fields satisfy the `ShowCSV` constraint,
+-- produce a stream of `Text`, one item (line) per `Record` with the specified separator
+-- between fields.
 streamToSV
   :: forall rs m t.
      ( Frames.ColumnHeaders rs
@@ -92,6 +98,8 @@ streamToSV
 streamToSV = streamSVClass @Frames.ShowCSV Frames.showCSV
 {-# INLINEABLE streamToSV #-}
 
+-- | Given a stream of @Records@, for which all fields satisfy the `ShowCSV` constraint,
+-- produce a stream of CSV `Text`, one item (line) per `Record`.
 streamToCSV
   :: forall rs m t.
      ( Frames.ColumnHeaders rs
@@ -104,6 +112,9 @@ streamToCSV
 streamToCSV = streamToSV ","
 {-# INLINEABLE streamToCSV #-}
 
+-- | Given a foldable of @Records@, for which all fields satisfy the `ShowCSV` constraint,
+-- produce a stream of `Text`, one item (line) per `Record` with the specified separator
+-- between fields. 
 streamSV
   :: forall f rs m t.
      ( Frames.ColumnHeaders rs
@@ -117,6 +128,8 @@ streamSV
 streamSV sep = streamToSV sep . Streamly.fromFoldable  
 {-# INLINEABLE streamSV #-}
 
+-- | Given a foldable of @Records@, for which all fields satisfy the `ShowCSV` constraint,
+-- produce a stream of CSV `Text`, one item (line) per `Record`.
 streamCSV
   :: forall f rs m t.
      ( Frames.ColumnHeaders rs
@@ -129,7 +142,8 @@ streamCSV
      => f (Frames.Record rs) -> t m T.Text
 streamCSV = streamSV ","
 
-
+-- | Convert @Rec@s to lines of `Text` using a class (which must have an instance
+-- for each type in the record) to covert each field to `Text`.
 streamSVClass
   :: forall c rs t m .
       ( Vinyl.RecMapMethod c Vinyl.ElField rs
@@ -190,9 +204,8 @@ liftFieldRender1 :: (Functor f, Vinyl.KnownField t)
 liftFieldRender1 toText = Vinyl.Lift $ Vinyl.Const . toText . fmap Vinyl.getField . Vinyl.getCompose
 {-# INLINEABLE liftFieldRender1 #-}
 
--- | write a stream of @Text@ to a file, one line per stream item.
-
 -- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
+-- | write a stream of @Text@ to a file, one line per stream item.
 writeLines :: (Streamly.MonadAsync m, MonadCatch m, IsStream t) => FilePath -> t m T.Text -> m ()
 writeLines fp s = do
   Streamly.fold (Streamly.File.write fp)
@@ -203,10 +216,9 @@ writeLines fp s = do
     $ Streamly.intersperse "\n" s
 
 
+-- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
 -- | write a stream of @Records@ to a file, one line per @Record@.
 -- Use the 'Frames.ShowCSV' class to render each field to @Text@
-
--- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
 writeStreamSV
   ::  forall rs m t.
    ( Frames.ColumnHeaders rs
@@ -251,6 +263,8 @@ writeCSV fp = writeSV "," fp
 {-# INLINEABLE writeCSV #-}
 
 -- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
+-- | write a stream of @Records@ to a file, one line per @Record@.
+-- Use the 'Show' class to render each field to @Text@
 writeStreamSV_Show
   ::  forall rs m t.
    ( Frames.ColumnHeaders rs
@@ -265,7 +279,7 @@ writeStreamSV_Show sep fp = writeLines fp . streamSVClass @Show (T.pack . show) 
 {-# INLINEABLE writeStreamSV_Show #-}
 
 -- | write a foldable of @Records@ to a file, one line per @Record@.
--- Use the 'Frames.ShowCSV' class to render each field to @Text@
+-- Use the 'Show' class to render each field to @Text@
 writeSV_Show
   ::  forall rs m f.
    ( Frames.ColumnHeaders rs
@@ -280,7 +294,7 @@ writeSV_Show sep fp = writeStreamSV_Show sep fp . Streamly.fromFoldable @Streaml
 {-# INLINEABLE writeSV_Show #-}
 
 -- | write a foldable of @Records@ to a file, one line per @Record@.
--- Use the 'Frames.ShowCSV' class to render each field to @Text@
+-- Use the 'Show' class to render each field to @Text@
 writeCSV_Show
   ::  forall rs m f.
    ( Frames.ColumnHeaders rs
@@ -357,16 +371,7 @@ readTableEitherOpt
   => Frames.ParserOptions
   -> FilePath
   -> t m (Vinyl.Rec (Either T.Text Vinyl.:. Vinyl.ElField) rs)
-readTableEitherOpt opts src = do
-  let  handleHeader | isNothing (Frames.headerOverride opts) = Streamly.drop 1
-                    | otherwise                              = id
-       doParse = Frames.readRec
-  Streamly.map (doParse . Frames.tokenizeRow opts)
-    . handleHeader
-    . Streamly.map T.pack
-    . Streamly.splitOnSuffix (== '\n') Streamly.Fold.toList
-    . Streamly.Unicode.decodeUtf8
-    $ Streamly.File.toBytes src    
+readTableEitherOpt opts = streamTableEitherOpt opts . word8ToTextLines . Streamly.File.toBytes 
 {-# INLINEABLE readTableEitherOpt #-}
 
 
@@ -397,20 +402,10 @@ readTableOpt
   => Frames.ParserOptions
   -> FilePath
   -> t m (Frames.Record rs)
-readTableOpt opts src =
-  Streamly.mapMaybe (Frames.recMaybe . doParse . Frames.tokenizeRow opts)
-  . handleHeader
-  . Streamly.splitOnSuffix (== '\n') (fmap T.pack $ Streamly.Fold.toList)
-  . Streamly.Unicode.decodeUtf8
-  $ Streamly.File.toBytes src
-  where
-    handleHeader | isNothing (Frames.headerOverride opts) = Streamly.drop 1
-                 | otherwise                       = id
-    doParse = recEitherToMaybe . Frames.readRec
+readTableOpt opts = streamTableOpt opts . word8ToTextLines . Streamly.File.toBytes 
 {-# INLINEABLE readTableOpt #-}
 
--- | Convert a stream of `Word8` to a table by decoding to utf8 and splitting the stream
--- on newline ('\n') characters.
+-- | Convert a stream of lines of `Text` to a table
 -- Each field is returned in an @Either Text@ functor. @Right a@ for successful parses
 -- and @Left Text@ when parsing fails, containing the text that failed to Parse.
 --
@@ -421,17 +416,16 @@ streamTableEither
     , IsStream t
     , Vinyl.RMap rs
     , Frames.ReadRec rs)
-    => t m Word8
+    => t m T.Text
     -> t m (Vinyl.Rec ((Either T.Text) Vinyl.:. Vinyl.ElField) rs)
 streamTableEither = streamTableEitherOpt Frames.defaultParser
 {-# INLINEABLE streamTableEither #-}
 
--- | Convert a stream of `Word8` to a table by decoding to utf8 and splitting the stream
--- on newline ('\n') characters.
+-- | Convert a stream of lines of `Text` to records.
 -- Each field is returned in an @Either Text@ functor. @Right a@ for successful parses
 -- and @Left Text@ when parsing fails, containing the text that failed to Parse.
 --
--- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will go awry.
+-- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will..go awry.
 streamTableEitherOpt
     :: forall rs t m.
     (MonadIO m
@@ -439,39 +433,34 @@ streamTableEitherOpt
     , Vinyl.RMap rs
     , Frames.ReadRec rs)
     => Frames.ParserOptions
-    -> t m Word8
+    -> t m T.Text
     -> t m (Vinyl.Rec ((Either T.Text) Vinyl.:. Vinyl.ElField) rs)
 streamTableEitherOpt opts =
     Streamly.map (doParse . Frames.tokenizeRow opts)
     . handleHeader
-    . Streamly.splitOnSuffix (== '\n') (fmap T.pack $ Streamly.Fold.toList)
-    . Streamly.Unicode.decodeUtf8
   where
     handleHeader | isNothing (Frames.headerOverride opts) = Streamly.drop 1
                  | otherwise                       = id
     doParse = Frames.readRec    
 {-# INLINEABLE streamTableEitherOpt #-}
 
-
--- | Convert a stream of `Word8` to a table by decoding to utf8 and splitting the stream
--- on newline ('\n') characters. Use default options
+-- | Convert a stream of lines of `Text` to a table.
 --
--- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will go awry.
+-- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will..go awry.
 streamTableMaybe
     :: forall rs t m.
     (MonadIO m
     , IsStream t
     , Vinyl.RMap rs
     , Frames.ReadRec rs)
-    => t m Word8
+    => t m T.Text
     -> t m (Vinyl.Rec (Maybe Vinyl.:. Vinyl.ElField) rs)
 streamTableMaybe = streamTableMaybeOpt Frames.defaultParser 
 {-# INLINEABLE streamTableMaybe #-}
 
--- | Convert a stream of `Word8` to a table by decoding to utf8 and splitting the stream
--- on newline ('\n') characters.
+-- | Convert a stream of lines of Text to a table .
 --
--- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will go awry.
+-- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will..go awry.
 streamTableMaybeOpt
     :: forall rs t m.
     (MonadIO m
@@ -479,13 +468,13 @@ streamTableMaybeOpt
     , Vinyl.RMap rs
     , Frames.ReadRec rs)
     => Frames.ParserOptions
-    -> t m Word8
+    -> t m T.Text
     -> t m (Vinyl.Rec (Maybe Vinyl.:. Vinyl.ElField) rs)
 streamTableMaybeOpt opts = Streamly.map recEitherToMaybe . streamTableEitherOpt opts
 {-# INLINEABLE streamTableMaybeOpt #-}
 
--- | Convert a stream of `Word8` to a table by decoding to utf8 and splitting the stream
--- on newline ('\n') characters, dropping rows where any field fails to parse.
+-- | Convert a stream of lines of 'Text' to a table,
+-- dropping rows where any field fails to parse.
 -- Use default options.
 -- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will go awry.
 streamTable
@@ -495,13 +484,13 @@ streamTable
     , Vinyl.RMap rs
     , Frames.ReadRec rs
     )
-    => t m Word8
+    => t m T.Text
     -> t m (Frames.Record rs)
 streamTable = streamTableOpt Frames.defaultParser
 {-# INLINEABLE streamTable #-}
 
--- | Convert a stream of `Word8` to a table by decoding to utf8 and splitting the stream
--- on newline ('\n') characters, dropping rows where any field fails to parse.
+-- | Convert a stream of lines of 'Text' `Word8` to a table,
+-- dropping rows where any field fails to parse.
 -- NB:  If the inferred/given @rs@ is different from the actual file row-type, things will go awry.
 streamTableOpt
     :: forall rs t m.
@@ -511,23 +500,26 @@ streamTableOpt
     , Frames.ReadRec rs
     )
     => Frames.ParserOptions
-    -> t m Word8
+    -> t m T.Text
     -> t m (Frames.Record rs)
 streamTableOpt opts =
     Streamly.mapMaybe (Frames.recMaybe . doParse . Frames.tokenizeRow opts)
-    . handleHeader
-    . Streamly.splitOnSuffix (== '\n') (fmap T.pack $ Streamly.Fold.toList)
-    . Streamly.Unicode.decodeUtf8
+    . handleHeader    
   where
     handleHeader | isNothing (Frames.headerOverride opts) = Streamly.drop 1
                  | otherwise                       = id
     doParse = recEitherToMaybe . Frames.readRec
 {-# INLINE streamTableOpt #-}
 
-
 recEitherToMaybe :: Vinyl.RMap rs => Vinyl.Rec (Either T.Text Vinyl.:. Vinyl.ElField) rs -> Vinyl.Rec (Maybe Vinyl.:. Vinyl.ElField) rs
 recEitherToMaybe = Vinyl.rmap (either (const (Vinyl.Compose Nothing)) (Vinyl.Compose . Just) . Vinyl.getCompose)
 {-# INLINE recEitherToMaybe #-}
+
+-- | Convert a stream of Word8 to lines of `Text` by decoding as UTF8 and splitting on "\n"
+word8ToTextLines :: (IsStream t, Monad m) => t m Word8 -> t m T.Text
+word8ToTextLines =  Streamly.splitOnSuffix (== '\n') (fmap T.pack $ Streamly.Fold.toList)
+                    . Streamly.Unicode.decodeUtf8
+{-# INLINE word8ToTextLines #-}
 
 
 -- tracing fold
