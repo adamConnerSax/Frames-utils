@@ -49,9 +49,13 @@ module Frames.Streamly.CSV
     , writeStreamSV_Show
       -- * Utilities
     , streamToList
-    , liftFieldRender
-    , liftFieldRender1
+    , liftFieldFormatter
+    , liftFieldFormatter1
+    , formatTextAsIs
+    , formatWithShow
+    , formatWithShowCSV
     , writeLines
+    , writeLines'
     , word8ToTextLines
     )
 where
@@ -192,29 +196,50 @@ streamSV' toTextRec sep s =
 streamToList :: (IsStream t, Monad m) => t m a -> m [a]
 streamToList = Streamly.toList . Streamly.adapt
 
--- | lift a field rendering function into the right form to append to a Rec of renderers
-liftFieldRender :: Vinyl.KnownField t => (Vinyl.Snd t -> T.Text) -> Vinyl.Lift (->) Vinyl.ElField (Vinyl.Const T.Text) t
-liftFieldRender toText = Vinyl.Lift $ Vinyl.Const . toText . Vinyl.getField
-{-# INLINEABLE liftFieldRender #-}
+-- | lift a field formatting function into the right form to append to a Rec of formatters
+liftFieldFormatter :: Vinyl.KnownField t => (Vinyl.Snd t -> T.Text) -> Vinyl.Lift (->) Vinyl.ElField (Vinyl.Const T.Text) t
+liftFieldFormatter toText = Vinyl.Lift $ Vinyl.Const . toText . Vinyl.getField
+{-# INLINEABLE liftFieldFormatter #-}
 
--- | lift a composed-field rendering function into the right form to append to a Rec of renderers
+-- | lift a composed-field formatting function into the right form to append to a Rec of formatters
 -- | Perhaps to render a parsed file with @Maybe@ or @Either@ composed with @ElField@
-liftFieldRender1 :: (Functor f, Vinyl.KnownField t)
+liftFieldFormatter1 :: (Functor f, Vinyl.KnownField t)
                         => (f (Vinyl.Snd t) -> T.Text) -> Vinyl.Lift (->) (f Vinyl.:. Vinyl.ElField) (Vinyl.Const T.Text) t
-liftFieldRender1 toText = Vinyl.Lift $ Vinyl.Const . toText . fmap Vinyl.getField . Vinyl.getCompose
-{-# INLINEABLE liftFieldRender1 #-}
+liftFieldFormatter1 toText = Vinyl.Lift $ Vinyl.Const . toText . fmap Vinyl.getField . Vinyl.getCompose
+{-# INLINEABLE liftFieldFormatter1 #-}
+
+-- | Format a @Text@ field as-is.
+formatTextAsIs :: (Vinyl.KnownField t, Vinyl.Snd t ~ T.Text) => Vinyl.Lift (->) Vinyl.ElField (Vinyl.Const T.Text) t
+formatTextAsIs = liftFieldFormatter id
+{-# INLINE formatTextAsIs #-}
+
+-- | Format a field using the @Show@ instance of the contained type 
+formatWithShow :: (Vinyl.KnownField t, Show (Vinyl.Snd t)) => Vinyl.Lift (->) Vinyl.ElField (Vinyl.Const T.Text) t
+formatWithShow = liftFieldFormatter $ T.pack . show
+{-# INLINE formatWithShow #-}
+
+-- | Format a field using the @Frames.ShowCSV@ instance of the contained type 
+formatWithShowCSV :: (Vinyl.KnownField t, Frames.ShowCSV (Vinyl.Snd t)) => Vinyl.Lift (->) Vinyl.ElField (Vinyl.Const T.Text) t
+formatWithShowCSV = liftFieldFormatter Frames.showCSV
+{-# INLINE formatWithShowCSV #-}
 
 -- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
 -- | write a stream of @Text@ to a file, one line per stream item.
-writeLines :: (Streamly.MonadAsync m, MonadCatch m, IsStream t) => FilePath -> t m T.Text -> m ()
-writeLines fp s = do
+writeLines' :: (Streamly.MonadAsync m, MonadCatch m, Streamly.IsStream t) => FilePath -> t m T.Text -> m ()
+writeLines' fp s = do
   Streamly.fold (Streamly.File.write fp)
     $ Streamly.Unicode.encodeUtf8
     $ Streamly.adapt
     $ Streamly.concatUnfold Streamly.Unfold.fromList
     $ Streamly.map T.unpack
     $ Streamly.intersperse "\n" s
+{-# INLINEABLE writeLines' #-}
 
+-- | write a stream of @Text@ to a file, one line per stream item.
+-- | Monomorphised to serial streams for ease of use.
+writeLines :: (Streamly.MonadAsync m, MonadCatch m) => FilePath -> Streamly.SerialT m T.Text -> m ()
+writeLines = writeLines'
+{-# INLINE writeLines #-}
 
 -- NB: Uses some internal modules from Streamly.  Will have to change when they become stable
 -- | write a stream of @Records@ to a file, one line per @Record@.
@@ -229,7 +254,7 @@ writeStreamSV
    , Streamly.MonadAsync m
    )
   => T.Text -> FilePath -> t m (Frames.Record rs) -> m ()
-writeStreamSV sep fp = writeLines fp . streamToSV sep 
+writeStreamSV sep fp = writeLines' fp . streamToSV sep 
 {-# INLINEABLE writeStreamSV #-}
 
 -- | write a foldable of @Records@ to a file, one line per @Record@.
@@ -275,7 +300,7 @@ writeStreamSV_Show
    , Streamly.MonadAsync m
    )
   => T.Text -> FilePath -> t m (Frames.Record rs) -> m ()
-writeStreamSV_Show sep fp = writeLines fp . streamSVClass @Show (T.pack . show) sep
+writeStreamSV_Show sep fp = writeLines' fp . streamSVClass @Show (T.pack . show) sep
 {-# INLINEABLE writeStreamSV_Show #-}
 
 -- | write a foldable of @Records@ to a file, one line per @Record@.
