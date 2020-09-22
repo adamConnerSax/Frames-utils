@@ -1,6 +1,6 @@
 cabal-version: 2.2
 name: Frames-utils
-version: 0.3.0.0
+version: 0.3.1.0
 license: BSD-3-Clause
 license-file: LICENSE
 maintainer: adam_conner_sax@yahoo.com
@@ -72,10 +72,6 @@ library
                     Frames.ParseableTypes
                     Frames.ScatterMerge
                     Frames.Serialize
-                    Frames.Streamly
-                    Frames.Streamly.InCore
-                    Frames.Streamly.CSV
-                    Frames.Streamly.Transform
                     Frames.Misc
                     Frames.SimpleJoins
                     Frames.VegaLite
