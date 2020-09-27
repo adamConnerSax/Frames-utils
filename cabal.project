@@ -3,10 +3,20 @@ jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: hashable, random, time
+allow-newer: base, random, hashable, time
             
--- ghc-8.8 forks
-             
+-- ghc-8.10 forks
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/polysemy-zoo
+  tag: f66744f0382e0969fce060df709a173d3b5e04d2
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: e06f935d7f12fd1939e12b96e2ea1a839fb98a09  
+
+   
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/Frames
