@@ -39,9 +39,11 @@ deriving via (V.ElField '(s,a)) instance Ord a => Ord (SElField '(s,a))
 
 toS :: V.RMap rs => V.Rec V.ElField rs -> V.Rec SElField rs
 toS = V.rmap coerce
+{-# INLINE toS #-}
 
 fromS :: V.RMap rs => V.Rec SElField rs -> V.Rec V.ElField rs
 fromS = V.rmap coerce
+{-# INLINE fromS #-}
 
 -- those generic instances allow us to derive instances for the serialization libs
 -- instance (S.Serialize (V.Snd t), V.KnownField t) => S.Serialize (V.ElField t)
