@@ -16,6 +16,11 @@ source-repository-package
   location: https://github.com/adamConnerSax/knit-haskell
   tag: e06f935d7f12fd1939e12b96e2ea1a839fb98a09  
 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: 2c572249cdbf2323f4ac346c531440e389eb02d8
+
    
 --source-repository-package
 --  type: git
