@@ -21,10 +21,12 @@ module Frames.FromTextCells
   (
     fromTextCells
   , fromTextCellsMapped
+  , fromTextCellsMappedE  
   )
 where
 
 import qualified Control.Monad.ST as ST
+import  Control.Monad (join)
 
 import qualified Data.Text as T
 import qualified Data.Vinyl                    as V
@@ -61,14 +63,28 @@ the ST monad to do the mutable bits.
 This version parses as rs, allows modification while still a stream and then returns the modified records.
 -}
 fromTextCellsMapped :: (V.RMap rs, F.ReadRec rs, FS.RecVec rs')
-                => [[T.Text]]
-                -> (F.Record rs -> F.Record rs')
-                -> Either T.Text (F.FrameRec rs')
-fromTextCellsMapped parsed recMap = do 
+                    => (F.Record rs -> F.Record rs')
+                    -> [[T.Text]]
+                    -> Either T.Text (F.FrameRec rs')
+fromTextCellsMapped recMap parsed = do 
     let lineStream = Streamly.fromList $ fmap (T.intercalate ",") parsed -- (IsStream t, Monad m) => t m [Text]
         recEStream = FS.streamTableEither lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
         recES = sequence $ Streamly.map (F.rtraverse V.getCompose) recEStream
     case recES of
       Left a -> Left a
       Right s ->  Right $  ST.runST $ FS.inCoreAoS $ Streamly.hoist (return . I.runIdentity) $ Streamly.map recMap s
+
+
+
+fromTextCellsMappedE :: (V.RMap rs, F.ReadRec rs, FS.RecVec rs')
+                    => (F.Record rs -> Either T.Text (F.Record rs'))
+                    -> [[T.Text]]
+                    -> Either T.Text (F.FrameRec rs')
+fromTextCellsMappedE recMapE parsed = do 
+    let lineStream = Streamly.fromList $ fmap (T.intercalate ",") parsed -- (IsStream t, Monad m) => t m [Text]
+        recEStream = FS.streamTableEither lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
+        recES = sequence $ Streamly.map (join . fmap recMapE . F.rtraverse V.getCompose) recEStream
+    case recES of
+      Left a -> Left a
+      Right s ->  Right $  ST.runST $ FS.inCoreAoS $ Streamly.hoist (return . I.runIdentity) s
 
