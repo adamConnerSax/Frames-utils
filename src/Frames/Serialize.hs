@@ -30,6 +30,8 @@ import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V                 
 
 import           Data.Binary                   as B
+import           Data.Binary.Put               as B
+import           Data.Binary.Get               as B
 import Data.Functor.Identity (Identity (..))
 import           Data.Serialize                as S
 import qualified Frames as F
@@ -84,30 +86,21 @@ type SFrameRec rs = SFrame (F.Record rs)
 
 newtype SFrame a = SFrame { unSFrame :: F.Frame a }
 
-{-
+-- Cereal
 instance (V.RMap rs, FI.RecVec rs, RecSerialize rs) => S.Serialize (SFrame (F.Record rs)) where
-  put = S.put . (fmap toS . FL.fold FL.list) . unSFrame
-  get = fmap (SFrame . F.toFrame @[] . fmap fromS) S.get 
+  put = streamlyPutC . Streamly.map toS . Streamly.fromFoldable . unSFrame
+  get = sframeGetC
 
-instance (V.RMap rs, FI.RecVec rs, RecBinary rs) => B.Binary (SFrame (F.Record rs)) where
-  put = B.put . (fmap toS . FL.fold FL.list) . unSFrame
-  get = fmap (SFrame . F.toFrame @[] . fmap fromS) B.get 
--}
-
-instance (V.RMap rs, FI.RecVec rs, RecSerialize rs) => S.Serialize (SFrame (F.Record rs)) where
-  put = streamlyPut . Streamly.map toS . Streamly.fromFoldable . unSFrame
-  get = sframeGet
-
-streamlyPut :: S.Serialize a => S.Putter (Streamly.SerialT Identity a)
-streamlyPut s = do
+streamlyPutC :: S.Serialize a => S.Putter (Streamly.SerialT Identity a)
+streamlyPutC s = do
   let lengthF = Streamly.Fold.length
       putF = Streamly.Fold.Fold (\b a -> return $ b <> S.put a) mempty return
       (l, streamPut) = runIdentity $ Streamly.fold (Streamly.Fold.tee lengthF putF) s
   S.putWord64be $ fromIntegral l
   streamPut
 
-sframeGet :: forall rs. (FI.RecVec rs, V.RMap rs, RecSerialize rs) => S.Get (SFrameRec rs)
-sframeGet = go Streamly.nil =<< S.getWord64be where
+sframeGetC :: forall rs. (FI.RecVec rs, V.RMap rs, RecSerialize rs) => S.Get (SFrameRec rs)
+sframeGetC = go Streamly.nil =<< S.getWord64be where
   go :: (forall s.Streamly.SerialT (ST.ST s) (F.Rec SElField rs)) -> Word64 -> S.Get (SFrameRec rs)
   go s nLeft =
     if nLeft == 0
@@ -115,3 +108,27 @@ sframeGet = go Streamly.nil =<< S.getWord64be where
     else do
       a <- S.get
       go (Streamly.cons a s) (nLeft - 1)
+
+-- Binary
+instance (V.RMap rs, FI.RecVec rs, RecBinary rs) => B.Binary (SFrame (F.Record rs)) where
+  put = streamlyPutB . Streamly.map toS . Streamly.fromFoldable . unSFrame
+  get = sframeGetB
+
+streamlyPutB :: B.Binary a => Streamly.SerialT Identity a -> B.Put
+streamlyPutB s = do
+  let lengthF = Streamly.Fold.length
+      putF = Streamly.Fold.Fold (\b a -> return $ b <> B.put a) mempty return
+      (l, streamPut) = runIdentity $ Streamly.fold (Streamly.Fold.tee lengthF putF) s
+  B.putWord64be $ fromIntegral l
+  streamPut
+
+sframeGetB :: forall rs. (FI.RecVec rs, V.RMap rs, RecBinary rs) => B.Get (SFrameRec rs)
+sframeGetB = go Streamly.nil =<< B.getWord64be where
+  go :: (forall s.Streamly.SerialT (ST.ST s) (F.Rec SElField rs)) -> Word64 -> B.Get (SFrameRec rs)
+  go s nLeft =
+    if nLeft == 0
+    then return $ SFrame $ ST.runST $ FS.inCoreAoS $ Streamly.map fromS s
+    else do
+      a <- B.get
+      go (Streamly.cons a s) (nLeft - 1)
+
