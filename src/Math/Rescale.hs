@@ -5,6 +5,7 @@
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Math.Rescale
   (
@@ -18,7 +19,7 @@ module Math.Rescale
 import qualified Control.Foldl            as FL
 import qualified Control.Foldl.Statistics as FS
 --import qualified Data.Foldable            as Foldable
-import           Data.Function            (on)
+--import           Data.Function            (on)
 import qualified Data.List                as List
 import qualified Data.Profunctor          as PF
 
@@ -33,19 +34,19 @@ data RescaleType a where
 rescale :: forall a. Num a  => RescaleType a -> FL.Fold a (a, Double)
 rescale RescaleNone = pure (0,1)
 rescale (RescaleGiven x) = pure x
-rescale (RescaleMean x) = (,) <$> pure 0 <*> (fmap ((/x) . realToFrac) FL.mean)
+rescale (RescaleMean x) = (0,) <$> fmap ((/x) . realToFrac) FL.mean
 rescale (RescaleNormalize x) =
   let folds = (,,) <$> FL.mean <*> FL.std <*> FL.length
       sc (_,sd,n) = if n == 1 then 1 else realToFrac sd
-      g f@(mean, _, _) = (realToFrac mean, (sc f)/x)
+      g f@(mean, _, _) = (realToFrac mean, sc f/x)
   in  g <$> folds
-rescale (RescaleMedian x) = (,) <$> pure 0 <*> (fmap ((/x) . listToMedian) FL.list) where
+rescale (RescaleMedian x) = (0,) <$> fmap ((/x) . listToMedian) FL.list where
   listToMedian unsorted =
     let l = List.sort unsorted
         n = List.length l
     in case n of
       0 -> 1
-      _ -> let middle = n `div` 2 in if (odd n) then realToFrac (l !! middle) else realToFrac (l List.!! middle + l List.!! (middle - 1))/2.0
+      _ -> let middle = n `div` 2 in if odd n then realToFrac (l List.!! middle) else realToFrac (l List.!! middle + l List.!! (middle - 1))/2.0
 
 {-
 wgt :: (Real a, Real w) => (a , w) -> Double
@@ -55,7 +56,7 @@ toDoubles :: (Real a, Real b) => (a, b) -> (Double, Double)
 toDoubles (x, y) = (realToFrac x, realToFrac y)
 
 
-data WestMeanVar = WestMeanVar !Double !Double !Double !Double 
+data WestMeanVar = WestMeanVar !Double !Double !Double !Double
 
 
 weightedRescale :: forall a w. (Real a, RealFrac w)  => RescaleType a -> FL.Fold (a,w) (a, Double)
@@ -73,7 +74,7 @@ weightedRescale (RescaleNormalize rnX) =
         m' = m + ((w/ws') * (x - m))
         s' = s + (w * (x - m) * (x - m'))
       done (WestMeanVar ws _ m s) = (m, sqrt (s/ws))
-  in (\(m,sd) -> (realToFrac m, rnX/sd)) <$> FL.premap toDoubles westMeanVarF
+  in bimap realToFrac (rnX /) <$> FL.premap toDoubles westMeanVarF
 {-
   let folds = (,,,) <$> PF.lmap toDoubles FS.meanWeighted <*> PF.lmap toDoubles FS.std <*> PF.lmap snd FL.sum <*> FL.length
       weightedMean x n tw =realToFrac n * realToFrac x/realToFrac tw
@@ -81,20 +82,20 @@ weightedRescale (RescaleNormalize rnX) =
       f (wm, ws, tw, n) = (weightedMean wm n tw, (weightedSD ws n tw)/s)
   in f <$> folds
 -}
-weightedRescale (RescaleMedian s) = (,) <$> pure 0 <*> (fmap ((/s) . realToFrac . listToMedian) FL.list) where
+weightedRescale (RescaleMedian s) = (0,) <$> fmap ((/s) . realToFrac . listToMedian) FL.list where
   listToMedian :: [(a,w)] -> a
   listToMedian unsorted =
     let l = List.sortBy (compare `on` fst) unsorted
         tw :: w = FL.fold (PF.lmap snd FL.sum) l
-    in case (List.length l) of
+    in case List.length l of
       0 -> 1
       _ -> go 0 l where
-        mw :: Double = (realToFrac tw) / 2
+        mw :: Double = realToFrac tw / 2
         go :: w -> [(a,w)] -> a
         go _ [] = 0 -- this shouldn't happen
         go wgtSoFar ((a,w) : was) = let wgtSoFar' = wgtSoFar + w in if realToFrac wgtSoFar' > mw then a else go wgtSoFar' was
 
-data ScaleAndUnscale a = ScaleAndUnscale { from :: (a -> Double), backTo :: (Double -> a) }
+data ScaleAndUnscale a = ScaleAndUnscale { from :: a -> Double, backTo :: Double -> a }
 
 scaleAndUnscaleHelper :: Real a => (Double -> a) -> ((a, Double), (a,Double)) -> ScaleAndUnscale a
 scaleAndUnscaleHelper toA s = ScaleAndUnscale (csF s) (osF s) where

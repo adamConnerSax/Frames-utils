@@ -38,10 +38,7 @@ import qualified Data.Vinyl.TypeLevel          as V
 import           Data.Profunctor               as PF
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
-import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Vector.Storable          as VS
---import qualified Data.Vector.Unboxed as U
-import           Data.Void                      ( Void )
 
 import qualified MachineLearning               as ML
 import qualified MachineLearning.Regression    as ML
@@ -49,9 +46,7 @@ import qualified Numeric.LinearAlgebra         as LA
 import           Numeric.LinearAlgebra.Data     ( R )
 import qualified Statistics.Types              as S
 
-
 import           GHC.TypeLits                   ( Symbol )
-import           Data.Kind                      ( Type )
 
 type Unweighted = "unweighted" F.:-> Void
 
@@ -196,7 +191,7 @@ prettyPrintRegressionResult
 prettyPrintRegressionResult headerF res cl =
   let yName   = FV.colName @y
       wName   = FV.colName @w
-      xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
+      xNames' = T.pack <$> F.columnHeaders (Proxy :: Proxy (F.Record as))
       xNames  = if withConstant res then "intercept" : xNames' else xNames'
   in  MR.prettyPrintRegressionResult (headerF yName wName)
                                      xNames
@@ -217,7 +212,7 @@ prettyPrintRegressionResultLucid
 prettyPrintRegressionResultLucid headerF res cl =
   let yName   = FV.colName @y
       wName   = FV.colName @w
-      xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
+      xNames' = T.pack <$> F.columnHeaders (Proxy :: Proxy (F.Record as))
       xNames  = if withConstant res then "intercept" : xNames' else xNames'
   in  MR.prettyPrintRegressionResultLucid (headerF yName wName)
                                           xNames
@@ -238,7 +233,7 @@ prettyPrintRegressionResultBlaze
 prettyPrintRegressionResultBlaze headerF res cl =
   let yName   = FV.colName @y
       wName   = FV.colName @w
-      xNames' = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record as))
+      xNames' = T.pack <$> F.columnHeaders (Proxy :: Proxy (F.Record as))
       xNames  = if withConstant res then "intercept" : xNames' else xNames'
   in  MR.prettyPrintRegressionResultBlaze (headerF yName wName)
                                           xNames
@@ -278,16 +273,16 @@ prettyPrintRegressionResults
   -> a
   -> a
 prettyPrintRegressionResults keyText keyed cl printOne sepEach =
-  let headerF res key yName wName = case weightedRegression res of
-        True ->
-          "Explaining "
-            <> yName
-            <> " ("
-            <> keyText key
-            <> "; weights from "
-            <> wName
-            <> ")"
-        False -> "Explaining " <> yName <> " (" <> keyText key <> ")"
+  let headerF res key yName wName = if weightedRegression res
+                                    then
+                                      "Explaining "
+                                        <> yName
+                                        <> " ("
+                                        <> keyText key
+                                        <> "; weights from "
+                                        <> wName
+                                        <> ")"
+                                    else "Explaining " <> yName <> " (" <> keyText key <> ")"
   in  FL.fold
         (FL.Fold (\t (rk, res) -> t <> printOne (headerF res rk) res cl)
                  sepEach
@@ -317,7 +312,7 @@ leastSquaresByMinimization wc guess dat =
       mX1           = if wc then ML.addBiasDimension mX else mX
       (solution, _) = ML.minimize (ML.ConjugateGradientFR 0.1 0.1)
                                   ML.LeastSquares
-                                  (0.001)
+                                  0.001
                                   20
                                   ML.RegNone
                                   mX1
@@ -420,7 +415,7 @@ varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
       vWvar        = LA.cmap (\x -> 1 / sqrt x) vW -- this is the correct weight for given variance
-  FrameWeightedRegressionResult (\x -> 1 / (sqrt $ realToFrac x))
+  FrameWeightedRegressionResult (\x -> 1 / sqrt (realToFrac x))
     <$> MR.weightedLS withConst mA vB vWvar
 
 totalLeastSquares
@@ -515,7 +510,7 @@ varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
       vWvar        = LA.cmap (\x -> 1 / sqrt x) vW -- this is the correct weight for given variance
-  FrameWeightedRegressionResult (\x -> 1 / (sqrt $ realToFrac x))
+  FrameWeightedRegressionResult (\x -> 1 / sqrt (realToFrac x))
     <$> MR.weightedTLS withConst mA vB vWvar
 
 

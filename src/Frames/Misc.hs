@@ -36,9 +36,7 @@ import qualified Control.MapReduce             as MR
 import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as F
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( isJust
-                                                , fromJust
-                                                )
+import           Data.Maybe (fromJust)
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.XRec               as V
@@ -58,7 +56,7 @@ goodDataByKey
        (M.Map (F.Record ks) (Int, Int))
 goodDataByKey =
   let getKey = F.recMaybe . F.rcast @ks
-  in  fmap (F.foldMap id) $ MR.mapReduceFold
+  in  F.foldMap id <$> MR.mapReduceFold
         MR.noUnpack
         (MR.assign (fromJust . getKey) id)
         (MR.Reduce $ \k -> M.singleton k . FL.fold goodDataCount)
@@ -99,7 +97,7 @@ filterOnMaybeField test = maybe False test . V.toHKD . F.rget @k
 -- Sum(intensity(Green)) - Sum(intensity(Red)) + 2 * Avg(intensity(Blue))
 widenAndCalcF :: Ord k
               => (F.Record as -> (k, a))
-              -> (FL.Fold a b)
+              -> FL.Fold a b
               -> (M.Map k b -> Maybe c)
               -> FL.FoldM Maybe (F.Record as) c
 widenAndCalcF toKeyed combineF calc =

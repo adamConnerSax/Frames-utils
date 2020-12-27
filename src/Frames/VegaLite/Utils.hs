@@ -24,7 +24,6 @@ module Frames.VegaLite.Utils
   ) where
 
 import           Data.Fixed             (div', divMod')
-import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Time              as DT
 import qualified Data.Vinyl             as V
@@ -33,7 +32,6 @@ import qualified Frames                 as F
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Control.Foldl          as FL
 import qualified Data.List              as List
-import           Data.Proxy             (Proxy(..))
 
 recordToVLDataRow' :: (V.RMap rs, V.ReifyConstraint ToVLDataValue F.ElField rs, V.RecordToList rs) => F.Record rs -> [(Text, GV.DataValue)]
 recordToVLDataRow' xs = V.recordToList . V.rmap (\(V.Compose (V.Dict x)) -> V.Const $ toVLDataValue x) $ V.reifyConstraint @ToVLDataValue xs

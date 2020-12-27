@@ -1,1 +1,19 @@
-cradle: {cabal: {component: "lib:Frames-utils"}}
+cradle:
+  cabal:
+    - path: "./src"
+      component: "lib:Frames-utils"
+
+    - path: "./examples"
+      component: "Frames-utils:test:FrameRegressions"
+
+    - path: "./examples"
+      component: "Frames-utils:test:MapReduce"
+
+    - path: "./examples"
+      component: "Frames-utils:test:Transforms"
+
+    - path: "./test"
+      component: "Frames-utils:test:test-frames-utils"
+
+    - path: "./bench/BenchAll.hs"
+      component: "Frames-utils:bench:bench-all"

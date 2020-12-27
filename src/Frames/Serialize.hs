@@ -25,20 +25,18 @@ module Frames.Serialize
 where
 
 import qualified Control.Monad.ST as ST
-import           Data.Coerce (coerce)
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V                 
 
 import           Data.Binary                   as B
 import           Data.Binary.Put               as B
 import           Data.Binary.Get               as B
-import Data.Functor.Identity (Identity (..))
 import           Data.Serialize                as S
 import qualified Frames as F
 import qualified Frames.InCore as FI
 import qualified Frames.Streamly.InCore as FS
 
-import           GHC.Generics (Generic,Rep)
+import           GHC.Generics (Rep)
 import           GHC.TypeLits (KnownSymbol)
 
 import qualified Streamly
@@ -90,6 +88,7 @@ instance (V.RMap rs, FI.RecVec rs, RecSerialize rs) => S.Serialize (SFrame (F.Re
   get = sframeGetC
   {-# INLINEABLE get #-}
 
+-- we use only one fold to get the length and build the bytestream
 streamlyPutC :: S.Serialize a => S.Putter (Streamly.SerialT Identity a)
 streamlyPutC s = do
   let lengthF = Streamly.Fold.length
@@ -99,11 +98,12 @@ streamlyPutC s = do
   streamPut
 {-# INLINEABLE streamlyPutC #-}
 
+-- the ST monad is...tricky!  In some sense, is each invocation of @go@ using a "different" s?
 sframeGetC :: forall rs. (FI.RecVec rs, V.RMap rs, RecSerialize rs) => S.Get (SFrameRec rs)
 sframeGetC = go Streamly.nil =<< S.getWord64be where
   go :: (forall s.Streamly.SerialT (ST.ST s) (F.Rec SElField rs)) -> Word64 -> S.Get (SFrameRec rs)
-  go s nLeft =
-    if nLeft == 0
+  go s nLeft = 
+    if nLeft == 0 
     then return $ SFrame $ ST.runST $ FS.inCoreAoS $ Streamly.map fromS s
     else do
       a <- S.get
@@ -117,6 +117,7 @@ instance (V.RMap rs, FI.RecVec rs, RecBinary rs) => B.Binary (SFrame (F.Record r
   get = sframeGetB
   {-# INLINEABLE get #-}
 
+-- we use only one fold to get the length and build the bytestream
 streamlyPutB :: B.Binary a => Streamly.SerialT Identity a -> B.Put
 streamlyPutB s = do
   let lengthF = Streamly.Fold.length

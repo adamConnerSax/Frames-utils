@@ -14,9 +14,7 @@ module Frames.ParseableTypes
   )
 where
 
-import           Control.Monad                  ( msum
-                                                , mzero
-                                                )
+import           Control.Monad                  ( msum)
 import qualified Data.Readable                 as R
 import qualified Data.Serialize                as S
 import           Data.Time.Calendar.Serialize()
@@ -25,21 +23,18 @@ import qualified Data.Text                     as T
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Format              as Time
 import qualified Data.Time.LocalTime           as Time
-import           Data.Typeable                  ( Typeable )
 import qualified Data.Vector                   as V
 import qualified Frames                        as F
 import qualified Frames.ColumnTypeable         as F
 import qualified Frames.InCore                 as F
 import qualified Frames.ShowCSV as F
 
-import           GHC.Generics                   ( Generic )
-
 newtype FrameDay = FrameDay { unFrameDay :: Time.Day } deriving (Show, Eq, Ord, Typeable, Generic)
 
 type instance F.VectorFor FrameDay = V.Vector
 instance F.ShowCSV FrameDay where
   showCSV = T.pack . show . unFrameDay
-  
+
 instance S.Serialize FrameDay where
   put = S.put . Time.toModifiedJulianDay . unFrameDay
   get = FrameDay . Time.ModifiedJulianDay <$> S.get
@@ -55,13 +50,11 @@ instance R.Readable FrameDay where
           [
             Time.parseTimeM True Time.defaultTimeLocale (Time.iso8601DateFormat Nothing) (T.unpack t)
           , Time.parseTimeM True Time.defaultTimeLocale "%0m/%d/%y" (T.unpack t)
-          , Time.parseTimeM True Time.defaultTimeLocale "%0m/%d/%Y" (T.unpack t)            
+          , Time.parseTimeM True Time.defaultTimeLocale "%0m/%d/%Y" (T.unpack t)
           , Time.parseTimeM True Time.defaultTimeLocale "%D" (T.unpack t)
           , Time.parseTimeM True Time.defaultTimeLocale "%F" (T.unpack t)
           ]
-    case parsedM of
-      Just x -> return x
-      Nothing -> mzero --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day")
+    maybe mzero return parsedM --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day")
 
 instance F.Parseable FrameDay where
   parse = fmap F.Definitely . R.fromText
@@ -79,9 +72,7 @@ instance R.Readable FrameLocalTime where
          [
            Time.parseTimeM False Time.defaultTimeLocale "%c" (T.unpack t)
          ]
-   case parsedM of
-     Just x -> return x
-     Nothing -> mzero --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime")
+   maybe mzero return parsedM --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime")
 
 instance F.Parseable FrameLocalTime where
   parse = fmap F.Definitely . R.fromText

@@ -1,13 +1,10 @@
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE TypeFamilies              #-}
@@ -62,12 +59,9 @@ import qualified Knit.Effect.Logger            as Log
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as List
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( catMaybes )
-import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.Curry              as V
---import qualified Data.Vinyl.Functor            as V
 import qualified Data.Vinyl.TypeLevel          as V
 import           Frames                         ( (&:) )
 import qualified Frames                        as F
@@ -95,7 +89,7 @@ forgyCentroids
 forgyCentroids n dataRows = MK.forgyCentroids n $ fmap toDblVec dataRows
  where
   toDblVec r = U.fromList
-    [(realToFrac $ F.rgetField @x r), (realToFrac $ F.rgetField @y r)]
+    [realToFrac $ F.rgetField @x r, realToFrac $ F.rgetField @y r]
 
 
 -- partition the initial points into n clusters and then take the centroid of each
@@ -184,18 +178,18 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
           dataRows
         scaledRows = fmap
           (V.runcurryX
-            (\x y w -> (MR.from sunX) x &: (MR.from sunY) y &: w &: V.RNil)
+            (\x y w -> MR.from sunX x &: MR.from sunY y &: w &: V.RNil)
           )
           dataRows
     initial <- makeInitial numClusters scaledRows
-    let initialCentroids = Centroids $ V.fromList $ initial
+    let initialCentroids = Centroids $ V.fromList initial
     (Clusters clusters) <-
       fst <$> MK.weightedKMeans initialCentroids weighted distance scaledRows
-    let fix :: (U.Vector Double, V.Snd w) -> (V.Snd x, V.Snd y, V.Snd w)
-        fix (v, wgt) =
-          ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
+    let toTuple :: (U.Vector Double, V.Snd w) -> (V.Snd x, V.Snd y, V.Snd w)
+        toTuple (v, wgt) =
+          (MR.backTo sunX (v U.! 0), MR.backTo sunY (v U.! 1), wgt)
     return $ catMaybes $ V.toList $ fmap
-      (fmap fix . MK.centroid weighted . members)
+      (fmap toTuple . MK.centroid weighted . members)
       clusters -- we drop empty clusters ??
 
 kMeansOneWithClusters
@@ -259,15 +253,15 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted dis
     tries <- mapM (\cs -> MK.weightedKMeans cs weighted distance plusScaled)
                   initials -- here we can't
     let costs = fmap (MK.kMeansCostWeighted distance weighted . fst) tries
-    Log.logLE Log.Diagnostic $ "Costs: " <> (T.pack $ show costs)
+    Log.logLE Log.Diagnostic $ "Costs: " <> show costs
     let
-      (Clusters clusters, iters) = tries V.! (V.minIndex costs)
-      fix :: (U.Vector Double, V.Snd w) -> (V.Snd x, V.Snd y, V.Snd w)
-      fix (v, wgt) =
-        ((MR.backTo sunX) (v U.! 0), (MR.backTo sunY) (v U.! 1), wgt)
+      (Clusters clusters, iters) = tries V.! V.minIndex costs
+      toTuple :: (U.Vector Double, V.Snd w) -> (V.Snd x, V.Snd y, V.Snd w)
+      toTuple (v, wgt) =
+        (MR.backTo sunX (v U.! 0), MR.backTo sunY (v U.! 1), wgt)
       clusterOut (Cluster m) = case List.length m of
         0 -> Nothing
-        _ -> fmap (, fmap (F.rcast @rs) m) (fix <$> MK.centroid weighted m)
+        _ -> fmap (, fmap (F.rcast @rs) m) (toTuple <$> MK.centroid weighted m)
       allClusters = V.toList $ fmap clusterOut clusters
     let result       = catMaybes allClusters
         nullClusters = List.length allClusters - List.length result
@@ -275,7 +269,7 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted dis
       $  "Required "
       <> (T.pack $ show iters)
       <> " iterations to converge."
-    if (nullClusters > 0)
+    if nullClusters > 0
       then
         Log.logLE Log.Warning
         $  (T.pack $ show nullClusters)
@@ -380,20 +374,20 @@ clusteredRows labelF m
         -> Int
         -> (V.Snd x, V.Snd y, V.Snd w)
         -> ClusteredRow ks x y w
-      doCentroid k cId xyw = k F.<+> (idAndLabel True cId "") F.<+> makeXYW xyw
+      doCentroid k cId xyw = k F.<+> idAndLabel True cId "" F.<+> makeXYW xyw
       doClusteredRow
         :: F.Record ks -> Int -> F.Record rs -> ClusteredRow ks x y w
       doClusteredRow k cId xs =
         k
-          F.<+> (idAndLabel False cId (labelF xs))
-          F.<+> (F.rcast @'[x, y, w] xs)
+          F.<+> idAndLabel False cId (labelF xs)
+          F.<+> F.rcast @'[x, y, w] xs
       doCluster
         :: Int
         -> F.Record ks
         -> ((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])
         -> [ClusteredRow ks x y w]
       doCluster cId k (ctrd, rows) =
-        doCentroid k cId ctrd : (fmap (doClusteredRow k cId) rows)
+        doCentroid k cId ctrd : fmap (doClusteredRow k cId) rows
       doListOfClusters
         :: F.Record ks
         -> [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
@@ -403,7 +397,7 @@ clusteredRows labelF m
           $ fmap (\(cId, cluster) -> doCluster cId k cluster)
           $ List.zip [1 ..] l
     in
-      List.concat $ fmap (\(k, loc) -> doListOfClusters k loc) $ M.toList m
+      List.concat $ uncurry doListOfClusters <$> M.toList m
 
 
 clusteredRowsFull
@@ -432,14 +426,14 @@ clusteredRowsFull labelF m
         in k F.<+> cIdRec F.<+> makeXYW xyw
       doClusteredRow
         :: F.Record ks -> Int -> F.Record rs -> F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)
-      doClusteredRow k cId xs = (k F.<+> (idAndLabelRow cId (labelF xs))) F.<+> xs
+      doClusteredRow k cId xs = (k F.<+> idAndLabelRow cId (labelF xs)) F.<+> xs
       doCluster
         :: Int
         -> F.Record ks
         -> ((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])
         -> ([F.Record (ks V.++ [ClusterId, x, y, w])], [F.Record (ks V.++ '[ClusterId, MarkLabel] V.++ rs)])
       doCluster cId k (ctrd, rows) =
-        (pure @[] $ doCentroid k cId ctrd, (fmap (doClusteredRow k cId) rows))
+        (pure @[] $ doCentroid k cId ctrd, fmap (doClusteredRow k cId) rows)
       doListOfClusters
         :: F.Record ks
         -> [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
@@ -454,6 +448,6 @@ clusteredRowsFull labelF m
           $ fmap (\(cId, cluster) -> doCluster cId k cluster)
           $ List.zip [1 ..] l
     in
-      crConcat $ fmap (\(k, loc) -> doListOfClusters k loc) $ M.toList m
+      crConcat $ uncurry doListOfClusters <$> M.toList m
 
 

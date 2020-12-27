@@ -30,8 +30,6 @@ import qualified Frames.Regression as FR
 import qualified Math.Regression.Regression as RE 
 
 import qualified Control.Foldl          as FL
-import           Data.Maybe (fromMaybe)
-import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Vinyl             as V
 import qualified Data.Vinyl.Functor     as V
@@ -79,11 +77,11 @@ regressionCoefficientPlotFlex haveLegend printKey title names results cl =
       addKey k l = ("Key", GV.Str $ printKey k) : l
       dataRowFold = FL.Fold (\(l,n) (k,regRes) -> (l ++ fmap (flip GV.dataRow [] . addKey k . toRow n) (RE.namedEstimates names regRes cl), n+1)) ([],0) (GV.dataFromRows [] . List.concat . fst)
       dat = FL.fold dataRowFold results
-      xLabel = "Estimate (with " <> (T.pack $ printf "%2.0f" (100 * S.confidenceLevel cl)) <> "% confidence error bars)"
+      xLabel = "Estimate (with " <> T.pack (printf "%2.0f" (100 * S.confidenceLevel cl)) <> "% confidence error bars)"
       estimateXEnc = GV.position GV.X [GV.PName "Estimate", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]]
       estimateYEnc = GV.position GV.Y [GV.PName "Parameter", GV.PmType GV.Ordinal]
-      handleLegend l = if haveLegend then l else (GV.MLegend []) : l
-      estimateColorEnc = GV.color $ handleLegend $ [GV.MName "Key", GV.MmType GV.Nominal]
+      handleLegend l = if haveLegend then l else GV.MLegend [] : l
+      estimateColorEnc = GV.color $ handleLegend  [GV.MName "Key", GV.MmType GV.Nominal]
       estimateEnc = estimateXEnc . estimateYEnc . estimateColorEnc
       estLoCalc = "datum.Estimate - datum.Confidence/2"
       estHiCalc = "datum.Estimate + datum.Confidence/2"
@@ -304,8 +302,8 @@ scatterWithFitSpec' axisLabelsM fitLbl dat =
               . GV.calculateAs (yLoCalc (FV.colName @fy) (FV.colName @fye)) "fyLo"
               . GV.calculateAs (yHiCalc (FV.colName @fy) (FV.colName @fye)) "fyHi"
               . GV.calculateAs ("\"" <> fitLbl <> "\"")  "fitLabel"
-      xLabel = fromMaybe (FV.colName @x) (fst <$> axisLabelsM)
-      yLabel = fromMaybe (FV.colName @y) (snd <$> axisLabelsM)
+      xLabel = maybe (FV.colName @x) fst axisLabelsM
+      yLabel = maybe (FV.colName @y) snd axisLabelsM
       xEnc = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]]
       yEnc = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle yLabel]]
       yLEnc = GV.position GV.Y [GV.PName "yLo", GV.PmType GV.Quantitative]

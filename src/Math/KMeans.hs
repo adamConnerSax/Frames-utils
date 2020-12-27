@@ -43,17 +43,15 @@ import qualified Knit.Effect.Logger            as Log
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as Foldable
-import           Data.Function                  ( on )
 import qualified Data.List                     as List
-import           Data.Maybe                     ( catMaybes
-                                                , fromMaybe
-                                                )
 import           Data.Random                   as R
 import qualified Data.Random.Distribution.Categorical
                                                as R
 
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Unboxed           as U
+import Data.List.NonEmpty ((<|))
+--import qualified Relude as Control.Monad
 
 
 -- k-means
@@ -85,7 +83,7 @@ weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
     clusters0 = Clusters
       ( V.fromList
       $ Cluster (Foldable.toList as)
-      : (List.replicate (k - 1) emptyCluster)
+      : List.replicate (k - 1) emptyCluster
       )
     nearest :: Centroids -> a -> Int -- compute the nearest centroid to a and return the index to it in the Vector (centers cs)
     nearest cs a =
@@ -103,14 +101,14 @@ weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
       in  FL.fold (FL.Fold doOneCluster [] repackage) oldCs
     newCentroids :: Clusters a -> Centroids
     newCentroids (Clusters cs) =
-      Centroids $ (V.mapMaybe (fmap fst . centroid weighted . members) cs)
+      Centroids $ V.mapMaybe (fmap fst . centroid weighted . members) cs
     go n oldClusters newClusters = do
 --        let centroids' = newCentroids newClusters
 --        Log.log Log.Diagnositc $ T.pack $ "centroids=" ++ show centroids'
-      case (oldClusters == newClusters) of
-        True  -> return $ (newClusters, n)
-        False -> go (n + 1) newClusters
-          $ updateClusters (newCentroids newClusters) newClusters
+      if oldClusters == newClusters
+        then return (newClusters, n)
+        else go (n + 1) newClusters
+             $ updateClusters (newCentroids newClusters) newClusters
 --  Log.log Log.Diagnostic $ T.pack $ "centroids0=" ++ show initial
   go 0 clusters0 (updateClusters initial clusters0)
 
@@ -129,10 +127,10 @@ forgyCentroids m dataRows = do
       foldsAt :: Int -> FL.Fold (U.Vector Double) (Double, Double)
       foldsAt l = FL.premap (U.! l) $ (,) <$> FL.mean <*> FL.std
       folds :: FL.Fold (U.Vector Double) [(Double, Double)] =
-        sequenceA $ fmap foldsAt [0 .. (n - 1)]
+        traverse foldsAt [0 .. (n - 1)]
       stats   = FL.fold folds dataRows
-      distVec = U.fromList <$> traverse (\(mean, sd) -> R.normal mean sd) stats
-  R.sample $ mapM (const distVec) $ replicate m ()
+      distVec = U.fromList <$> traverse (uncurry normal) stats
+  R.sample $ replicateM m distVec
 
 unweightedVec :: Int -> Weighted (U.Vector Double) Double
 unweightedVec n = Weighted n id (const 1)
@@ -140,7 +138,7 @@ unweightedVec n = Weighted n id (const 1)
 partitionCentroids
   :: (Real w, Foldable f) => Weighted a w -> Int -> f a -> [U.Vector Double]
 partitionCentroids weighted k dataRows =
-  fmap fst $ catMaybes $ fmap (centroid weighted) $ go vs
+  fmap fst $ catMaybes $ centroid weighted <$> go vs
  where
   go l = case List.splitAt n l of
     (vs', [] ) -> [vs']
@@ -163,25 +161,27 @@ kMeansPPCentroids
   -> m [U.Vector Double]
 kMeansPPCentroids distF k dataRows = R.sample $ do
   let pts = FL.fold FL.list dataRows -- is this the best structure here?
-      shortestToAny :: [U.Vector Double] -> U.Vector Double -> Double
-      shortestToAny cs c = minimum $ fmap (distF c) cs
-      minDists :: [U.Vector Double] -> [Double]
+      neMinimum :: Ord a => NonEmpty a -> a
+      neMinimum nel = foldl' (\m x -> if x < m then x else m) (head nel) (tail nel)
+      shortestToAny :: NonEmpty (U.Vector Double) -> U.Vector Double -> Double
+      shortestToAny cs c = neMinimum $ fmap (distF c) cs
+      minDists :: NonEmpty (U.Vector Double) -> [Double]
       minDists cs = fmap (shortestToAny cs) pts -- shortest distance to any of the cs
-      probs :: [U.Vector Double] -> [Double]
+      probs :: NonEmpty (U.Vector Double) -> [Double]
       probs cs =
         let dists = minDists cs
             s     = FL.fold FL.sum dists -- can this be 0?  If m inputs overlap and we want >= k-m centers
         in  fmap (/ s) dists
-      distributionNew :: [U.Vector Double] -> R.RVar (U.Vector Double)
+      distributionNew :: NonEmpty (U.Vector Double) -> R.RVar (U.Vector Double)
       distributionNew cs = R.categorical $ List.zip (probs cs) pts
-      go :: [U.Vector Double] -> R.RVar [U.Vector Double]
-      go cs = if List.length cs == k
-        then return cs
+      go :: NonEmpty (U.Vector Double) -> R.RVar [U.Vector Double]
+      go cs = if length cs == k
+        then return $ toList cs
         else do
           newC <- distributionNew cs
-          go (newC : cs)
+          go (newC <| cs)
   firstIndex <- R.uniform 0 (List.length pts - 1)
-  go [pts List.!! firstIndex]
+  go $ one $ pts List.!! firstIndex
 
 
 kMeansCostWeighted
@@ -190,7 +190,7 @@ kMeansCostWeighted distF weighted (Clusters cs) =
   let clusterCost (Cluster m) =
         let cm = centroid weighted m
             f c x =
-              (realToFrac $ weight weighted x) * distF c (location weighted x)
+              realToFrac (weight weighted x) * distF c (location weighted x)
         in  case cm of
               Nothing -> 0
               Just c  -> FL.fold (FL.premap (f (fst c)) FL.sum) m
@@ -207,11 +207,11 @@ centroid weighted as
   = let
       addOne :: (U.Vector Double, w) -> a -> (U.Vector Double, w)
       addOne (sumV, sumW) x =
-        let w = weight weighted $ x
-            v = location weighted $ x
-        in  (U.zipWith (+) sumV (U.map (* (realToFrac w)) v), sumW + w)
-      finishOne (sumV, sumW) = if (sumW > 0)
-        then Just (U.map (/ (realToFrac sumW)) sumV, sumW)
+        let w = weight weighted x
+            v = location weighted x
+        in  (U.zipWith (+) sumV (U.map (* realToFrac w) v), sumW + w)
+      finishOne (sumV, sumW) = if sumW > 0
+        then Just (U.map (/ realToFrac sumW) sumV, sumW)
         else Nothing
     in
       FL.fold

@@ -26,8 +26,6 @@ import qualified Frames.VegaLite.Utils         as FV
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as List
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromMaybe )
-import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Vector                   as VB
 import qualified Data.Vector.Unboxed           as VU
@@ -73,14 +71,14 @@ singleHistogram title yLabelM nBins minM maxM addOutOfRange rows
       vecX            = FL.fold
         (FL.premap (realToFrac . F.rgetField @x) (FL.vector @VU.Vector))
         rows
-      minVal = fromMaybe (VU.minimum vecX) (fmap realToFrac minM)
-      maxVal = fromMaybe (VU.maximum vecX) (fmap realToFrac maxM)
+      minVal = maybe (VU.minimum vecX) realToFrac minM
+      maxVal = maybe (VU.maximum vecX) realToFrac maxM
       bins   = H.binD minVal nBins maxVal
       hVec   = makeHistogram addOutOfRange bins vecX
       toVLRow (bv, ct) =
         GV.dataRow [(xLabel, GV.Number bv), ("count", GV.Number ct)] []
       dat =
-        GV.dataFromRows [] $ List.concat $ VB.toList $ fmap toVLRow $ VB.convert
+        GV.dataFromRows [] $ List.concat $ VB.toList $ toVLRow <$> VB.convert
           hVec
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position
@@ -127,14 +125,14 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows
       width :: Int = 800 -- I need to make this settable, obv
       allXF = FL.premap (realToFrac . F.rgetField @x) (FL.vector @VB.Vector)
       mapByCF =
-        let ff m r = M.insertWith (\xs ys -> xs ++ ys)
+        let ff m r = M.insertWith (++)
                                   (F.rgetField @c r)
                                   (pure $ realToFrac $ F.rgetField @x r)
                                   m -- FIX ++.  Ugh.
         in  FL.Fold ff M.empty (fmap VU.fromList)
       (vecAllX, mapByC) = FL.fold ((,) <$> allXF <*> mapByCF) rows
-      minVal            = fromMaybe (VB.minimum vecAllX) (fmap realToFrac minM)
-      maxVal            = fromMaybe (VB.maximum vecAllX) (fmap realToFrac maxM)
+      minVal            = maybe (VB.minimum vecAllX) realToFrac minM
+      maxVal            = maybe (VB.maximum vecAllX) realToFrac maxM
       bins              = H.binD minVal nBins maxVal
       makeRow k (bv, ct) = GV.dataRow
         [ (xLabel , GV.Number bv)
@@ -144,8 +142,8 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows
         []
       makeRowsForOne (c, v) =
         let binned = makeHistogram addOutOfRange bins v
-        in  List.concat $ VB.toList $ fmap (makeRow c) $ VB.convert binned
-      dat = GV.dataFromRows [] $ List.concat $ fmap makeRowsForOne $ M.toList
+        in  List.concat $ VB.toList $ makeRow c <$> VB.convert binned
+      dat = GV.dataFromRows [] $ List.concat $ makeRowsForOne <$> M.toList
         mapByC
       encY = GV.position
         GV.Y
@@ -182,14 +180,14 @@ makeHistogram
 makeHistogram addOutOfRange bins vecX =
   let histo =
         H.fillBuilder (H.mkSimple bins)
-          $ ((VB.convert vecX) :: VB.Vector Double)
+        (VB.convert vecX :: VB.Vector Double)
       hVec              = H.asVector histo
       minIndex          = 0
       maxIndex          = VU.length hVec - 1
       (minBV, minCount) = hVec VU.! minIndex
       (maxBV, maxCount) = hVec VU.! maxIndex
-      newMin            = (minBV, minCount + (fromMaybe 0 $ H.underflows histo))
-      newMax            = (maxBV, maxCount + (fromMaybe 0 $ H.overflows histo))
+      newMin            = (minBV, minCount + fromMaybe 0 (H.underflows histo))
+      newMax            = (maxBV, maxCount + fromMaybe 0 (H.overflows histo))
   in  if addOutOfRange
         then hVec VU.// [(minIndex, newMin), (maxIndex, newMax)]
         else hVec

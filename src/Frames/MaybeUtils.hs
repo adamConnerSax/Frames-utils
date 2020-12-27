@@ -20,28 +20,15 @@ import qualified Frames.CSV                    as F
 import qualified Frames.ShowCSV                as F
 import qualified Frames.Melt                   as F
 import qualified Control.Foldl                 as FL
-import           Control.Monad                  ( join )
---import           Control.Lens                   ( (%~) )
 import qualified Pipes                         as P
 import qualified Data.Vinyl                    as V
---import qualified Data.Vinyl.Derived            as V
 import qualified Data.Vinyl.TypeLevel          as V
---import qualified Data.Vinyl.Class.Method       as V
---import qualified Data.Vinyl.Core               as V
---import qualified Data.Vinyl.XRec               as V
 import           Frames.InCore                  ( RecVec )
---import           Data.Vinyl.Curry               ( runcurryX )
 import qualified Data.Vinyl.Functor            as V
-import           Data.Proxy                     ( Proxy(..) )
-import           Data.Maybe                     ( fromMaybe
-                                                , fromJust
-                                                , isNothing
-                                                , catMaybes
-                                                )
+import           Data.Maybe                     ( fromJust)
 import qualified Data.Map                      as M
 import           Data.Discrimination            ( Grouping )
 import qualified Data.Text                     as T
-import           Data.Kind                      ( Type )
 import           GHC.TypeLits                   ( Symbol
                                                 , KnownSymbol
                                                 , symbolVal
@@ -53,7 +40,7 @@ type MaybeRow r = MaybeCols (F.RecordColumns r)
 
 -- TBD: This should be an argument to produceCSV_Maybe and writeCSV_Maybe.
 instance F.ShowCSV a => F.ShowCSV (Maybe a) where
-  showCSV = fromMaybe "NA" . fmap F.showCSV
+  showCSV = maybe "NA" F.showCSV
 
 type AddMaybe rs = V.MapTyCon Maybe rs
 
@@ -89,7 +76,7 @@ unMaybeKeys
      )
   => Proxy ks
   -> F.Rec (Maybe F.:. F.ElField) rs
-  -> F.Record (ks V.++ (AddMaybe as))
+  -> F.Record (ks V.++ AddMaybe as)
 unMaybeKeys _ mr =
   let keys      = fromJust $ F.recMaybe $ F.rcast @ks mr
       remainder = V.rsequenceInFields $ F.rcast @as mr
@@ -99,7 +86,7 @@ joinMaybeOne
   :: KnownSymbol s
   => (Maybe :. V.ElField) '(s, Maybe a)
   -> (Maybe :. V.ElField) '(s,a)
-joinMaybeOne = V.Compose . fmap V.Field . join . fmap V.getField . V.getCompose
+joinMaybeOne = V.Compose . fmap V.Field . (V.getField =<<) . V.getCompose
 
 class JoinMaybe rs where
   joinMaybe :: V.Rec (Maybe V.:. F.ElField) (AddMaybe rs) -> V.Rec (Maybe V.:. F.ElField) rs
@@ -198,7 +185,7 @@ leftJoinMaybe proxy_keys lf rf =
         -> V.Rec (Maybe :. F.ElField) fs
       ljKeys = F.rcast @fs
       ljRemainder
-        :: V.Rec (Maybe :. F.ElField) (fs V.++ (AddMaybe (rs' V.++ rs2')))
+        :: V.Rec (Maybe :. F.ElField) (fs V.++ AddMaybe (rs' V.++ rs2'))
         -> V.Rec (Maybe :. F.ElField) (AddMaybe (rs' V.++ rs2'))
       ljRemainder = F.rcast
       ljCollectMaybes
@@ -208,7 +195,7 @@ leftJoinMaybe proxy_keys lf rf =
       ljNewRow
         :: V.Rec (Maybe :. F.ElField) (fs V.++ AddMaybe (rs' V.++ rs2'))
         -> V.Rec (Maybe :. F.ElField) (fs V.++ (rs' V.++ rs2'))
-      ljNewRow x = (ljKeys x) `V.rappend` (ljCollectMaybes . ljRemainder $ x)
+      ljNewRow x = ljKeys x `V.rappend` (ljCollectMaybes . ljRemainder $ x)
   in  fmap ljNewRow lj
 
 

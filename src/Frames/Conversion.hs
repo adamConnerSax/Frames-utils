@@ -1,8 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
---{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs #-}
---{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -14,9 +12,9 @@ module Frames.Conversion
   , toListVia
   , mkConverter
   ) where
-
+import Prelude hiding (toList)
 import qualified Data.Vinyl           as V
-import           Data.Vinyl.Functor   (Identity(..), Const(..))
+--import           Data.Vinyl.Functor   (Identity(..), Const(..))
 import qualified Data.Vinyl.Functor as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames               as F
@@ -24,11 +22,11 @@ import qualified Frames               as F
 
 -- | convert a subset of fields, all of type a, to a list
 toList :: forall a as rs. (V.RecordToList (V.Unlabeled as)
-          , V.RecMapMethod ((~) a) Identity (V.Unlabeled as)
+          , V.RecMapMethod ((~) a) V.Identity (V.Unlabeled as)
           , F.StripFieldNames as
           , as F.⊆ rs)
   => F.Rec F.ElField rs -> [a] --(F.RecordToList as, ) => F.Record F.ElField as -> [a]
-toList = V.recordToList . V.rmapMethod @((~) a) (Const . getIdentity) . V.stripNames . F.rcast @as
+toList = V.recordToList . V.rmapMethod @((~) a) (V.Const . V.getIdentity) . V.stripNames . F.rcast @as
 
 
 type ToTypeRecF a = V.Lift (->) V.ElField (V.Const a)

@@ -15,9 +15,7 @@ import qualified Lucid.Colonnade      as LC
 import qualified Text.Blaze.Colonnade as BC
 import qualified Lucid                as LH
 import qualified Text.Blaze.Html      as BH
---import           Data.Monoid          (mempty, mconcat, (<>))
 import           Data.Profunctor      (lmap)
-import           Data.Proxy           (Proxy (..))
 import qualified Data.Text            as T
 import qualified Data.Vinyl           as V
 import qualified Data.Vinyl.TypeLevel as V

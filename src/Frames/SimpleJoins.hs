@@ -17,7 +17,7 @@ module Frames.SimpleJoins
   , leftJoinM
   , leftJoinE
   , leftJoinWithMissing
-  , CanLeftJoinM 
+  , CanLeftJoinM
   , leftJoinM3
   , leftJoinE3
   , leftJoin3WithMissing
@@ -29,7 +29,7 @@ import qualified Control.Foldl as FL
 import qualified Data.Vinyl           as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
 import qualified Data.Map as M
-import           Data.Maybe (isNothing, catMaybes, fromJust) -- don't love fromJust here
+import           Data.Maybe (fromJust) -- don't love fromJust here
 import qualified Frames               as F
 import qualified Frames.InCore as FI
 import qualified Frames.Melt as F
@@ -41,20 +41,20 @@ appendFromKeyed
   :: forall jc ac lc rc. (jc F.⊆ lc, ac F.⊆ lc, jc F.⊆ rc, Ord (F.Record jc), FI.RecVec (rc V.++ ac))
   => F.FrameRec lc -> F.FrameRec rc ->  Either (F.Record jc) (F.FrameRec (rc V.++ ac))
 appendFromKeyed source appendTo = do
-  let m = FL.fold (FL.premap (\r -> (F.rcast @jc r, F.rcast @ac r)) FL.map) source      
+  let m = FL.fold (FL.premap (\r -> (F.rcast @jc r, F.rcast @ac r)) FL.map) source
       g r =
         let kr = F.rcast @jc r
-        in maybe (Left kr) (Right . V.rappend r) $ M.lookup kr m 
+        in maybe (Left kr) (Right . V.rappend r) $ M.lookup kr m
   F.toFrame <$> traverse g (FL.fold FL.list appendTo)
 
 
-type CanLeftJoinM ks as bs = (FI.RecVec (as V.++ (F.RDeleteAll ks bs))
+type CanLeftJoinM ks as bs = (FI.RecVec (as V.++ F.RDeleteAll ks bs)
                              , ks F.⊆ as
                              , ks F.⊆ bs
-                             , as F.⊆ (as V.++ (F.RDeleteAll ks bs))
-                             , (F.RDeleteAll ks bs) F.⊆ bs
+                             , as F.⊆ (as V.++ F.RDeleteAll ks bs)
+                             , F.RDeleteAll ks bs F.⊆ bs
                              , V.RMap as
-                             , V.RMap (as V.++ (F.RDeleteAll ks bs))
+                             , V.RMap (as V.++ F.RDeleteAll ks bs)
                              , V.RecApplicative (F.RDeleteAll ks bs)
                              , G.Grouping (F.Record ks)
                              , FI.RecVec as
@@ -65,8 +65,8 @@ leftJoinM
   :: forall ks as bs. CanLeftJoinM ks as bs
   => F.FrameRec as
   -> F.FrameRec bs
-  -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs)))
-leftJoinM fa fb = fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fa fb
+  -> Maybe (F.FrameRec (as V.++ F.RDeleteAll ks bs))
+leftJoinM fa fb = fmap F.toFrame $ sequence $ F.recMaybe <$> F.leftJoin @ks fa fb
 
 
 -- TODO: There seem to be circumstances where the sequence returns Nothing but the list of missing is empty??
@@ -74,11 +74,11 @@ leftJoinM fa fb = fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks f
 leftJoinWithMissing
   :: forall ks as bs.
   (CanLeftJoinM ks as bs
-  , ks F.⊆ (as V.++ (F.RDeleteAll ks bs))
+  , ks F.⊆ (as V.++ F.RDeleteAll ks bs)
   )
   => F.FrameRec as
   -> F.FrameRec bs
-  -> (F.FrameRec (as V.++ (F.RDeleteAll ks bs)), [F.Record ks])
+  -> (F.FrameRec (as V.++ F.RDeleteAll ks bs), [F.Record ks])
 leftJoinWithMissing  fa fb =
   let x = F.leftJoin @ks fa fb
       y = fmap F.recMaybe x
@@ -99,37 +99,37 @@ leftJoinE fa fb =
       y = fmap F.recMaybe x
   in case sequence y of
     Just z -> Right $ F.toFrame z
-    Nothing -> Left $ fmap (F.rcast @ks . fst) . filter (\(_, z) -> isNothing z) $ zip (FL.fold FL.list fa) y 
+    Nothing -> Left $ fmap (F.rcast @ks . fst) . filter (\(_, z) -> isNothing z) $ zip (FL.fold FL.list fa) y
 
 
-type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ (F.RDeleteAll ks bs))
+type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ F.RDeleteAll ks bs)
                                  , ks F.⊆ as
                                  , ks F.⊆ bs
-                                 , as F.⊆ (as V.++ (F.RDeleteAll ks bs))
-                                 , (F.RDeleteAll ks bs) F.⊆ bs
+                                 , as F.⊆ (as V.++ F.RDeleteAll ks bs)
+                                 , F.RDeleteAll ks bs F.⊆ bs
                                  , V.RMap as
-                                 , V.RMap (as V.++ (F.RDeleteAll ks bs))
+                                 , V.RMap (as V.++ F.RDeleteAll ks bs)
                                  , V.RecApplicative (F.RDeleteAll ks bs)
                                  , G.Grouping (F.Record ks)
                                  , FI.RecVec as
                                  , FI.RecVec (F.RDeleteAll ks bs)
                                  , FI.RecVec ((as V.++ F.RDeleteAll ks bs) V.++ F.RDeleteAll ks cs)
-                                 , ks F.⊆ (as V.++ (F.RDeleteAll ks bs))
+                                 , ks F.⊆ (as V.++ F.RDeleteAll ks bs)
                                  , ks F.⊆ cs
-                                 , (as V.++ F.RDeleteAll ks bs) F.⊆ (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))                            
-                                 , (F.RDeleteAll ks cs) F.⊆ cs
-                                 , V.RMap (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))
+                                 , (as V.++ F.RDeleteAll ks bs) F.⊆ (as V.++ F.RDeleteAll ks bs V.++ F.RDeleteAll ks cs)
+                                 , F.RDeleteAll ks cs F.⊆ cs
+                                 , V.RMap (as V.++ F.RDeleteAll ks bs V.++ F.RDeleteAll ks cs)
                                  , V.RecApplicative (F.RDeleteAll ks cs)
                                  , FI.RecVec (F.RDeleteAll ks cs)
                                  )
-  
+
 -- I've found this useful 
 leftJoinM3
-  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
+  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
-  -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
+  -> Maybe (F.FrameRec (as V.++ F.RDeleteAll ks bs V.++ F.RDeleteAll ks cs))
 leftJoinM3 fa fb fc = do
   fab <-  leftJoinM @ks fa fb
   leftJoinM @ks fab fc
@@ -158,11 +158,11 @@ leftJoin3WithMissing fa fb fc =
   in (j2, m1, m2)
 
 leftJoinE3
-  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs  
+  :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
-  -> Either (MissingKeys ks) (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
+  -> Either (MissingKeys ks) (F.FrameRec (as V.++ F.RDeleteAll ks bs V.++ F.RDeleteAll ks cs))
 leftJoinE3 fa fb fc = do
   let fjE = leftJoinE @ks fa fb
   fromEithers $ fmap (\fj -> leftJoinE @ks fj fc) fjE
