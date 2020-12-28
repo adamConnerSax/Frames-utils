@@ -41,7 +41,7 @@ recordToVLDataRow r = GV.dataRow (recordToVLDataRow' r) []
 
 recordsToVLData :: ({-as V.⊆ rs,-} V.RMap as, V.ReifyConstraint ToVLDataValue F.ElField as, V.RecordToList as, Foldable f)
                     => (F.Record rs -> F.Record as) -> f (F.Record rs) -> GV.Data
-recordsToVLData transform xs = GV.dataFromRows [] $ List.concat $ fmap (recordToVLDataRow . transform) $ FL.fold FL.list xs
+recordsToVLData transform xs = GV.dataFromRows [] $ List.concat $ recordToVLDataRow . transform <$> FL.fold FL.list xs
 
 colName :: forall x. (F.ColumnHeaders '[x]) => Text
 colName = List.head $ colNames @'[x] --T.pack $ List.head $ F.columnHeaders (Proxy :: Proxy (F.Record '[x]))
@@ -125,7 +125,7 @@ vegaLiteMonth 9  = GV.Sep
 vegaLiteMonth 10 = GV.Oct
 vegaLiteMonth 11 = GV.Nov
 vegaLiteMonth 12 = GV.Dec
-vegaLiteMonth _  = undefined
+vegaLiteMonth _  = error "argument to vegaLiteMonth was not in [1,12]"
 
 {-
 --this is what we should do once we can use time >= 1.9
@@ -147,14 +147,14 @@ vegaLiteDay 4 = GV.Thu
 vegaLiteDay 5 = GV.Fri
 vegaLiteDay 6 = GV.Sat
 vegaLiteDay 7 = GV.Mon
-vegaLiteDay _ = undefined
+vegaLiteDay _ = error "argument to vegaLiteDay was not in [1,7]"
 
 vegaLiteDate :: DT.Day -> [GV.DateTime]
 vegaLiteDate x = let (y,m,d) = DT.toGregorian x in [GV.DTYear (fromIntegral y), GV.DTMonth (vegaLiteMonth m), GV.DTDay (vegaLiteDay d)]
 
 vegaLiteTime :: DT.TimeOfDay -> [GV.DateTime]
 vegaLiteTime x =
-  let (sec, remainder) = (DT.todSec x) `divMod'` 1
+  let (sec, remainder) = DT.todSec x `divMod'` 1
       ms = (1000 * remainder) `div'` 1
   in [GV.DTHours (DT.todHour x), GV.DTMinutes (DT.todMin x), GV.DTSeconds sec, GV.DTMilliseconds ms]
 

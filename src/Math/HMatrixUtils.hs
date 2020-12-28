@@ -32,7 +32,7 @@ checkEqualVectors
   -> Vector R
   -> Vector R
   -> K.Sem effs ()
-checkEqualVectors nA nB vA vB = if (LA.size vA == LA.size vB)
+checkEqualVectors nA nB vA vB = if LA.size vA == LA.size vB
   then return ()
   else
     KL.logLE KL.Error
@@ -52,7 +52,7 @@ checkMatrixVector
   -> Matrix R
   -> Vector R
   -> K.Sem effs ()
-checkMatrixVector nA nB mA vB = if (snd (LA.size mA) == LA.size vB)
+checkMatrixVector nA nB mA vB = if snd (LA.size mA) == LA.size vB
   then return ()
   else
     KL.logLE KL.Error
@@ -72,7 +72,7 @@ checkVectorMatrix
   -> Vector R
   -> Matrix R
   -> K.Sem effs ()
-checkVectorMatrix nA nB vA mB = if (LA.size vA == fst (LA.size mB))
+checkVectorMatrix nA nB vA mB = if LA.size vA == fst (LA.size mB)
   then return ()
   else
     KL.logLE KL.Error

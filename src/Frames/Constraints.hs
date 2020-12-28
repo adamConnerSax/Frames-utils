@@ -29,7 +29,6 @@ import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 
-import           Data.Kind                      ( Constraint )
 import           Data.Discrimination            ( Grouping)
 
 -- | Type family to create constraints that apply a constraint taking a type-list

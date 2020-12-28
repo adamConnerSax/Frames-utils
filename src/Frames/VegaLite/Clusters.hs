@@ -20,7 +20,6 @@ module Frames.VegaLite.Clusters
 
 import qualified Frames.VegaLite.Utils as FV
 
-import           Data.Text              (Text)
 import qualified Data.Vinyl.TypeLevel   as V
 import qualified Frames                 as F
 import qualified Graphics.Vega.VegaLite as GV

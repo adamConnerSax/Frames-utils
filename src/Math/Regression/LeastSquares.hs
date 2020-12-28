@@ -53,7 +53,7 @@ ordinaryLS withConstant mA vB = do
   HU.checkVectorMatrix "b" "A" vB mAwc  -- vB <> mA is legal, b has same length as A has rows
   let vX  = mAwc <\> vB
       vU  = vB - (mAwc #> vX) -- residuals
-      mse = (vU <.> vU) / (realToFrac dof)
+      mse = (vU <.> vU) / realToFrac dof
       cov = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB Nothing vU
   return $ RE.RegressionResult (RE.estimates cov vX)
@@ -106,7 +106,7 @@ totalLS withConstant mA vB = do
       (n, p) = LA.size mAwc
       dof    = realToFrac (n - p)
   HU.checkVectorMatrix "b" "Awc" vB mAwc
-  let mAB      = (mAwc LA.||| LA.asColumn vB)
+  let mAB      = mAwc LA.||| LA.asColumn vB
       (_, mV') = LA.rightSV mAB
 --      gSV = sv V.! 0
 --      tol = gSV * LA.eps
@@ -119,7 +119,7 @@ totalLS withConstant mA vB = do
       vBfit    = mAwc #> vX --(mAwc - mAt) #> vX -- this is confusing.
       vU       = vB - vBfit
 --      (rSq, aRSq) = RE.goodnessOfFit p vB vU --(vB - mA #> vX)
-      mse      = (vU <.> vU) / (realToFrac (n - p))
+      mse      = (vU <.> vU) / realToFrac (n - p)
       cov      = LA.scale mse (LA.inv $ LA.tr mAwc LA.<> mAwc)
   RE.FitStatistics rSq aRSq fStat <- RE.goodnessOfFit p vB Nothing vU
   return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq fStat cov
@@ -139,7 +139,7 @@ weightedTLS withConstant mA vB vW = do
       (_, p) = LA.size mAwc
   HU.checkVectorMatrix "b" "Awc" vB mAwc
   let mWA      = mW LA.<> mAwc
-      mWAB     = (mWA LA.||| LA.asColumn vWB)
+      mWAB     = mWA LA.||| LA.asColumn vWB
       (_, mV') = LA.rightSV mWAB
 --      gSV = sv V.! 0
 --      tol = gSV * LA.eps
@@ -163,7 +163,7 @@ weightedTLS withConstant mA vB vW = do
 
 addBiasCol :: Int -> Matrix R -> Matrix R
 addBiasCol rows mA =
-  let colList = (List.replicate rows 1)
+  let colList = List.replicate rows 1
   in  if LA.size mA == (0, 0)
         then LA.matrix 1 colList
         else LA.col colList LA.||| mA

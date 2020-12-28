@@ -18,7 +18,6 @@ import qualified Polysemy                      as P
 import qualified Knit.Effect.Logger            as Log
 
 import qualified Data.List                     as List
-import           Data.Maybe                     ( fromMaybe )
 import qualified Data.Text                     as T
 import qualified Data.Vector.Storable          as V
 import qualified Lucid                         as LH
@@ -82,8 +81,8 @@ data RegressionResult a = RegressionResult
 instance (LA.Element a, LA.Numeric a, RealFloat a) => Predictor S.NormalErr a (Vector a) (RegressionResult a) where
   predict rr va =
     let mse = meanSquaredError rr
-        sigmaPred = sqrt (mse + va <.> ((LA.cmap realToFrac $ covariances rr) #> va))
-        prediction = va LA.<.> (V.fromList $ fmap S.estPoint $ parameterEstimates rr)
+        sigmaPred = sqrt (mse + va <.> (LA.cmap realToFrac (covariances rr) #> va))
+        prediction = va LA.<.> V.fromList (S.estPoint <$> parameterEstimates rr)
     in S.estimateNormErr prediction sigmaPred
 
 data NamedEstimate a = NamedEstimate { regressorName :: T.Text, regressorEstimate :: a, regressorCI :: a, regressorPValue :: a }
@@ -107,7 +106,7 @@ namedEstimatesColonnade cl =
   C.headed "parameter" regressorName
     <> C.headed "estimate" (T.pack . TP.printf "%4.3f" . regressorEstimate)
     <> C.headed
-         (  (T.pack $ TP.printf "%.0f" (100 * S.confidenceLevel cl))
+         (  T.pack (TP.printf "%.0f" (100 * S.confidenceLevel cl))
          <> "% confidence"
          )
          (T.pack . TP.printf "%4.3f" . regressorCI)
@@ -117,12 +116,12 @@ namedSummaryStats :: RegressionResult R -> [(T.Text, T.Text)]
 namedSummaryStats r =
   let
     p             = List.length (parameterEstimates r)
-    effN          = (degreesOfFreedom r) + (realToFrac p)
+    effN          = degreesOfFreedom r + realToFrac p
     d1            = realToFrac $ p - 1
-    d2            = effN - (realToFrac p)
+    d2            = effN - realToFrac p
     pValM = fmap (S.complCumulative (S.fDistributionReal d1 d2)) (fStatistic r)
     printNum      = T.pack . TP.printf "%4.3f"
-    printMaybeNum = fromMaybe "N/A" . fmap printNum
+    printMaybeNum = maybe "N/A" printNum
   in
     [ ("R-Squared"         , printNum (rSquared r))
     , ("Adj. R-squared"    , printNum (adjRSquared r))
@@ -142,8 +141,8 @@ prettyPrintRegressionResult header xNames r cl =
       nSS   = namedSummaryStats r
   in  header
       <> "\n"
-      <> (T.pack $ C.ascii (fmap T.unpack $ namedEstimatesColonnade cl) nEsts)
-      <> (T.pack $ C.ascii (fmap T.unpack namedSummaryStatsColonnade) nSS)
+      <> T.pack (C.ascii (T.unpack <$> namedEstimatesColonnade cl) nEsts)
+      <> T.pack (C.ascii (fmap T.unpack namedSummaryStatsColonnade) nSS)
 
 prettyPrintRegressionResultLucid
   :: T.Text -> [T.Text] -> RegressionResult R -> S.CL R -> LH.Html ()
@@ -159,11 +158,11 @@ prettyPrintRegressionResultLucid header xNames r cl = do
         LH.span_ (LH.toHtmlRaw header)
         LC.encodeCellTable
           [LH.style_ "border: 1px solid black; border-collapse: collapse"]
-          (fmap toCell $ namedEstimatesColonnade cl)
+          (toCell <$> namedEstimatesColonnade cl)
           nEsts
         LC.encodeCellTable
           [LH.style_ "border: 1px solid black; border-collapse: collapse"]
-          (fmap toCell $ namedSummaryStatsColonnade)
+          (fmap toCell namedSummaryStatsColonnade)
           nSS
 
 prettyPrintRegressionResultBlaze
@@ -179,11 +178,11 @@ prettyPrintRegressionResultBlaze header xNames r cl = do
            BH.span (BH.toHtml header)
            BC.encodeCellTable
              (BHA.style "border: 1px solid black; border-collapse: collapse")
-             (fmap toCell $ namedEstimatesColonnade cl)
+             (toCell <$> namedEstimatesColonnade cl)
              nEsts
            BC.encodeCellTable
              (BHA.style "border: 1px solid black; border-collapse: collapse")
-             (fmap toCell $ namedSummaryStatsColonnade)
+             (fmap toCell namedSummaryStatsColonnade)
              nSS
 
 
@@ -201,7 +200,7 @@ goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
     n  = LA.size vB
     p  = realToFrac pInt
     vW = maybe (V.fromList $ List.replicate n (1.0 / realToFrac n))
-               (\v -> LA.scale (1 / (realToFrac $ LA.sumElements v)) v)
+               (\v -> LA.scale (1 / realToFrac (LA.sumElements v)) v)
                vWM
     mW     = LA.diag vW
     vWB    = mW #> vB
@@ -212,22 +211,22 @@ goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
     ssRes  = vU <.> (mW #> vU) -- weighted ssq of residuals
     rSq    = 1 - (ssRes / ssTot)
     arSq =
-      1 - (1 - rSq) * (realToFrac $ (effN - 1)) / (realToFrac $ (effN - p - 1))
-    fStatM = if (pInt > 1)
+      1 - (1 - rSq) * realToFrac (effN - 1) / realToFrac (effN - p - 1)
+    fStatM = if pInt > 1
       then Just (((ssTot - ssRes) / (p - 1.0)) / (ssRes / (effN - p)))
       else Nothing
-  Log.logLE Log.Diagnostic $ "n=" <> (T.pack $ show n)
-  Log.logLE Log.Diagnostic $ "p=" <> (T.pack $ show p)
---  Log.log Log.Diagnostic $ "vW=" <> (T.pack $ show vW)
-  Log.logLE Log.Diagnostic $ "effN=" <> (T.pack $ show effN)
-  Log.logLE Log.Diagnostic $ "ssTot=" <> (T.pack $ show ssTot)
-  Log.logLE Log.Diagnostic $ "ssRes=" <> (T.pack $ show ssRes)
+  Log.logLE Log.Diagnostic $ "n=" <> show n
+  Log.logLE Log.Diagnostic $ "p=" <> show p
+--  Log.log Log.Diagnostic $ "vW=" <> show vW
+  Log.logLE Log.Diagnostic $ "effN=" <> show effN
+  Log.logLE Log.Diagnostic $ "ssTot=" <> show ssTot
+  Log.logLE Log.Diagnostic $ "ssRes=" <> show ssRes
   return $ FitStatistics rSq arSq fStatM
 
 estimates :: Matrix R -> Vector R -> [S.Estimate S.NormalErr R]
 estimates cov means =
   let sigmas = LA.cmap sqrt (LA.takeDiag cov)
-  in  List.zipWith (\m s -> S.estimateNormErr m s)
+  in  List.zipWith S.estimateNormErr
                    (LA.toList means)
                    (LA.toList sigmas)
 

@@ -21,18 +21,3 @@ module Frames.OrphanInstances
 where
 
 
-import           Data.Maybe                     ( fromMaybe
-                                                , isJust
-                                                , fromJust
-                                                )
-import           Data.Monoid                    ( (<>)
-                                                , Monoid(..)
-                                                )
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.Functor            as V
-import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.XRec               as V
-import qualified Frames                        as F
-import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
-
