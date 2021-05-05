@@ -38,9 +38,6 @@ module Math.KMeans
   )
 where
 
-import qualified Polysemy                      as P
-import qualified Knit.Effect.Logger            as Log
-
 import qualified Control.Foldl                 as FL
 import qualified Data.Foldable                 as Foldable
 import qualified Data.List                     as List
@@ -51,8 +48,6 @@ import qualified Data.Random.Distribution.Categorical
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Unboxed           as U
 import Data.List.NonEmpty ((<|))
---import qualified Relude as Control.Monad
-
 
 -- k-means
 -- use the weights when computing the centroid location
@@ -69,14 +64,14 @@ emptyCluster = Cluster []
 
 
 weightedKMeans
-  :: forall a w f effs
-   . (Show a, Log.LogWithPrefixesLE effs, Foldable f, Real w, Eq a, Show w)
+  :: forall a w f m
+   . (Show a, MonadIO m, Foldable f, Real w, Eq a, Show w)
   => Centroids -- initial guesses at centers
   -> Weighted a w -- location/weight from data
   -> Distance
   -> f a
-  -> P.Sem effs (Clusters a, Int)
-weightedKMeans initial weighted distF as = Log.wrapPrefix "weightedKMeans" $ do
+  -> m (Clusters a, Int)
+weightedKMeans initial weighted distF as = do
   -- put them all in one cluster just to start.  Doesn't matter since we have initial centroids
   let
     k         = V.length (centers initial) -- number of clusters
@@ -236,5 +231,3 @@ linfdist :: Distance
 linfdist v1 v2 = U.maximum $ U.zipWith diffabs v1 v2
   where diffabs a b = abs (a - b)
 {-# INLINE linfdist #-}
-
-

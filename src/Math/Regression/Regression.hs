@@ -14,8 +14,6 @@ module Math.Regression.Regression where
 import qualified Math.HMatrixUtils             as HU
 
 import qualified Colonnade                     as C
-import qualified Polysemy                      as P
-import qualified Knit.Effect.Logger            as Log
 
 import qualified Data.List                     as List
 import qualified Data.Text                     as T
@@ -42,7 +40,7 @@ import           Numeric.LinearAlgebra.Data     ( Matrix
                                                 , R
                                                 , Vector
                                                 )
-
+import qualified Say
 -- NB: for normal errors, we will request the ci and get it.  For interval errors, we may request it but we can't produce
 -- what we request, we can only produce what we have.  So we make an interface for both.  We take CL as input to predict
 -- *and* return it as output, in the prediction.
@@ -189,13 +187,13 @@ prettyPrintRegressionResultBlaze header xNames r cl = do
 data FitStatistics a = FitStatistics { fsRSquared :: a, fsAdjRSquared :: a, fsFStatistic :: Maybe a}
 
 goodnessOfFit
-  :: Log.LogWithPrefixesLE effs
+  :: MonadIO m
   => Int
   -> Vector R
   -> Maybe (Vector R)
   -> Vector R
-  -> P.Sem effs (FitStatistics R)
-goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
+  -> m (FitStatistics R)
+goodnessOfFit pInt vB vWM vU = do
   let
     n  = LA.size vB
     p  = realToFrac pInt
@@ -215,12 +213,12 @@ goodnessOfFit pInt vB vWM vU = Log.wrapPrefix "goodnessOfFit" $ do
     fStatM = if pInt > 1
       then Just (((ssTot - ssRes) / (p - 1.0)) / (ssRes / (effN - p)))
       else Nothing
-  Log.logLE Log.Diagnostic $ "n=" <> show n
-  Log.logLE Log.Diagnostic $ "p=" <> show p
+  Say.say $ "n=" <> show n
+  Say.say $ "p=" <> show p
 --  Log.log Log.Diagnostic $ "vW=" <> show vW
-  Log.logLE Log.Diagnostic $ "effN=" <> show effN
-  Log.logLE Log.Diagnostic $ "ssTot=" <> show ssTot
-  Log.logLE Log.Diagnostic $ "ssRes=" <> show ssRes
+  Say.say $ "effN=" <> show effN
+  Say.say $ "ssTot=" <> show ssTot
+  Say.say $ "ssRes=" <> show ssRes
   return $ FitStatistics rSq arSq fStatM
 
 estimates :: Matrix R -> Vector R -> [S.Estimate S.NormalErr R]
@@ -231,11 +229,11 @@ estimates cov means =
                    (LA.toList sigmas)
 
 eickerHeteroscedasticityEstimator
-  :: P.Member (Log.Logger Log.LogEntry) effs
+  :: MonadIO m
   => Matrix R
   -> Vector R
   -> Vector R
-  -> P.Sem effs (Matrix R)
+  -> m (Matrix R)
 eickerHeteroscedasticityEstimator mA vB vB' = do
   HU.checkVectorMatrix "b" "A" vB mA
   HU.checkVectorMatrix "b'" "A" vB' mA

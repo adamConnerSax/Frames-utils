@@ -14,9 +14,6 @@ module Math.Regression.LeastSquares where
 import qualified Math.HMatrixUtils             as HU
 import qualified Math.Regression.Regression    as RE
 
-import qualified Polysemy                      as P
-import qualified Knit.Effect.Logger            as Log
-
 import qualified Data.List                     as List
 
 import           Numeric.LinearAlgebra          ( (#>)
@@ -28,7 +25,6 @@ import           Numeric.LinearAlgebra.Data     ( Matrix
                                                 , R
                                                 , Vector
                                                 )
-
 -- matrix dimensions given in (row x column) form
 -- if A is (m x n), its transpose, A' is (n x m)
 -- ||A|| is the Frobenius norm of A, the sum of the squares of the elements.
@@ -41,11 +37,11 @@ import           Numeric.LinearAlgebra.Data     ( Matrix
 
 -- OLS: minimize ||AX - B||
 ordinaryLS
-  :: Log.LogWithPrefixesLE effs
+  :: MonadIO m
   => Bool
   -> Matrix R
   -> Vector R
-  -> P.Sem effs (RE.RegressionResult R)
+  -> m (RE.RegressionResult R)
 ordinaryLS withConstant mA vB = do
   let mAwc   = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
       (n, p) = LA.size mAwc
@@ -65,12 +61,12 @@ ordinaryLS withConstant mA vB = do
                                cov
 
 weightedLS
-  :: Log.LogWithPrefixesLE effs
+  :: MonadIO m
   => Bool
   -> Matrix R
   -> Vector R
   -> Vector R
-  -> P.Sem effs (RE.RegressionResult R)
+  -> m (RE.RegressionResult R)
 weightedLS withConstant mA vB vW = do
   HU.checkEqualVectors "b" "w" vB vW
   let mW     = LA.diag vW
@@ -96,11 +92,11 @@ weightedLS withConstant mA vB vW = do
                                cov
 
 totalLS
-  :: Log.LogWithPrefixesLE effs
+  :: MonadIO m
   => Bool
   -> Matrix R
   -> Vector R
-  -> P.Sem effs (RE.RegressionResult R)
+  -> m (RE.RegressionResult R)
 totalLS withConstant mA vB = do
   let mAwc   = if withConstant then addBiasCol (LA.size vB) mA else mA -- add a constant, e.g., the b in y = mx + b
       (n, p) = LA.size mAwc
@@ -125,12 +121,12 @@ totalLS withConstant mA vB = do
   return $ RE.RegressionResult (RE.estimates cov vX) dof mse rSq aRSq fStat cov
 
 weightedTLS
-  :: Log.LogWithPrefixesLE effs
+  :: MonadIO m
   => Bool
   -> Matrix R
   -> Vector R
   -> Vector R
-  -> P.Sem effs (RE.RegressionResult R)
+  -> m (RE.RegressionResult R)
 weightedTLS withConstant mA vB vW = do
   HU.checkEqualVectors "b" "w" vB vW
   let mW     = LA.diag vW
