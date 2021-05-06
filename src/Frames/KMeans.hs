@@ -53,9 +53,6 @@ import           Math.KMeans                    ( Weighted(..)
                                                 , linfdist
                                                 )
 
-import qualified Polysemy                      as P
-import qualified Knit.Effect.Logger            as Log
-
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as List
 import qualified Data.Map                      as M
@@ -69,7 +66,7 @@ import qualified Frames.Melt                   as F
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Unboxed           as U
 import           Data.Random                   as R
-
+import qualified Say
 
 -- k-means
 -- use the weights when computing the centroid location
@@ -149,13 +146,13 @@ type WithScaledCols rs x y = rs V.++ [x, y]
 type WithScaled rs x y = F.Record (WithScaledCols rs x y)
 
 kMeansOne
-  :: forall x y w f effs scaledX scaledY
+  :: forall x y w f m scaledX scaledY
    . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , FU.TField Double scaledX
      , FU.TField Double scaledY
      , Foldable f
      , Functor f
-     , Log.LogWithPrefixesLE effs
+     , MonadIO m
      , Show (V.Snd w)
      )
   => FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
@@ -165,14 +162,14 @@ kMeansOne
       . (Foldable h, Functor h)
      => Int
      -> h (F.Record '[scaledX, scaledY, w])
-     -> P.Sem effs [U.Vector Double]
+     -> m [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
   -> Weighted (F.Record '[scaledX, scaledY, w]) (V.Snd w)
   -> Distance
   -> f (F.Record '[x, y, w])
-  -> P.Sem effs [(V.Snd x, V.Snd y, V.Snd w)]
+  -> m [(V.Snd x, V.Snd y, V.Snd w)]
 kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
-  Log.wrapPrefix "KMeansOne" $ do
+  do
     let (sunX, sunY) = FL.fold
           ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF)
           dataRows
@@ -193,7 +190,7 @@ kMeansOne sunXF sunYF numClusters makeInitial weighted distance dataRows =
       clusters -- we drop empty clusters ??
 
 kMeansOneWithClusters
-  :: forall x y w f rs effs scaledX scaledY
+  :: forall x y w f rs m scaledX scaledY
    . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , Foldable f
      , Functor f
@@ -209,7 +206,7 @@ kMeansOneWithClusters
      , V.ReifyConstraint Show F.ElField (rs V.++ '[scaledX, scaledY])
      , V.RecordToList (rs V.++ '[scaledX, scaledY])
      , Show (V.Snd w)
-     , Log.LogWithPrefixesLE effs
+     , MonadIO m
      )
   => FL.Fold (F.Record '[x, w]) (MR.ScaleAndUnscale (V.Snd x))
   -> FL.Fold (F.Record '[y, w]) (MR.ScaleAndUnscale (V.Snd y))
@@ -217,9 +214,9 @@ kMeansOneWithClusters
   -> Int
   -> (  Int
      -> FL.FoldM
-          (P.Sem effs)
-          (F.Record '[scaledX, scaledY, w])
-          [U.Vector Double]
+       m
+       (F.Record '[scaledX, scaledY, w])
+       [U.Vector Double]
      ) -- initial centroids, monadic because may need randomness
 {-  (  forall h
       . (Foldable h, Functor h)
@@ -230,11 +227,10 @@ kMeansOneWithClusters
   -> Weighted (WithScaled rs scaledX scaledY) (V.Snd w)
   -> Distance
   -> f (F.Record rs)
-  -> P.Sem
-       effs
-       [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+  -> m [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+
 kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted distance dataRows
-  = Log.wrapPrefix "kMeansOneWithClusters" $ do
+  = do
     let (sunX, sunY) = FL.fold
           ((,) <$> FL.premap F.rcast sunXF <*> FL.premap F.rcast sunYF)
           (fmap (F.rcast @'[x, y, w]) dataRows)
@@ -253,7 +249,7 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted dis
     tries <- mapM (\cs -> MK.weightedKMeans cs weighted distance plusScaled)
                   initials -- here we can't
     let costs = fmap (MK.kMeansCostWeighted distance weighted . fst) tries
-    Log.logLE Log.Diagnostic $ "Costs: " <> show costs
+    Say.say $ "Costs: " <> show costs
     let
       (Clusters clusters, iters) = tries V.! V.minIndex costs
       toTuple :: (U.Vector Double, V.Snd w) -> (V.Snd x, V.Snd y, V.Snd w)
@@ -265,21 +261,21 @@ kMeansOneWithClusters sunXF sunYF numClusters numTries makeInitialF weighted dis
       allClusters = V.toList $ fmap clusterOut clusters
     let result       = catMaybes allClusters
         nullClusters = List.length allClusters - List.length result
-    Log.logLE Log.Diagnostic
+    Say.say
       $  "Required "
       <> (T.pack $ show iters)
       <> " iterations to converge."
     if nullClusters > 0
       then
-        Log.logLE Log.Warning
+        Say.say
         $  (T.pack $ show nullClusters)
         <> " null clusters dropped."
-      else Log.logLE Log.Diagnostic "All clusters have at least one member."
+      else Say.say "All clusters have at least one member."
     return result
 
 -- as a reduce for mapReduce
 kMeansOneWCReduce
-  :: forall ks x y w rs effs scaledX scaledY
+  :: forall ks x y w rs m scaledX scaledY
    . ( F.AllConstrained (FU.CFieldOf Real '[x, y, w]) '[x, y, w]
      , FU.TField Double scaledX
      , FU.TField Double scaledY
@@ -293,13 +289,13 @@ kMeansOneWCReduce
      , V.ReifyConstraint Show F.ElField (rs V.++ '[scaledX, scaledY])
      , V.RecordToList (rs V.++ '[scaledX, scaledY])
      , Show (V.Snd w)
-     , Log.LogWithPrefixesLE effs
+     , MonadIO m
      )
   => Int
   -> Int
   -> (  Int
      -> FL.FoldM
-          (P.Sem effs)
+          m
           (F.Record '[scaledX, scaledY, w])
           [U.Vector Double]
      )  -- initial centroids, monadic because may need randomness
@@ -310,7 +306,7 @@ kMeansOneWCReduce
        (F.Record '[y, w])
        (MR.ScaleAndUnscale (V.Snd y))
   -> MR.ReduceM
-       (P.Sem effs)
+       m
        (F.Record ks)
        (F.Record rs)
        ( M.Map
@@ -325,7 +321,7 @@ kMeansOneWCReduce numClusters numTries makeInitialF distance weighted sunX sunY
           :: forall f
            . (Foldable f, Functor f)
           => f (F.Record rs)
-          -> P.Sem effs [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
+          -> m [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
         doOne = kMeansOneWithClusters @x @y @w sunX
                                                sunY
                                                numClusters
@@ -404,7 +400,7 @@ clusteredRowsFull
   :: forall x y w ks rs
    . ( FU.RealFieldOf rs x
      , FU.RealFieldOf rs y
-     , FU.RealFieldOf rs w     
+     , FU.RealFieldOf rs w
      )
   => (F.Record rs -> Text) -- label for each row
   -> M.Map (F.Record ks) [((V.Snd x, V.Snd y, V.Snd w), [F.Record rs])]
@@ -449,5 +445,3 @@ clusteredRowsFull labelF m
           $ List.zip [1 ..] l
     in
       crConcat $ uncurry doListOfClusters <$> M.toList m
-
-

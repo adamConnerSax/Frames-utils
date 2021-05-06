@@ -24,8 +24,6 @@ import qualified Frames.Misc                  as FU
 import qualified Frames.VegaLite.Utils         as FV
 import qualified Math.Regression.Regression    as MR
 import qualified Math.Regression.LeastSquares  as MR
-import qualified Polysemy                      as P
-import qualified Knit.Effect.Logger            as Log
 
 import qualified Lucid                         as LH
 import qualified Text.Blaze.Html               as BH
@@ -118,7 +116,7 @@ weightedRegression
   -> Bool
 weightedRegression _ = asBool @(NonVoidField w)
 
--- make X, y from the data 
+-- make X, y from the data
 prepRegression
   :: forall y as f rs
    . ( Foldable f
@@ -146,7 +144,7 @@ prepRegression dat =
     (LA.matrix nCols mList, LA.vector yList)
 
 
--- make X, y, w from the data 
+-- make X, y, w from the data
 prepWeightedRegression
   :: forall y as w f rs
    . ( Foldable f
@@ -322,9 +320,9 @@ leastSquaresByMinimization wc guess dat =
 
 
 ordinaryLeastSquares
-  :: forall effs y wc as rs f
-   . ( Log.LogWithPrefixesLE effs
-     , Foldable f
+  :: forall y wc as rs f m
+   . ( Foldable f
+     , MonadIO m
      , as F.⊆ rs
      , F.ElemOf rs y
      , FU.RealField y
@@ -336,15 +334,15 @@ ordinaryLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as Unweighted rs)
+  -> m (FrameRegressionResult y wc as Unweighted rs)
 ordinaryLeastSquares dat = do
   let (mA, vB)  = prepRegression @y @as dat
       withConst = asBool @wc
   FrameUnweightedRegressionResult <$> MR.ordinaryLS withConst mA vB
 
 weightedLeastSquares
-  :: forall y wc as w rs f effs
-   . ( Log.LogWithPrefixesLE effs
+  :: forall y wc as w rs f m
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -359,7 +357,7 @@ weightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as w rs)
+  -> m (FrameRegressionResult y wc as w rs)
 weightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -367,8 +365,8 @@ weightedLeastSquares dat = do
 
 -- special case when weights come from observations being population averages of different populations
 popWeightedLeastSquares
-  :: forall effs y wc as w rs f
-   . ( Log.LogWithPrefixesLE effs
+  :: forall m y wc as w rs f
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -383,19 +381,19 @@ popWeightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as w rs)
+  -> m (FrameRegressionResult y wc as w rs)
 popWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
-      vWpop        = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
+      vWpop        = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample
   FrameWeightedRegressionResult (sqrt . realToFrac)
     <$> MR.weightedLS withConst mA vB vWpop
 
 
 -- special case when we know residuals are heteroscedastic with variances proportional to given numbers
 varWeightedLeastSquares
-  :: forall effs y wc as w rs f
-   . ( Log.LogWithPrefixesLE effs
+  :: forall m y wc as w rs f
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -410,7 +408,7 @@ varWeightedLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as w rs)
+  -> m (FrameRegressionResult y wc as w rs)
 varWeightedLeastSquares dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -419,8 +417,8 @@ varWeightedLeastSquares dat = do
     <$> MR.weightedLS withConst mA vB vWvar
 
 totalLeastSquares
-  :: forall effs y wc as rs f
-   . ( Log.LogWithPrefixesLE effs
+  :: forall m y wc as rs f
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -433,7 +431,7 @@ totalLeastSquares
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as Unweighted rs)
+  -> m (FrameRegressionResult y wc as Unweighted rs)
 totalLeastSquares dat = do
   let (mA, vB)  = prepRegression @y @as dat
       withConst = asBool @wc
@@ -441,8 +439,8 @@ totalLeastSquares dat = do
 
 
 weightedTLS
-  :: forall effs y wc as w rs f
-   . ( Log.LogWithPrefixesLE effs
+  :: forall m y wc as w rs f
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -457,15 +455,15 @@ weightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as w rs)
+  -> m (FrameRegressionResult y wc as w rs)
 weightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
   FrameWeightedRegressionResult realToFrac <$> MR.weightedTLS withConst mA vB vW
 
 popWeightedTLS
-  :: forall effs y wc as w rs f
-   . ( Log.LogWithPrefixesLE effs
+  :: forall m y wc as w rs f
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -480,17 +478,17 @@ popWeightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as w rs)
+  -> m (FrameRegressionResult y wc as w rs)
 popWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
-      vWpop        = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample 
+      vWpop        = LA.cmap sqrt vW -- this is the correct weight for population average, the sqrt of the number averaged in that sample
   FrameWeightedRegressionResult (sqrt . realToFrac)
     <$> MR.weightedTLS withConst mA vB vWpop
 
 varWeightedTLS
-  :: forall effs y wc as w rs f
-   . ( Log.LogWithPrefixesLE effs
+  :: forall m y wc as w rs f
+   . ( MonadIO m
      , Foldable f
      , as F.⊆ rs
      , F.ElemOf rs y
@@ -505,7 +503,7 @@ varWeightedTLS
      , V.NatToInt (V.RLength as)
      )
   => f (F.Record rs)
-  -> P.Sem effs (FrameRegressionResult y wc as w rs)
+  -> m (FrameRegressionResult y wc as w rs)
 varWeightedTLS dat = do
   let (mA, vB, vW) = prepWeightedRegression @y @as @w dat
       withConst    = asBool @wc
@@ -531,7 +529,6 @@ instance ( V.AllConstrained RealFrac (V.Unlabeled (r : rs))
          , Real a) => RealFracRecordFromList a (r : rs) where
   recordFromList [] = Nothing
   recordFromList (a : as) = case recordFromList as of
-    Nothing -> Nothing 
+    Nothing -> Nothing
     Just xs -> let x = (realToFrac a) :: V.Snd r in Just $ x &: xs
 -}
-
