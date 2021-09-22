@@ -1,4 +1,4 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
+ {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -123,7 +123,7 @@ type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ F.RDeleteAll ks bs)
                                  , FI.RecVec (F.RDeleteAll ks cs)
                                  )
 
--- I've found this useful 
+-- I've found this useful
 leftJoinM3
   :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs
   => F.FrameRec as

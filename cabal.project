@@ -14,4 +14,4 @@ allow-newer: base, random, hashable, time
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: e8180b9b82134b594c75d64e916bc28f28181b44
+  tag: c7a4c462fe34f4c1df9f8493c366e86b9e74dd6a
