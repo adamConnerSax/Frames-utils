@@ -25,13 +25,13 @@ import qualified Data.Time.Format              as Time
 import qualified Data.Time.LocalTime           as Time
 import qualified Data.Vector                   as V
 import qualified Frames                        as F
-import qualified Frames.ColumnTypeable         as F
-import qualified Frames.InCore                 as F
+import qualified Frames.Streamly.ColumnTypeable         as FS
+import qualified Frames.Streamly.InCore                 as FS
 import qualified Frames.ShowCSV as F
 
 newtype FrameDay = FrameDay { unFrameDay :: Time.Day } deriving (Show, Eq, Ord, Typeable, Generic)
 
-type instance F.VectorFor FrameDay = V.Vector
+type instance FS.VectorFor FrameDay = V.Vector
 instance F.ShowCSV FrameDay where
   showCSV = T.pack . show . unFrameDay
 
@@ -56,12 +56,12 @@ instance R.Readable FrameDay where
           ]
     maybe mzero return parsedM --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as Day")
 
-instance F.Parseable FrameDay where
-  parse = fmap F.Definitely . R.fromText
+instance FS.Parseable FrameDay where
+  parse = fmap FS.Definitely . R.fromText
 
 newtype FrameLocalTime = FrameLocalTime { unFrameLocalTime :: Time.LocalTime } deriving (Show, Eq, Ord, Typeable, Generic)
 
-type instance F.VectorFor FrameLocalTime = V.Vector
+type instance FS.VectorFor FrameLocalTime = V.Vector
 instance S.Serialize FrameLocalTime
 instance F.ShowCSV FrameLocalTime where
   showCSV = T.pack . show . unFrameLocalTime
@@ -74,7 +74,7 @@ instance R.Readable FrameLocalTime where
          ]
    maybe mzero return parsedM --fail (T.unpack $ "Parse Error reading \"" <> t <> "\" as LocalTime")
 
-instance F.Parseable FrameLocalTime where
-  parse = fmap F.Definitely . R.fromText
+instance FS.Parseable FrameLocalTime where
+  parse = fmap FS.Definitely . R.fromText
 
 type ColumnsWithDayAndLocalTime = FrameDay ': (FrameLocalTime ': F.CommonColumns)
