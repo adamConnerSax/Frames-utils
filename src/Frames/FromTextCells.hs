@@ -50,7 +50,7 @@ the ST monad to do the mutable bits.
 -}
 fromTextCells :: forall rs. (V.RMap rs, FS.StrictReadRec rs, FS.RecVec rs) => [[T.Text]] -> IO (F.FrameRec rs)
 fromTextCells parsed = do
-    let lineStream = Streamly.fromList $ fmap (T.intercalate ",") parsed -- (IsStream t, Monad m) => t m [Text]
+    let lineStream = Streamly.fromList parsed -- (IsStream t, Monad m) => t m [Text]
         recEStream = stream $ FS.streamTableEither @rs @StreamType $ StreamlyStream lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
         throwLeft = either (throwIO .  userError . toString) return
         recES = Streamly.mapM (throwLeft . F.rtraverse V.getCompose) recEStream
@@ -73,7 +73,7 @@ fromTextCellsMapped :: forall rs rs'.(V.RMap rs, FS.StrictReadRec rs, FS.RecVec 
                     -> [[T.Text]]
                     -> IO (F.FrameRec rs')
 fromTextCellsMapped recMap parsed = do
-    let lineStream = Streamly.fromList $ fmap (T.intercalate ",") parsed -- (IsStream t, Monad m) => t m [Text]
+    let lineStream = Streamly.fromList parsed -- (IsStream t, Monad m) => t m [Text]
         recEStream = stream $ FS.streamTableEither @rs @StreamType $ StreamlyStream lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
         throwLeft = either (throwIO .  userError . toString) return
         recES = Streamly.mapM (throwLeft . F.rtraverse V.getCompose) recEStream
@@ -91,7 +91,7 @@ fromTextCellsMappedE :: forall rs rs'.(V.RMap rs, FS.StrictReadRec rs, FS.RecVec
                     -> [[T.Text]]
                     -> IO (F.FrameRec rs')
 fromTextCellsMappedE recMapE parsed = do
-    let lineStream = Streamly.fromList $ fmap (T.intercalate ",") parsed -- (IsStream t, Monad m) => t m [Text]
+    let lineStream = Streamly.fromList parsed -- (IsStream t, Monad m) => t m [Text]
         recEStream = stream $ FS.streamTableEither @rs @StreamType $ StreamlyStream  lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
         throwLeft = either (throwIO .  userError . toString) return
         recES = Streamly.mapM (throwLeft . (recMapE Control.Monad.<=< F.rtraverse V.getCompose)) recEStream

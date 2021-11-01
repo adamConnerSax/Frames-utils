@@ -1,9 +1,9 @@
-packages: . ~/DataScience/heidi
+packages: . ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: base, random, hashable, time
+allow-newer: base, random, time
 
 -- ghc-8.10 forks
 --source-repository-package
@@ -16,7 +16,7 @@ source-repository-package
   location: https://github.com/adamConnerSax/knit-haskell
   tag: c7a4c462fe34f4c1df9f8493c366e86b9e74dd6a
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 0ff0622ddbe9487263873232f69843822deb13bf
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-streamly
+--  tag: 0ff0622ddbe9487263873232f69843822deb13bf
