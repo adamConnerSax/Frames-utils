@@ -45,7 +45,7 @@ rather than using the built-in TH machinery.
 Builds a stream of lines of text and passes those to the Frames machinery.  Then uses
 the ST monad to do the mutable bits.
 -}
-fromTextCells :: (V.RMap rs, F.ReadRec rs, FS.RecVec rs) => [[T.Text]] -> IO (F.FrameRec rs)
+fromTextCells :: (V.RMap rs, FS.StrictReadRec rs, FS.RecVec rs) => [[T.Text]] -> IO (F.FrameRec rs)
 fromTextCells parsed = do
     let lineStream = Streamly.fromList $ fmap (T.intercalate ",") parsed -- (IsStream t, Monad m) => t m [Text]
         recEStream = FS.streamTableEither lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
@@ -65,7 +65,7 @@ the ST monad to do the mutable bits.
 
 This version parses as rs, allows modification while still a stream and then returns the modified records.
 -}
-fromTextCellsMapped :: (V.RMap rs, F.ReadRec rs, FS.RecVec rs')
+fromTextCellsMapped :: (V.RMap rs, FS.StrictReadRec rs, FS.RecVec rs')
                     => (F.Record rs -> F.Record rs')
                     -> [[T.Text]]
                     -> IO (F.FrameRec rs')
@@ -83,7 +83,7 @@ fromTextCellsMapped recMap parsed = do
 -}
 
 
-fromTextCellsMappedE :: (V.RMap rs, F.ReadRec rs, FS.RecVec rs')
+fromTextCellsMappedE :: (V.RMap rs, FS.StrictReadRec rs, FS.RecVec rs')
                     => (F.Record rs -> Either T.Text (F.Record rs'))
                     -> [[T.Text]]
                     -> IO (F.FrameRec rs')
