@@ -60,6 +60,21 @@ fromMaybeMono
 fromMaybeMono def =
   V.withNames' . mapMonoAlt (Just . fromMaybe def) . V.stripNames'
 
+maybeMono
+  :: forall a b ms ms'.
+     ( F.AllAre b (V.Unlabeled ms)
+     , F.ReplaceAll a (V.Unlabeled ms) ~ V.Unlabeled ms'
+     , V.StripFieldNames ms
+     , V.StripFieldNames ms'
+     )
+  => a
+  -> (b -> a)
+  -> F.Rec (Maybe F.:. F.ElField) ms
+  -> F.Rec (Maybe F.:. F.ElField) ms'
+maybeMono def f =
+  V.withNames' . mapMonoAlt (Just . maybe def f) . V.stripNames'
+
+
 --nothingsToDefault :: forall rs ms a. (ms F.⊆ rs, F.AllAre a (V.Unlabeled ms), F.ReplaceAll a (V.Unlabeled ms) ~ V.Unlabeled ms, V.StripFieldNames ms)
 --  => a -> F.Rec (Maybe F.:. F.ElField) rs -> F.Rec (Maybe F.:. F.ElField) rs
 --nothingsToDefault def xs  = (V.rsubset @ms %~ fromMaybeMono def) xs
@@ -270,4 +285,3 @@ whatsMissing rows = FL.fold countMissing (fmap whatsMissingRow rows)
   addMissing m l = M.insertWith (+) l 1 m
   addMissings m = FL.fold (FL.Fold addMissing m id)
   countMissing = FL.Fold addMissings M.empty id
-
