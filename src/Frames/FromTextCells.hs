@@ -86,6 +86,7 @@ fromTextCellsMapped recMap parsed = do
 -}
 
 
+
 fromTextCellsMappedE :: forall rs rs'.(V.RMap rs, FS.StrictReadRec rs, FS.RecVec rs')
                     => (F.Record rs -> Either T.Text (F.Record rs'))
                     -> [[T.Text]]
