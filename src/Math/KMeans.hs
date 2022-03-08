@@ -1,7 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE ConstraintKinds           #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE GADTs                     #-}
@@ -9,14 +8,9 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE PolyKinds                 #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE TupleSections             #-}
-{-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 module Math.KMeans
   ( Weighted(..)
@@ -113,7 +107,7 @@ weightedKMeans initial weighted distF as = do
 -- precondition: all input vectors are same length
 -- we could enforce with sized vectors.  But not today.
 forgyCentroids
-  :: (Foldable f, Functor f, R.MonadRandom m)
+  :: (Foldable f, Functor f, MonadReader g m, R.StatefulGen g m)
   => Int -- number of clusters
   -> f (U.Vector Double)
   -> m [U.Vector Double]
@@ -149,7 +143,7 @@ partitionCentroids weighted k dataRows =
 -- NB: no already chosen center can be chosen since it has distance 0 from an existing one
 -- should this factor in weights?  E.g., make pts with higher weights more likely?
 kMeansPPCentroids
-  :: (R.MonadRandom m, Foldable f)
+  :: (MonadReader g m, R.StatefulGen g m, Foldable f)
   => Distance
   -> Int
   -> f (U.Vector Double)

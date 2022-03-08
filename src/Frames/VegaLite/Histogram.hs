@@ -137,7 +137,7 @@ multiHistogram title yLabelM nBins minM maxM addOutOfRange mhStyle rows
       makeRow k (bv, ct) = GV.dataRow
         [ (xLabel , GV.Number bv)
         , ("count", GV.Number ct)
-        , FV.toVLDataValue (V.Field @(V.Fst c) k)
+        , FV.toVLDataValue (V.Field @c k)
         ]
         []
       makeRowsForOne (c, v) =
@@ -191,7 +191,3 @@ makeHistogram addOutOfRange bins vecX =
   in  if addOutOfRange
         then hVec VU.// [(minIndex, newMin), (maxIndex, newMax)]
         else hVec
-
-
-
-

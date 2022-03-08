@@ -38,8 +38,8 @@ import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Data.Vector.Storable          as VS
 
-import qualified MachineLearning               as ML
-import qualified MachineLearning.Regression    as ML
+--import qualified MachineLearning               as ML
+--import qualified MachineLearning.Regression    as ML
 import qualified Numeric.LinearAlgebra         as LA
 import           Numeric.LinearAlgebra.Data     ( R )
 import qualified Statistics.Types              as S
@@ -288,6 +288,7 @@ prettyPrintRegressionResults keyText keyed cl printOne sepEach =
         )
         keyed
 
+{-
 -- explain y in terms of as
 leastSquaresByMinimization
   :: forall y as rs f
@@ -317,7 +318,7 @@ leastSquaresByMinimization wc guess dat =
                                   y
                                   (LA.fromList guess)
   in  LA.toList solution
-
+-}
 
 ordinaryLeastSquares
   :: forall y wc as rs f m

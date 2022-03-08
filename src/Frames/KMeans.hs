@@ -74,11 +74,12 @@ import qualified Say
 
 -- compute some initial random locations using the (assumed uncorrelated) distribution of inputs
 forgyCentroids
-  :: forall x y w f m
+  :: forall x y w f g m
    . ( F.AllConstrained (FU.RealFieldOf '[x, y, w]) '[x, y, w]
      , Foldable f
      , Functor f
-     , R.MonadRandom m
+     , R.StatefulGen g m
+     , MonadReader g m
      )
   => Int -- number of clusters
   -> f (F.Record '[x, y, w])
@@ -108,8 +109,9 @@ partitionCentroids = MK.partitionCentroids (weighted2DRecord @x @y @w)
 -- NB: no already chosen center can be chosen since it has distance 0 from an existing one
 -- should this factor in weights?  E.g., make pts with higher weights more likely?
 kMeansPPCentroids
-  :: forall x y w f m
-   . ( R.MonadRandom m
+  :: forall x y w f g m
+   . ( R.StatefulGen g m
+     , MonadReader g m
      , F.AllConstrained (FU.RealFieldOf '[x, y, w]) '[x, y, w]
      , Foldable f
      , Show (V.Snd w)
