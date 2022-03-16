@@ -17,6 +17,7 @@
 module Frames.Transform
   (
     mutate
+  , mutateM
   , transform
   , transformMaybe
   , fieldEndo
