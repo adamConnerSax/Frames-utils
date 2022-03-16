@@ -46,6 +46,7 @@ appendFromKeyed source appendTo = do
         let kr = F.rcast @jc r
         in maybe (Left kr) (Right . V.rappend r) $ M.lookup kr m
   F.toFrame <$> traverse g (FL.fold FL.list appendTo)
+{-# INLINEABLE appendFromKeyed #-}
 
 
 type CanLeftJoinM ks as bs = (FI.RecVec (as V.++ F.RDeleteAll ks bs)
@@ -67,7 +68,7 @@ leftJoinM
   -> F.FrameRec bs
   -> Maybe (F.FrameRec (as V.++ F.RDeleteAll ks bs))
 leftJoinM fa fb = fmap F.toFrame $ sequence $ F.recMaybe <$> F.leftJoin @ks fa fb
-
+{-# INLINEABLE leftJoinM #-}
 
 -- TODO: There seem to be circumstances where the sequence returns Nothing but the list of missing is empty??
 
@@ -88,6 +89,7 @@ leftJoinWithMissing  fa fb =
       let missing = fmap (fromJust . F.recMaybe . F.rcast @ks . fst) . filter (\(_, z) -> isNothing z) $ zip (FL.fold FL.list x) y
           present = F.toFrame $ catMaybes y
       in (present, missing)
+{-# INLINEABLE leftJoinWithMissing #-}
 
 leftJoinE
   :: forall ks as bs. CanLeftJoinM ks as bs
@@ -100,6 +102,7 @@ leftJoinE fa fb =
   in case sequence y of
     Just z -> Right $ F.toFrame z
     Nothing -> Left $ fmap (F.rcast @ks . fst) . filter (\(_, z) -> isNothing z) $ zip (FL.fold FL.list fa) y
+{-# INLINEABLE leftJoinE #-}
 
 
 type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ F.RDeleteAll ks bs)
@@ -133,6 +136,7 @@ leftJoinM3
 leftJoinM3 fa fb fc = do
   fab <-  leftJoinM @ks fa fb
   leftJoinM @ks fab fc
+{-# INLINEABLE leftJoinM3 #-}
 
 data MissingKeys ks = FirstJoin [F.Record ks] | SecondJoin [F.Record ks]
 
@@ -156,6 +160,7 @@ leftJoin3WithMissing fa fb fc =
   let (j1, m1) = leftJoinWithMissing @ks fa fb
       (j2, m2) = leftJoinWithMissing @ks j1 fc
   in (j2, m1, m2)
+{-# INLINEABLE leftJoin3WithMissing #-}
 
 leftJoinE3
   :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs
@@ -166,3 +171,4 @@ leftJoinE3
 leftJoinE3 fa fb fc = do
   let fjE = leftJoinE @ks fa fb
   fromEithers $ fmap (\fj -> leftJoinE @ks fj fc) fjE
+{-# INLINEABLE leftJoinE3 #-}

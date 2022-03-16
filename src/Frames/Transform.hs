@@ -68,18 +68,26 @@ f (_, fieldFunc) = fieldFunc V.:& V.RNil
 transform :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs)
              => (F.Record as -> F.Record bs) -> F.Record rs -> F.Record (RDeleteAll as rs V.++ bs)
 transform f xs = F.rcast @(RDeleteAll as rs) xs `F.rappend` f (F.rcast xs)
+{-# INLINEABLE transform #-}
 
 transformMaybe :: forall rs as bs. (as F.⊆ rs, RDeleteAll as rs F.⊆ rs, V.RMap (RDeleteAll as rs))
                => (F.Record as -> F.Rec (Maybe F.:. F.ElField) bs) -> F.Record rs -> F.Rec (Maybe F.:. F.ElField) (RDeleteAll as rs V.++ bs)
 transformMaybe f xs = V.rmap (V.Compose . Just) (F.rcast @(RDeleteAll as rs) xs) `V.rappend` f (F.rcast xs)
+{-# INLINEABLE transformMaybe #-}
 
--- | append calculated subset 
+-- | append calculated subset
 mutate :: forall rs bs. (F.Record rs -> F.Record bs) -> F.Record rs -> F.Record (rs V.++ bs)
 mutate f xs = xs `F.rappend` f xs
+{-# INLINEABLE mutate #-}
+
+mutateM ::  forall rs bs m. Functor m => (F.Record rs -> m (F.Record bs)) -> F.Record rs -> m (F.Record (rs V.++ bs))
+mutateM f xs = F.rappend xs <$> f xs
+{-# INLINEABLE mutateM #-}
 
 -- | Create a record with one field from a value.  Use a TypeApplication to choose the field.
 recordSingleton :: forall af s a. (KnownSymbol s, af ~ '(s,a)) => a -> F.Record '[af]
 recordSingleton a = a F.&: V.RNil
+{-# INLINEABLE recordSingleton #-}
 
 
 replaceColumn :: forall t t' rs. (V.KnownField t
@@ -90,10 +98,12 @@ replaceColumn :: forall t t' rs. (V.KnownField t
               => (V.Snd t -> V.Snd t')
               -> F.Record rs -> F.Record (RDelete t rs V.++ '[t'])
 replaceColumn f = F.rcast @(RDelete t rs V.++ '[t']) . mutate (recordSingleton @t' . f . F.rgetField @t)
+{-# INLINEABLE replaceColumn #-}
 
 
 addOneFromOne :: forall t t' rs. (V.KnownField t, V.KnownField t', ElemOf rs t) => (V.Snd t -> V.Snd t') -> F.Record rs -> F.Record (t' ': rs)
 addOneFromOne f xs = f (F.rgetField @t xs) F.&: xs
+{-# INLINEABLE addOneFromOne #-}
 
 addOneFrom
   :: forall as t rs
@@ -101,24 +111,30 @@ addOneFrom
        , V.KnownField t, as F.⊆ rs)
   => V.CurriedX V.ElField as (V.Snd t) -> F.Record rs -> F.Record (t ': rs)
 addOneFrom f xs = V.runcurryX f (F.rcast @as xs) F.&: xs
+{-# INLINEABLE addOneFrom #-}
 
 addName :: forall t t' rs. (V.KnownField t, V.KnownField t', V.Snd t ~ V.Snd t', ElemOf rs t) => F.Record rs -> F.Record (t' ': rs)
 addName = addOneFromOne @t @t' id
+{-# INLINEABLE addName #-}
 
 addOneFromValue :: forall t rs. V.KnownField t => V.Snd t -> F.Record rs -> F.Record (t ': rs)
 addOneFromValue = (F.&:)
+{-# INLINEABLE addOneFromValue #-}
 
 -- | add a column
 addColumn :: forall t bs. (V.KnownField t) => V.Snd t -> F.Record bs -> F.Record (t ': bs)
 addColumn x r = recordSingleton x `V.rappend` r
+{-# INLINEABLE addColumn #-}
 
 -- | Drop a column from a record.  Just a specialization of rcast.
 dropColumn :: forall x rs. (F.RDelete x rs F.⊆ rs) => F.Record rs -> F.Record (F.RDelete x rs)
 dropColumn = F.rcast
+{-# INLINEABLE dropColumn #-}
 
 -- | Drop a set of columns from a record. Just a specialization of rcast.
 dropColumns :: forall xs rs. (RDeleteAll xs rs F.⊆ rs) => F.Record rs -> F.Record (RDeleteAll xs rs)
 dropColumns = F.rcast
+{-# INLINEABLE dropColumns #-}
 
 -- |  change a column "name" at the type level
 retypeColumn :: forall x y rs. ( V.KnownField x
@@ -130,6 +146,7 @@ retypeColumn :: forall x y rs. ( V.KnownField x
                                )
   => F.Record rs -> F.Record (F.RDelete x rs V.++ '[y])
 retypeColumn = transform @rs @'[x] @'[y] (\r -> F.rgetField @x r F.&: V.RNil)
+{-# INLINEABLE retypeColumn #-}
 
 
 -- TODO: replace all of the renaming with this.  But it will add contraints everywhere (and remove a bunch and I've not time right now! -}
@@ -178,28 +195,6 @@ instance (RetypeColumns cs rs
     => RetypeColumns ('(fs, ts, t) ': cs) rs where
   retypeColumns = retypeColumn @'(fs, t) @'(ts, t) @(RDeleteAll (FromRecList cs) rs V.++ ToRecList cs)  . retypeColumns @cs @rs
 
-{-
--- take a type-level-list of (fromName, toName, type -> type) and use it to transform columns in suitably typed record
-type family FromTList (a :: [(Symbol, Symbol, Type -> Type)]) :: [(Symbol, Type)] where
-  FromRecList '[] = '[]
-  FromRecList ('(fs, ts, x -> y) ': rs) = '(fs, x) ': FromRecList rs
-
-type family ToTList (a :: [(Symbol, Symbol, Type -> Type)]) :: [(Symbol, Type)] where
-  ToRecList '[] = '[]
-  ToRecList ('(fs, ts, x -> y) ': rs) = '(ts, y) ': ToRecList rs  
-  
-class (FromRecList cs F.⊆ rs) => RetypeColumns (cs :: [(Symbol, Symbol, Type -> Type)]) (rs :: [(Symbol, Type)]) where
-  retypeColumns :: (rs ~ (rs V.++ '[])) => F.Record rs -> F.Record (RDeleteAll (FromRecList cs) rs V.++ (ToRecList cs))
-
-instance TransformColumns '[] rs where
-  retypeColumns = id
-
-instance (RetypeColumns cs rs
-         )
-    => RetypeColumns ('(fs, ts, t) ': cs) rs where
-  retypeColumns = retypeColumn @'(fs, t) @'(ts, t) @(RDeleteAll (FromRecList cs) rs V.++ (ToRecList cs))  . retypeColumns @cs @rs
--}
-
 -- This is an anamorphic step.
 -- You could also use meltRow here.  That is also (Record as -> [Record bs])
 -- requires typeApplications for ss
@@ -210,19 +205,21 @@ reshapeRowSimple :: forall ss ts cs ds. (ss F.⊆ ts)
                  => [F.Record cs] -- ^ list of classifier values
                  -> (F.Record cs -> F.Record ts -> F.Record ds) -- ^ map classifier value and data to new shape
                  -> F.Record ts -- ^ original data
-                 -> [F.Record (ss V.++ cs V.++ ds)] -- ^ reshaped data                               
+                 -> [F.Record (ss V.++ cs V.++ ds)] -- ^ reshaped data
 reshapeRowSimple classifiers newDataF r =
   let ids = F.rcast r :: F.Record ss
   in flip fmap classifiers $ \c -> (ids F.<+> c) F.<+> newDataF c r
+{-# INLINEABLE reshapeRowSimple #-}
 
 reshapeRowSimpleOnOne :: forall ss c ts ds. (ss F.⊆ ts, V.KnownField c)
                       => [V.Snd c] -- ^ list of classifier values
                       -> (V.Snd c -> F.Record ts -> F.Record ds) -- ^ map classifier values to new shape
                       -> F.Record ts -- ^ original data
-                      -> [F.Record (ss V.++ '[c] V.++ ds)] -- ^ reshaped data                
+                      -> [F.Record (ss V.++ '[c] V.++ ds)] -- ^ reshaped data
 reshapeRowSimpleOnOne classifiers newDataF =
   let toRec x = V.Field x V.:& V.RNil
   in reshapeRowSimple @ss @ts @'[c] (fmap toRec classifiers) (newDataF . F.rgetField @c)
+{-# INLINEABLE reshapeRowSimpleOnOne #-}
 
 --
 -- | This type holds default values for the DefaultField and DefaultRecord classes to use. You can set a default with @Just@ or leave
@@ -270,111 +267,16 @@ bfApply :: forall (rs :: [(Symbol,*)]). (V.RMap (V.Unlabeled rs), V.RApply (V.Un
          => F.Rec BinaryFunction (V.Unlabeled rs) -> (F.Record rs -> F.Record rs -> F.Record rs)
 bfApply binaryFunctions xs ys = V.withNames $ V.rapply applyLHS (V.stripNames ys) where
   applyLHS = V.rzipWith (\bf ia -> V.Lift (V.Identity . appBinaryFunction bf (V.getIdentity ia) . V.getIdentity)) binaryFunctions (V.stripNames xs)
+{-# INLINEABLE bfApply #-}
 
 bfPlus :: Num a => BinaryFunction a
 bfPlus = BinaryFunction (+)
+{-# INLINEABLE bfPlus #-}
 
 bfLHS :: BinaryFunction a
 bfLHS = BinaryFunction const
+{-# INLINEABLE bfLHS #-}
 
 bfRHS :: BinaryFunction a
 bfRHS = BinaryFunction $ \ _ x -> x
-
-
-{-
-class MapCurried f as where
-  mapCurried :: (a -> b) -> V.CurriedX f as a -> V.CurriedX f as b
-
-instance MapCurried f '[] where
-  mapCurried = id
-
-instance MapCurried f as => MapCurried f (t ': as) where
-  mapCurried fab cf = mapCurried @f @as fab . cf
-
-rearrangeZipWith :: forall a b c as bs f. (MapCurried f as, MapCurried f bs)
-                 => (a -> b -> c) -> V.CurriedX f as a -> V.CurriedX f bs b -> V.CurriedX f as (V.CurriedX f bs c)
-rearrangeZipWith combine ca cb =
-  let g :: x -> a -> (a, x)
-      g x a = (a, x)
-      x :: V.CurriedX f as (a, V.CurriedX f bs b)
-      x = mapCurried @f @as (g cb) ca -- V.CurriedX f as (a, V.CurriedX f bs b)
-      y = mapCurried @f @as (\(i, cb) -> mapCurried @f @bs (\j -> combine i j) cb) x
-  in y
-
-class UnNestCurried f as bs c where
-  unNestCurried :: V.CurriedX f as (V.CurriedX f bs c) -> V.CurriedX f (as V.++ bs) c
-
-instance (bs V.++ '[] ~ as) => UnNestCurried f '[] bs c where
-  unNestCurried g = g
-
-instance UnNestCurried f as bs c => UnNestCurried f (t': as) bs c where
-  unNestCurried f = \x -> unNestCurried @f @as @bs @c (f x)  
-  
-zipCurriedWith :: forall f as bs a b c. (UnNestCurried f as bs c, MapCurried f as, MapCurried f bs)
-  => (a -> b -> c) -> V.CurriedX f as a -> V.CurriedX f bs b -> V.CurriedX f (as V.++ bs) c
-zipCurriedWith combine ca cb = unNestCurried @f @as @bs @c $ rearrangeZipWith @a @b @c @as @bs @f combine ca cb 
-
-newtype ColMaker (as :: [(Symbol, Type)]) (t :: (Symbol, Type)) = ColMaker { unColMaker :: V.KnownField t => V.CurriedX F.ElField as (V.Snd t) }
-
-addColMaker
-  :: forall cs as bs t.
-     (V.KnownField t
-     , UnNestCurried F.ElField cs as (F.Record (t ': bs))
-     , MapCurried F.ElField cs
-     , MapCurried F.ElField as
-     ) 
-  => ColMaker cs t -> V.CurriedX F.ElField as (F.Record bs) -> V.CurriedX F.ElField (cs V.++ as) (F.Record (t ': bs))
-addColMaker (ColMaker cf) =  zipCurriedWith @F.ElField @cs @as @(V.Snd t) @(F.Record bs) @(F.Record (t ': bs)) (\x rb -> x F.&: rb) cf
-
-lastColMaker :: V.CurriedX F.ElField '[] (F.Record '[])
-lastColMaker = V.RNil
-
-(|++|) :: forall cs as bs t.
-          (V.KnownField t
-          , UnNestCurried F.ElField cs as (F.Record (t ': bs))
-          , MapCurried F.ElField cs
-          , MapCurried F.ElField as
-          ) 
-  => ColMaker cs t -> V.CurriedX F.ElField as (F.Record bs) -> V.CurriedX F.ElField (cs V.++ as) (F.Record (t ': bs))
-(|++|) = addColMaker @cs @as @bs @t 
-
-infixr 7 |++|
-
-transformFromCurried
-  :: forall qs as bs rs
-     . (as F.⊆ rs
-       , RDeleteAll as rs F.⊆ rs
-       , qs F.⊆ (RDeleteAll as rs V.++ bs)
-       , qs F.⊆ (rs V.++ bs)
-       , V.IsoXRec F.ElField as
-       )
-  =>  V.CurriedX F.ElField as (F.Record bs) -> F.Record rs -> F.Record qs --(RDeleteAll as rs V.++ bs)
-transformFromCurried cf =
-  let g :: F.Record as -> F.Record bs
-      g = V.runcurryX cf
-  in  F.rcast . mutate (g . F.rcast)
-
-
-cmPlusNonEmptyRL
-  :: forall as bs as' bs' cs t.
-     (as ~ (cs V.++ as')
-     , bs ~ (t ': bs')
-     , V.KnownField t
-     , UnNestCurried F.ElField cs as' (F.Record bs)
-     , MapCurried F.ElField cs
-     , MapCurried F.ElField bs'
-     , MapCurried F.ElField as'
-     ) => ColMaker cs t -> ReplacerList as' bs' ->  V.CurriedX F.ElField as (F.Record bs)
-cmPlusNonEmptyRL rh rl = addColMaker @cs @as' @bs' @t rh (buildReplacer rl) 
-
-buildReplacer
-  :: forall as bs.
-  ( 
-    MapCurried F.ElField bs
-  , MapCurried F.ElField as  
-  )
-  => ReplacerList as bs -> V.CurriedX F.ElField as (F.Record bs)
-buildReplacer RLNil = V.RNil
-buildReplacer ((rh :: ColMaker cs t) `RLCons` (rl :: ReplacerList as' bs')) = cmPlusNonEmptyRL @as @bs @as' @bs' @cs @t rh rl
-
--}
+{-# INLINEABLE bfRHS #-}
