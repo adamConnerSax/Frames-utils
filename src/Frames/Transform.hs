@@ -25,6 +25,10 @@ module Frames.Transform
   , addColumn
   , dropColumn
   , replaceColumn
+  , Rename
+  , rename
+  , ReType
+  , reType
   , dropColumns
   , retypeColumn
   , addOneFromOne
@@ -53,7 +57,7 @@ import qualified Frames               as F
 import           Frames.Melt          (RDeleteAll, ElemOf)
 
 import           GHC.TypeLits         (KnownSymbol, Symbol)
-
+import Unsafe.Coerce (unsafeCoerce)
 -- |  mutation functions
 
 -- | Type preserving single-field mapping
@@ -160,13 +164,23 @@ type family Rename old new ts where
   Rename old new ('(old,x) ': xs) = '(new,x) ': xs
   Rename old new ('(s,x) ': xs) = '(s,x) ': Rename old new xs
 
-{-
 -- | Replace a field label. Example:
 --
 -- @rename \@"name" \@"handle" (fieldRec (#name =: "Joe", #age =: (40::Int)))
 rename :: forall old new ts. V.Rec V.ElField ts -> V.Rec V.ElField (Rename old new ts)
 rename = unsafeCoerce
--}
+
+type family ReType old new ts where
+  ReType old new '[] = '[]
+  ReType old new (old ': xs) = new ': ReType old new xs
+  ReType old new (t ': xs) = t ': ReType old new xs
+
+-- | Replace a field type. Example:
+--
+reType :: forall old new ts. V.Rec V.ElField ts -> V.Rec V.ElField (ReType old new ts)
+reType = unsafeCoerce
+
+
 
 -- take a type-level-list of (fromName, toName, type) and use it to rename columns in suitably typed record
 type family FromRecList (a :: [(Symbol, Symbol, Type)]) :: [(Symbol, Type)] where
@@ -264,7 +278,7 @@ instance (DefaultRecord rs, V.KnownField t, DefaultField (V.Snd t)) => DefaultRe
 
 newtype BinaryFunction a = BinaryFunction { appBinaryFunction :: a -> a -> a }
 
-bfApply :: forall (rs :: [(Symbol,*)]). (V.RMap (V.Unlabeled rs), V.RApply (V.Unlabeled rs), V.StripFieldNames rs)
+bfApply :: forall (rs :: [(Symbol, Type)]). (V.RMap (V.Unlabeled rs), V.RApply (V.Unlabeled rs), V.StripFieldNames rs)
          => F.Rec BinaryFunction (V.Unlabeled rs) -> (F.Record rs -> F.Record rs -> F.Record rs)
 bfApply binaryFunctions xs ys = V.withNames $ V.rapply applyLHS (V.stripNames ys) where
   applyLHS = V.rzipWith (\bf ia -> V.Lift (V.Identity . appBinaryFunction bf (V.getIdentity ia) . V.getIdentity)) binaryFunctions (V.stripNames xs)

@@ -1,43 +1,59 @@
-packages: . ~/DataScience/heidi ~/DataScience/Frames-streamly
+packages: .
 jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: base, random, time, ghc-prim, template-haskell, bytestring, profunctors, vinyl, hashable, random-fu, lens
+allow-newer: base, ghc-prim, template-haskell, foldl-statistics:hashable, foldl-statistics:profunctors, cereal-time:time
 
 -- ghc9.2
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: fbe46c4d5bff1e539356d3dcf7ee92401f3311f1
+  tag:  92fd154fee6d0ac9bf548ea956838e0358be76ea
 
 source-repository-package
   type: git
-  location: https://github.com/adamConnerSax/random-fu
-  tag: a21105b269c77266bd74ec4a31e0924f7000e69a
-  subdir: random-source
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: 1ac784d9dc05fa5611343b74a6f97ca957782981
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/random-fu
+--  tag: a21105b269c77266bd74ec4a31e0924f7000e69a
+--  subdir: random-source
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/random-fu
-  tag: a21105b269c77266bd74ec4a31e0924f7000e69a
-  subdir: random-fu
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/random-fu
+--  tag: a21105b269c77266bd74ec4a31e0924f7000e69a
+--  subdir: random-fu
 
-source-repository-package
-  type: git
-  location: https://github.com/sullyj3/relude
-  tag: 8f7e3a3be033fe11dbd00ebcf5cd7b00d1e459b6
+--source-repository-package
+--  type: git
+--  location: https://github.com/sullyj3/relude
+--  tag: 8f7e3a3be033fe11dbd00ebcf5cd7b00d1e459b6
 
 
-source-repository-package
-  type: git
-  location:https://github.com/hasktorch/pipes-text
-  tag: d4805e84327e266daa730d23982db3172f226cac
+--source-repository-package
+--  type: git
+--  location:https://github.com/hasktorch/pipes-
+--  tag: d4805e84327e266daa730d23982db3172f226cac
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-map-reduce
-  tag: 539696e16607c75a3cda7464d80f6c77d4ad2203
+  tag:  e3d4c8678098b2685b4115c5f52e8f0aac0bc160
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/map-reduce-folds
+  tag: 773c0580654cb3a35a667a96a12d3d84634ef0bc
+
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/heidi
+  tag: 83e0f7e6ba80baaa18ab7daafe7083828fc74d60
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/Frames-streamly

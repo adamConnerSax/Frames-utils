@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -34,13 +35,21 @@ import qualified Frames                        as F
 --import qualified Frames.CSV                             as F
 import qualified Frames.Streamly.CSV as FS
 import qualified Frames.Streamly.InCore as FS
-import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
+import Frames.Streamly.Streaming.Streamly (StreamlyStream(..))
+#if MIN_VERSION_streamly(0,9,0)
+import qualified Streamly.Data.Stream as Streamly
+#else
 import qualified Streamly.Prelude as Streamly
+#endif
 import qualified Control.Monad
 import Control.Exception (throwIO)
 import System.IO.Error (userError)
 
-type StreamType = StreamlyStream SerialT
+#if MIN_VERSION_streamly(0,9,0)
+type StreamType = StreamlyStream Streamly.Stream
+#else
+type StreamType = StreamlyStream Streamly.SerialT
+#endif
 
 {-
 Simplify building a frame from [[Text]], coming, e.g., from a parser,
@@ -77,7 +86,11 @@ fromTextCellsMapped recMap parsed = do
         recEStream = stream $ FS.streamTableEither @rs @StreamType $ StreamlyStream lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
         throwLeft = either (throwIO .  userError . toString) return
         recES = Streamly.mapM (throwLeft . F.rtraverse V.getCompose) recEStream
+#if MIN_VERSION_streamly(0,9,0)
+    FS.inCoreAoS (StreamlyStream $ fmap recMap recES)
+#else
     FS.inCoreAoS (StreamlyStream $ Streamly.map recMap recES)
+#endif
 {-
 
     case recES of
