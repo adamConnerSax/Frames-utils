@@ -3,7 +3,7 @@ jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: base, ghc-prim, template-haskell, foldl-statistics:hashable, foldl-statistics:profunctors, cereal-time:time
+allow-newer: base, ghc-prim, template-haskell, foldl-statistics:hashable, foldl-statistics:profunctors, cereal-time:time,  streamly-bytestring:bytestring
 
 -- ghc9.2
 source-repository-package

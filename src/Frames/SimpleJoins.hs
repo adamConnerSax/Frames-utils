@@ -18,10 +18,12 @@ module Frames.SimpleJoins
   , leftJoinE
   , leftJoinWithMissing
   , CanLeftJoinM
+  , CanLeftJoinWithMissing
   , leftJoinM3
   , leftJoinE3
   , leftJoin3WithMissing
   , CanLeftJoinM3
+  , CanLeftJoinWithMissing3
   , MissingKeys(..)
   ) where
 
@@ -71,6 +73,10 @@ leftJoinM fa fb = fmap F.toFrame $ sequence $ F.recMaybe <$> F.leftJoin @ks fa f
 {-# INLINEABLE leftJoinM #-}
 
 -- TODO: There seem to be circumstances where the sequence returns Nothing but the list of missing is empty??
+
+type CanLeftJoinWithMissing ks as bs = (CanLeftJoinM ks as bs
+                                       , ks F.⊆ (as V.++ F.RDeleteAll ks bs)
+                                       )
 
 leftJoinWithMissing
   :: forall ks as bs.
@@ -126,6 +132,10 @@ type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ F.RDeleteAll ks bs)
                                  , FI.RecVec (F.RDeleteAll ks cs)
                                  )
 
+type CanLeftJoinWithMissing3 ks as bs cs = (CanLeftJoinM3 ks as bs cs
+                                           , ks F.⊆ ((as ++ F.RDeleteAll ks bs) ++ F.RDeleteAll ks cs)
+                                           )
+
 -- I've found this useful
 leftJoinM3
   :: forall ks as bs cs. CanLeftJoinM3 ks as bs cs
@@ -149,7 +159,7 @@ fromEithers e = case e of
 
 leftJoin3WithMissing
   :: forall ks as bs cs.
-  (CanLeftJoinM3 ks as bs cs
+  (CanLeftJoinWithMissing3 ks as bs cs
   , ks F.⊆ ((as ++ F.RDeleteAll ks bs) ++ F.RDeleteAll ks cs)
   )
   => F.FrameRec as
