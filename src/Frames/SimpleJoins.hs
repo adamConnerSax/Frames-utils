@@ -17,11 +17,13 @@ module Frames.SimpleJoins
   , leftJoinM
   , leftJoinE
   , leftJoinWithMissing
+  , JoinResult
   , CanLeftJoinM
   , CanLeftJoinWithMissing
   , leftJoinM3
   , leftJoinE3
   , leftJoin3WithMissing
+  , JoinResult3
   , CanLeftJoinM3
   , CanLeftJoinWithMissing3
   , MissingKeys(..)
@@ -63,29 +65,29 @@ type CanLeftJoinM ks as bs = (FI.RecVec (as V.++ F.RDeleteAll ks bs)
                              , FI.RecVec as
                              , FI.RecVec (F.RDeleteAll ks bs)
                              )
+
+type JoinResult ks as bs = as V.++ F.RDeleteAll ks bs
 -- I find this to be a more useful interface for the times when I need all join keys present in rhs
 leftJoinM
   :: forall ks as bs. CanLeftJoinM ks as bs
   => F.FrameRec as
   -> F.FrameRec bs
-  -> Maybe (F.FrameRec (as V.++ F.RDeleteAll ks bs))
+  -> Maybe (F.FrameRec (JoinResult ks as bs))
 leftJoinM fa fb = fmap F.toFrame $ sequence $ F.recMaybe <$> F.leftJoin @ks fa fb
 {-# INLINEABLE leftJoinM #-}
 
 -- TODO: There seem to be circumstances where the sequence returns Nothing but the list of missing is empty??
 
 type CanLeftJoinWithMissing ks as bs = (CanLeftJoinM ks as bs
-                                       , ks F.⊆ (as V.++ F.RDeleteAll ks bs)
+                                       , ks F.⊆ JoinResult ks as bs
                                        )
 
 leftJoinWithMissing
   :: forall ks as bs.
-  (CanLeftJoinM ks as bs
-  , ks F.⊆ (as V.++ F.RDeleteAll ks bs)
-  )
+  (CanLeftJoinWithMissing ks as bs)
   => F.FrameRec as
   -> F.FrameRec bs
-  -> (F.FrameRec (as V.++ F.RDeleteAll ks bs), [F.Record ks])
+  -> (F.FrameRec (JoinResult ks as bs), [F.Record ks])
 leftJoinWithMissing  fa fb =
   let x = F.leftJoin @ks fa fb
       y = fmap F.recMaybe x
@@ -101,7 +103,7 @@ leftJoinE
   :: forall ks as bs. CanLeftJoinM ks as bs
   => F.FrameRec as
   -> F.FrameRec bs
-  -> Either [F.Record ks] (F.FrameRec (as V.++ (F.RDeleteAll ks bs)))
+  -> Either [F.Record ks] (F.FrameRec (JoinResult ks as bs))
 leftJoinE fa fb =
   let x = F.leftJoin @ks fa fb
       y = fmap F.recMaybe x
@@ -132,8 +134,10 @@ type CanLeftJoinM3 ks as bs cs = ( FI.RecVec (as V.++ F.RDeleteAll ks bs)
                                  , FI.RecVec (F.RDeleteAll ks cs)
                                  )
 
+type JoinResult3 ks as bs cs = (as ++ F.RDeleteAll ks bs) ++ F.RDeleteAll ks cs
+
 type CanLeftJoinWithMissing3 ks as bs cs = (CanLeftJoinM3 ks as bs cs
-                                           , ks F.⊆ ((as ++ F.RDeleteAll ks bs) ++ F.RDeleteAll ks cs)
+                                           , ks F.⊆ JoinResult3 ks as bs cs
                                            )
 
 -- I've found this useful
@@ -142,7 +146,7 @@ leftJoinM3
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
-  -> Maybe (F.FrameRec (as V.++ F.RDeleteAll ks bs V.++ F.RDeleteAll ks cs))
+  -> Maybe (F.FrameRec (JoinResult3 ks as bs cs))
 leftJoinM3 fa fb fc = do
   fab <-  leftJoinM @ks fa fb
   leftJoinM @ks fab fc
@@ -159,13 +163,11 @@ fromEithers e = case e of
 
 leftJoin3WithMissing
   :: forall ks as bs cs.
-  (CanLeftJoinWithMissing3 ks as bs cs
-  , ks F.⊆ ((as ++ F.RDeleteAll ks bs) ++ F.RDeleteAll ks cs)
-  )
+  (CanLeftJoinWithMissing3 ks as bs cs)
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
-  -> ((F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))), [F.Record ks], [F.Record ks])
+  -> (F.FrameRec (JoinResult3 ks as bs cs), [F.Record ks], [F.Record ks])
 leftJoin3WithMissing fa fb fc =
   let (j1, m1) = leftJoinWithMissing @ks fa fb
       (j2, m2) = leftJoinWithMissing @ks j1 fc
@@ -177,7 +179,7 @@ leftJoinE3
   => F.FrameRec as
   -> F.FrameRec bs
   -> F.FrameRec cs
-  -> Either (MissingKeys ks) (F.FrameRec (as V.++ F.RDeleteAll ks bs V.++ F.RDeleteAll ks cs))
+  -> Either (MissingKeys ks) (F.FrameRec (JoinResult3 ks as bs cs))
 leftJoinE3 fa fb fc = do
   let fjE = leftJoinE @ks fa fb
   fromEithers $ fmap (\fj -> leftJoinE @ks fj fc) fjE
