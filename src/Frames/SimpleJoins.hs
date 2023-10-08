@@ -31,7 +31,7 @@ module Frames.SimpleJoins
 
 import qualified Control.Foldl as FL
 import qualified Data.Vinyl           as V
-import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
+import Data.Vinyl.TypeLevel as V ( type (++) ) --(type (++), Snd)
 import qualified Data.Map as M
 import           Data.Maybe (fromJust) -- don't love fromJust here
 import qualified Frames               as F
