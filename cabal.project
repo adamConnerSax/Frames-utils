@@ -1,20 +1,33 @@
-packages: .
+packages: . ../../DataScience/polysemy-Extra/polysemy-RandomFu
 jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: base, ghc-prim, template-haskell, foldl-statistics:hashable, foldl-statistics:profunctors, cereal-time:time,  streamly-bytestring:bytestring
+allow-newer: streasmly, streamly-core, base, ghc-prim, template-haskell, foldl-statistics:hashable, foldl-statistics:profunctors, cereal-time:time,  streamly-bytestring:bytestring
 
 -- ghc9.2
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag:  92fd154fee6d0ac9bf548ea956838e0358be76ea
+  tag:  9f1d2cf3fb85509813c99a37de7449c8df8d8e41
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 1ac784d9dc05fa5611343b74a6f97ca957782981
+  tag: 5467ef35f13ce81125d70183d125bbbb59ea0be4
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/streamly-bytestring
+  tag: f5f73ebc0208370f7969635ddc34493ebd224fce
+
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/psibi/streamly-bytestring
+--  tag: f5f73ebc0208370f7969635ddc34493ebd224fce
+
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/random-fu
@@ -41,12 +54,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-map-reduce
-  tag:  e3d4c8678098b2685b4115c5f52e8f0aac0bc160
+  tag:  6d3d9963d3312ad5c10941fcc84f1fd1c30997d8
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/map-reduce-folds
-  tag: 773c0580654cb3a35a667a96a12d3d84634ef0bc
+  tag: d5f83c524a3503a8d64694dc070ab3ad72c2f9a9
 
 
 source-repository-package

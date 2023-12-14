@@ -20,10 +20,11 @@
 module Frames.Constraints
   ( EachIs
   , ElemsOf
+  , RecordShow
   )
 where
 
---import qualified Data.Vinyl                    as V
+import qualified Data.Vinyl                    as V
 --import qualified Data.Vinyl.TypeLevel          as V
 --import qualified Frames                        as F
 import qualified Frames.Melt                   as F
@@ -41,3 +42,6 @@ type family EachIs (c :: [k] -> k -> Constraint) (rs :: [k]) (ts :: [k]) :: Cons
 type family ElemsOf (rs :: [k]) (es :: [k]) :: Constraint where
   ElemsOf _ '[] = ()
   ElemsOf rs (t ': ts) = (F.ElemOf rs t, ElemsOf rs ts)
+
+
+type RecordShow rs = (V.RMap rs, V.ReifyConstraint Show V.ElField rs, V.RecordToList rs)
