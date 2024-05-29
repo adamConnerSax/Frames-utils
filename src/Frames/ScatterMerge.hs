@@ -29,6 +29,7 @@ module Frames.ScatterMerge
   ) where
 
 import qualified Frames.MapReduce   as MR
+import qualified Control.MapReduce.Simple   as SMR
 import qualified Frames.Misc        as FU
 import qualified Math.Rescale as MR
 
@@ -54,8 +55,8 @@ import qualified Data.Vector as V
 type Binnable x w =  (V.KnownField x, Real (V.Snd x),
                       V.KnownField w, Real (V.Snd w))
 
--- NB: Bins are unscaled; scaling function to be applied after binning  
-data BinsWithRescale a = BinsWithRescale { bins :: [a],  shift :: a, scale :: Double} -- left in a form where a need not be a type that supports division 
+-- NB: Bins are unscaled; scaling function to be applied after binning
+data BinsWithRescale a = BinsWithRescale { bins :: [a],  shift :: a, scale :: Double} -- left in a form where a need not be a type that supports division
 
 binField :: forall x w. Binnable x w => Int -> MR.RescaleType (V.Snd x) -> FL.Fold (F.Record '[x,w]) (BinsWithRescale (V.Snd x))
 binField numBins rt =
@@ -82,7 +83,7 @@ type BinnableKeyedRecord rs ks x w = (F.AllConstrained (FU.CFieldOf Real [x,w]) 
 
 binFields :: forall ks x w rs. (BinnableKeyedRecord rs ks x w, '[x,w] F.⊆ rs)
            => Int -> MR.RescaleType (V.Snd x) -> FL.Fold (F.Record rs) (M.Map (F.Record ks) (BinsWithRescale (V.Snd x)))
-binFields n rt = MR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
+binFields n rt = SMR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @ks @[x,w]) (MR.Reduce $ \k xw -> M.singleton k $ FL.fold (binField n rt) xw)
 
 -- NB: a can't be less than the 0th element because we build it that way.  So we drop it
 sortedListToBinLookup' :: Ord a => [a] -> a -> Int
@@ -227,5 +228,3 @@ buildScatterMerge xNumBins yNumBins rtX rtY toX toY =
       binYFold = binFields @ks @y @w yNumBins  rtY
       smFold (xBins, yBins) = scatterMerge' @ks @x @y @w toX toY xBins yBins
   in ((,) <$> binXFold <*> binYFold, smFold)
-
-

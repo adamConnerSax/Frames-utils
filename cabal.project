@@ -1,4 +1,4 @@
-packages: . ../../DataScience/polysemy-Extra/polysemy-RandomFu
+packages: . ../../DataScience/polysemy-Extra/polysemy-RandomFu ../../DataScience/Frames-map-reduce
 jobs: 4
 with-compiler: ghc
 benchmarks: true
@@ -51,10 +51,10 @@ source-repository-package
 --  location:https://github.com/hasktorch/pipes-
 --  tag: d4805e84327e266daa730d23982db3172f226cac
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-map-reduce
-  tag:  6d3d9963d3312ad5c10941fcc84f1fd1c30997d8
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-map-reduce
+--  tag:  6d3d9963d3312ad5c10941fcc84f1fd1c30997d8
 
 source-repository-package
   type: git
