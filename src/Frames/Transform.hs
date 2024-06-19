@@ -16,7 +16,8 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Frames.Transform
   (
-    mutate
+    frameConcat
+  , mutate
   , mutateM
   , transform
   , transformMaybe
@@ -54,10 +55,15 @@ import qualified Data.Vinyl.Curry     as V
 import qualified Data.Vinyl.Functor   as V
 import           Data.Vinyl.TypeLevel as V --(type (++), Snd)
 import qualified Frames               as F
+import qualified Frames.InCore        as FI
 import           Frames.Melt          (RDeleteAll, ElemOf)
 
 import           GHC.TypeLits         (KnownSymbol, Symbol)
 import Unsafe.Coerce (unsafeCoerce)
+
+frameConcat :: (Functor f, Foldable f, FI.RecVec rs) => f (F.FrameRec rs) -> F.FrameRec rs
+frameConcat = F.toFrame . concat . fmap toList
+
 -- |  mutation functions
 
 -- | Type preserving single-field mapping
