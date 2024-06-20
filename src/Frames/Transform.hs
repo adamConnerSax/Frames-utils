@@ -62,14 +62,16 @@ import           GHC.TypeLits         (KnownSymbol, Symbol)
 import Unsafe.Coerce (unsafeCoerce)
 
 frameConcat :: (Functor f, Foldable f, FI.RecVec rs) => f (F.FrameRec rs) -> F.FrameRec rs
-frameConcat = F.toFrame . concat . fmap toList
-
+frameConcat x = if length x < 600
+                then mconcat $ toList x
+                else F.toFrame $ concatMap toList x
+{-# INLINEABLE frameConcat #-}
 -- |  mutation functions
 
 -- | Type preserving single-field mapping
 fieldEndo :: forall x rs. (V.KnownField x, ElemOf rs x) => (Snd x -> Snd x) -> F.Record rs -> F.Record rs
 fieldEndo f r = F.rputField @x (f $ F.rgetField @x r) r
-
+{-# INLINE fieldEndo #-}
 {-
 f :: KnownSymbol s => (s,(a -> b)) -> F.Rec ((->) a) ['(s,b)]
 f (_, fieldFunc) = fieldFunc V.:& V.RNil
