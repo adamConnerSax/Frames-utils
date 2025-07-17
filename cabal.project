@@ -3,7 +3,8 @@ jobs: 4
 with-compiler: ghc
 benchmarks: true
 
-allow-newer: base, bytestring, hashable, profunctors, time, ghc-prim
+--allow-newer: base, bytestring, hashable, profunctors, time, ghc-prim
+allow-newer: base, ghc-prim, template-haskell, time, bytestring, containers, hashable, lens, profunctors, primitive, text, vector, constraints, extra, freer-simple
 
 flags: +streamly9
 -- ghc9.2

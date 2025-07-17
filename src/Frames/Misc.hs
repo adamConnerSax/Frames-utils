@@ -148,7 +148,8 @@ mapMergeFramesE ::  forall ks as bs d.
                   )
                 => (F.Record ks -> F.Record as -> F.Record bs -> d)
                 -> (F.Record ks -> Text)
-                -> Text -> Text
+                -> Text
+                -> Text
                 -> F.FrameRec (ks V.++ as)
                 -> F.FrameRec (ks V.++ bs)
                 -> Either Text (Map (F.Record ks) d)
@@ -191,12 +192,13 @@ mapMergeFramesToFrameE ::  forall ks as bs xs.
                            , ks F.⊆ (ks V.++ bs)
                            , FSI.RecVec (ks V.++ xs)
                            )
-                => (F.Record ks -> F.Record as -> F.Record bs -> F.Record xs)
-                -> (F.Record ks -> Text)
-                -> Text -> Text
-                -> F.FrameRec (ks V.++ as)
-                -> F.FrameRec (ks V.++ bs)
-                -> Either Text (F.FrameRec (ks V.++ xs))
+                       => (F.Record ks -> F.Record as -> F.Record bs -> F.Record xs)
+                       -> (F.Record ks -> Text)
+                       -> Text
+                       -> Text
+                       -> F.FrameRec (ks V.++ as)
+                       -> F.FrameRec (ks V.++ bs)
+                       -> Either Text (F.FrameRec (ks V.++ xs))
 mapMergeFramesToFrameE whenMatched keyText aLabel bLabel = mapMergeFramesToFrame whenMatchedE (whenMissing aLabel) (whenMissing bLabel)
   where
     whenMatchedE x y z = Right $ whenMatched x y z
